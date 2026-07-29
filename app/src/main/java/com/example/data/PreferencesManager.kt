@@ -87,6 +87,31 @@ class PreferencesManager(context: Context) {
         get() = prefs.getLong("total_read_time_seconds", 0L)
         set(value) = prefs.edit().putLong("total_read_time_seconds", value).apply()
 
+    fun getDailyReadTime(dateStr: String): Long {
+        return prefs.getLong("daily_read_time_$dateStr", 0L)
+    }
+
+    fun setDailyReadTime(dateStr: String, seconds: Long) {
+        prefs.edit().putLong("daily_read_time_$dateStr", seconds.coerceAtLeast(0L)).apply()
+    }
+
+    fun calculateStreak(): Int {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+        val calendar = java.util.Calendar.getInstance()
+        var count = 0
+        while (true) {
+            val dateStr = sdf.format(calendar.time)
+            val duration = getDailyReadTime(dateStr)
+            if (duration > 0) {
+                count++
+                calendar.add(java.util.Calendar.DAY_OF_YEAR, -1)
+            } else {
+                break
+            }
+        }
+        return count
+    }
+
     var showOverlayHeaderFooter: Boolean
         get() = prefs.getBoolean("show_overlay_header_footer", true)
         set(value) = prefs.edit().putBoolean("show_overlay_header_footer", value).apply()

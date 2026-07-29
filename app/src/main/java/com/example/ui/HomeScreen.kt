@@ -65,6 +65,7 @@ fun HomeScreen(
     onNavigateToShelf: () -> Unit,
     onNavigateToStats: () -> Unit,
     totalReadTimeSeconds: Long,
+    streakDays: Int = 0,
     onDeleteBook: (Book) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -336,6 +337,42 @@ fun HomeScreen(
                         // 2. HERO: RECENTLY READ BIG BOOK CARD
                         val currentlyReading = books.maxByOrNull { it.lastReadTime } ?: books.first()
 
+                        val heroHasValidCover = !currentlyReading.coverUri.isNullOrEmpty() && (
+                            currentlyReading.coverUri!!.startsWith("content://") ||
+                            (currentlyReading.coverUri!!.startsWith("file://") && java.io.File(currentlyReading.coverUri!!.substring(7)).exists()) ||
+                            java.io.File(currentlyReading.coverUri!!).exists()
+                        )
+
+                        val heroCoverData = remember(currentlyReading.coverUri) {
+                            if (currentlyReading.coverUri.isNullOrEmpty()) null
+                            else if (currentlyReading.coverUri!!.startsWith("content://")) {
+                                android.net.Uri.parse(currentlyReading.coverUri!!)
+                            } else {
+                                val path = if (currentlyReading.coverUri!!.startsWith("file://")) currentlyReading.coverUri!!.substring(7) else currentlyReading.coverUri!!
+                                java.io.File(path)
+                            }
+                        }
+
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val heroImageRequest = remember(currentlyReading.coverUri, heroCoverData) {
+                            if (heroCoverData == null) null else {
+                                val fileTimestamp = if (heroCoverData is java.io.File) heroCoverData.lastModified() else System.currentTimeMillis()
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(heroCoverData)
+                                    .memoryCacheKey("${currentlyReading.coverUri}_$fileTimestamp")
+                                    .diskCacheKey("${currentlyReading.coverUri}_$fileTimestamp")
+                                    .listener(
+                                        onSuccess = { _, _ ->
+                                            android.util.Log.d("EpubParser", "[COVER] UI Cover hero load success: ${currentlyReading.coverUri}")
+                                        },
+                                        onError = { _, result ->
+                                            android.util.Log.e("EpubParser", "[COVER] UI Cover hero load error for ${currentlyReading.coverUri}: ${result.throwable.message}")
+                                        }
+                                    )
+                                    .build()
+                            }
+                        }
+
                         Column {
                             Text(
                                 text = "正在阅读",
@@ -371,10 +408,58 @@ fun HomeScreen(
                                             )
                                             .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
                                             .shadow(6.dp, RoundedCornerShape(12.dp))
-                                            .padding(12.dp),
+                                            .clip(RoundedCornerShape(12.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        // Decorative spine overlay
+                                        if (heroHasValidCover && heroImageRequest != null) {
+                                            AsyncImage(
+                                                model = heroImageRequest,
+                                                contentDescription = currentlyReading.title,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(
+                                                        Brush.horizontalGradient(
+                                                            colors = listOf(
+                                                                Color.Black.copy(alpha = 0.15f),
+                                                                Color.Transparent,
+                                                                Color.Black.copy(alpha = 0.05f)
+                                                            ),
+                                                            startX = 0f,
+                                                            endX = 40f
+                                                        )
+                                                    )
+                                            )
+                                        } else {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center,
+                                                modifier = Modifier.padding(12.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = MintGold,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(10.dp))
+                                                Text(
+                                                    text = currentlyReading.title,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.DarkGray,
+                                                    maxLines = 3,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center,
+                                                    lineHeight = 16.sp
+                                                )
+                                            }
+                                        }
+
+                                        // Decorative spine overlay on top of everything
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxHeight()
@@ -382,29 +467,6 @@ fun HomeScreen(
                                                 .background(Color.Black.copy(alpha = 0.15f))
                                                 .align(Alignment.CenterStart)
                                         )
-
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.AutoAwesome,
-                                                contentDescription = null,
-                                                tint = MintGold,
-                                                modifier = Modifier.size(24.dp)
-                                            )
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            Text(
-                                                text = currentlyReading.title,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.DarkGray,
-                                                maxLines = 3,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Center,
-                                                lineHeight = 16.sp
-                                            )
-                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(16.dp))
@@ -566,6 +628,42 @@ fun HomeScreen(
                         }
                     } else {
                         items(items = filteredBooks, key = { it.id }) { book ->
+                            val hasValidCover = !book.coverUri.isNullOrEmpty() && (
+                                book.coverUri!!.startsWith("content://") ||
+                                (book.coverUri!!.startsWith("file://") && java.io.File(book.coverUri!!.substring(7)).exists()) ||
+                                java.io.File(book.coverUri!!).exists()
+                            )
+
+                            val coverData = remember(book.coverUri) {
+                                if (book.coverUri.isNullOrEmpty()) null
+                                else if (book.coverUri!!.startsWith("content://")) {
+                                    android.net.Uri.parse(book.coverUri!!)
+                                } else {
+                                    val path = if (book.coverUri!!.startsWith("file://")) book.coverUri!!.substring(7) else book.coverUri!!
+                                    java.io.File(path)
+                                }
+                            }
+
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            val imageRequest = remember(book.coverUri, coverData) {
+                                if (coverData == null) null else {
+                                    val fileTimestamp = if (coverData is java.io.File) coverData.lastModified() else System.currentTimeMillis()
+                                    coil.request.ImageRequest.Builder(context)
+                                        .data(coverData)
+                                        .memoryCacheKey("${book.coverUri}_$fileTimestamp")
+                                        .diskCacheKey("${book.coverUri}_$fileTimestamp")
+                                        .listener(
+                                            onSuccess = { _, _ ->
+                                                android.util.Log.d("EpubParser", "[COVER] UI Cover grid load success: ${book.coverUri}")
+                                            },
+                                            onError = { _, result ->
+                                                android.util.Log.e("EpubParser", "[COVER] UI Cover grid load error for ${book.coverUri}: ${result.throwable.message}")
+                                            }
+                                        )
+                                        .build()
+                                }
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .graphicsLayer {
@@ -594,10 +692,67 @@ fun HomeScreen(
                                         )
                                         .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
                                         .shadow(4.dp, RoundedCornerShape(10.dp))
-                                        .padding(8.dp),
+                                        .clip(RoundedCornerShape(10.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    // Cover Spine shadow overlay
+                                    if (hasValidCover && imageRequest != null) {
+                                        AsyncImage(
+                                            model = imageRequest,
+                                            contentDescription = book.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        // Subtle vertical shadow for paper depth
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(
+                                                    Brush.horizontalGradient(
+                                                        colors = listOf(
+                                                            Color.Black.copy(alpha = 0.15f),
+                                                            Color.Transparent,
+                                                            Color.Black.copy(alpha = 0.05f)
+                                                        ),
+                                                        startX = 0f,
+                                                        endX = 40f
+                                                    )
+                                                )
+                                        )
+                                    } else {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxHeight().padding(8.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.MenuBook,
+                                                contentDescription = null,
+                                                tint = MintPrimary.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            
+                                            Text(
+                                                text = book.title,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.DarkGray,
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Center,
+                                                lineHeight = 14.sp,
+                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            )
+
+                                            Text(
+                                                text = if (book.isComic) "漫画" else "TXT",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (book.isComic) Color(0xFFFF6B6B) else MintGold.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                    }
+
+                                    // Cover Spine shadow overlay on top of everything
                                     Box(
                                         modifier = Modifier
                                             .fillMaxHeight()
@@ -605,38 +760,6 @@ fun HomeScreen(
                                             .background(Color.Black.copy(alpha = 0.2f))
                                             .align(Alignment.CenterStart)
                                     )
-
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxHeight()
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.MenuBook,
-                                            contentDescription = null,
-                                            tint = MintPrimary.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        
-                                        Text(
-                                            text = book.title,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.DarkGray,
-                                            maxLines = 3,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center,
-                                            lineHeight = 14.sp,
-                                            modifier = Modifier.padding(horizontal = 4.dp)
-                                        )
-
-                                        Text(
-                                            text = if (book.isComic) "漫画" else "TXT",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (book.isComic) Color(0xFFFF6B6B) else MintGold.copy(alpha = 0.8f)
-                                        )
-                                    }
                                 }
                                 
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -709,7 +832,7 @@ fun HomeScreen(
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(
-                                                text = "连续 7 天",
+                                                text = "连续 ${streakDays} 天",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MintGold

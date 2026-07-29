@@ -237,7 +237,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recordTime(seconds: Long) {
+        if (seconds <= 0) return
         prefs.totalReadTimeSeconds += seconds
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val currentDaily = prefs.getDailyReadTime(todayStr)
+        prefs.setDailyReadTime(todayStr, currentDaily + seconds)
     }
 
     fun searchFullText(query: String) {

@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -28,6 +30,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,16 +61,31 @@ fun PageTurnContainer(
     onClickRight: () -> Unit,
     isBookmarked: Boolean = false,
     onToggleBookmark: (() -> Unit)? = null,
+    pageKey: Any = Unit,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val dragOffset = remember { Animatable(0f) }
-    val pullDownOffset = remember { Animatable(0f) }
-    var isDragging by remember { mutableStateOf(false) }
 
-    var totalDragX by remember { mutableFloatStateOf(0f) }
-    var totalDragY by remember { mutableFloatStateOf(0f) }
-    var dragMode by remember { mutableIntStateOf(0) } // 0: None, 1: Horizontal Turn, 2: Pull-Down Bookmark
+    // Stable animatables across page turns - never recreate/destroy on pageKey change
+    val dragOffset = remember { Animatable(0f) }
+    val dragOffsetY = remember { Animatable(0f) }
+    val pullDownOffset = remember { Animatable(0f) }
+    var touchDownY by remember { mutableFloatStateOf(0f) }
+
+    // Always keep latest references to callbacks for pointerInput gesture loop
+    val latestOnNextPage by rememberUpdatedState(onNextPage)
+    val latestOnPrevPage by rememberUpdatedState(onPrevPage)
+    val latestOnClickCenter by rememberUpdatedState(onClickCenter)
+    val latestOnClickLeft by rememberUpdatedState(onClickLeft)
+    val latestOnClickRight by rememberUpdatedState(onClickRight)
+    val latestOnToggleBookmark by rememberUpdatedState(onToggleBookmark)
+
+    // Reset offsets when pageKey changes (page turned)
+    LaunchedEffect(pageKey) {
+        dragOffset.snapTo(0f)
+        dragOffsetY.snapTo(0f)
+        pullDownOffset.snapTo(0f)
+    }
 
     val mode = PageTurnType.entries.firstOrNull { it.id == pageTurnMode } ?: PageTurnType.SIMULATE
 
@@ -76,50 +94,89 @@ fun PageTurnContainer(
             .fillMaxSize()
             .clipToBounds()
             .pointerInput(pageTurnMode) {
-                detectTapGestures(
-                    onTap = { tapOffset ->
-                        val screenWidth = size.width
-                        val leftZone = screenWidth * 0.3f
-                        val rightZone = screenWidth * 0.7f
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    touchDownY = down.position.y
+                    var totalX = 0f
+                    var totalY = 0f
+                    var isDrag = false
+                    var activeMode = 0 // 0: uncommitted, 1: horizontal page turn, 2: pull-down bookmark
 
-                        when {
-                            tapOffset.x < leftZone -> onClickLeft()
-                            tapOffset.x > rightZone -> onClickRight()
-                            else -> onClickCenter()
+                    val touchSlop = viewConfiguration.touchSlop
+                    val screenWidth = size.width.toFloat()
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val currentChange = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!currentChange.pressed) {
+                            break
+                        }
+
+                        val dragAmount = currentChange.positionChange()
+                        totalX += dragAmount.x
+                        totalY += dragAmount.y
+
+                        if (!isDrag) {
+                            if (abs(totalX) > touchSlop || abs(totalY) > touchSlop) {
+                                isDrag = true
+                                if (totalY > touchSlop && totalY > abs(totalX) * 1.1f) {
+                                    activeMode = 2 // Pull-Down Bookmark
+                                } else if (abs(totalX) > touchSlop) {
+                                    if (mode != PageTurnType.SCROLL) {
+                                        activeMode = 1 // Horizontal Page Turn
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isDrag) {
+                            currentChange.consume()
+                            if (activeMode == 1) {
+                                coroutineScope.launch {
+                                    dragOffset.snapTo(dragOffset.value + dragAmount.x)
+                                    dragOffsetY.snapTo(dragOffsetY.value + dragAmount.y)
+                                }
+                            } else if (activeMode == 2) {
+                                val rawY = totalY.coerceAtLeast(0f)
+                                val dampedPx = (rawY * 0.5f).coerceIn(0f, 160f)
+                                coroutineScope.launch {
+                                    pullDownOffset.snapTo(dampedPx)
+                                }
+                            }
                         }
                     }
-                )
-            }
-            .pointerInput(pageTurnMode) {
-                detectDragGestures(
-                    onDragStart = {
-                        isDragging = true
-                        totalDragX = 0f
-                        totalDragY = 0f
-                        dragMode = 0
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        val currentPull = pullDownOffset.value
-                        val thresholdPx = 80f // Easy and responsive pull-down threshold
 
-                        if (dragMode == 2 && (currentPull >= thresholdPx || totalDragY >= 160f)) {
-                            onToggleBookmark?.invoke()
-                        } else if (dragMode == 1 && mode != PageTurnType.SCROLL) {
+                    if (isDrag) {
+                        if (activeMode == 2) {
+                            val currentPull = pullDownOffset.value
+                            if (currentPull >= 80f || totalY >= 160f) {
+                                latestOnToggleBookmark?.invoke()
+                            }
+                            coroutineScope.launch {
+                                pullDownOffset.animateTo(
+                                    0f,
+                                    spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy)
+                                )
+                            }
+                        } else if (activeMode == 1 && mode != PageTurnType.SCROLL) {
                             val currentVal = dragOffset.value
-                            val screenWidth = size.width.toFloat()
                             val threshold = screenWidth * 0.15f
+
+                            coroutineScope.launch {
+                                dragOffsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                            }
 
                             if (abs(currentVal) > threshold) {
                                 coroutineScope.launch {
                                     val target = if (currentVal < 0) -screenWidth else screenWidth
-                                    dragOffset.animateTo(target, tween(200))
+                                    dragOffset.animateTo(target, tween(180))
                                     if (currentVal < 0) {
-                                        onNextPage()
+                                        latestOnNextPage()
                                     } else {
-                                        onPrevPage()
+                                        latestOnPrevPage()
                                     }
                                     dragOffset.snapTo(0f)
+                                    dragOffsetY.snapTo(0f)
                                 }
                             } else {
                                 coroutineScope.launch {
@@ -127,57 +184,40 @@ fun PageTurnContainer(
                                 }
                             }
                         }
+                    } else {
+                        val tapX = down.position.x
+                        val leftZone = screenWidth * 0.35f
+                        val rightZone = screenWidth * 0.65f
 
-                        coroutineScope.launch {
-                            pullDownOffset.animateTo(
-                                0f,
-                                spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy)
-                            )
-                        }
-                        coroutineScope.launch {
-                            dragOffset.animateTo(0f)
-                        }
-                        dragMode = 0
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        dragMode = 0
-                        coroutineScope.launch {
-                            pullDownOffset.animateTo(0f)
-                        }
-                        coroutineScope.launch {
-                            dragOffset.animateTo(0f)
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDragX += dragAmount.x
-                        totalDragY += dragAmount.y
-
-                        if (dragMode == 0) {
-                            if (totalDragY > 12f && totalDragY > abs(totalDragX) * 1.1f) {
-                                dragMode = 2 // Pull-Down Bookmark
-                            } else if (abs(totalDragX) > 12f && abs(totalDragX) > abs(totalDragY)) {
-                                if (mode != PageTurnType.SCROLL) {
-                                    dragMode = 1 // Horizontal Page Turn
+                        when {
+                            tapX < leftZone -> {
+                                if (mode == PageTurnType.SCROLL) {
+                                    latestOnClickLeft()
+                                } else {
+                                    coroutineScope.launch {
+                                        dragOffset.animateTo(-screenWidth * 0.05f, tween(60))
+                                        dragOffset.animateTo(screenWidth, tween(180))
+                                        latestOnPrevPage()
+                                        dragOffset.snapTo(0f)
+                                    }
                                 }
                             }
-                        }
-
-                        if (dragMode == 2) {
-                            val rawY = totalDragY.coerceAtLeast(0f)
-                            val dampedPx = (rawY * 0.5f).coerceIn(0f, 160f)
-                            coroutineScope.launch {
-                                pullDownOffset.snapTo(dampedPx)
+                            tapX > rightZone -> {
+                                if (mode == PageTurnType.SCROLL) {
+                                    latestOnClickRight()
+                                } else {
+                                    coroutineScope.launch {
+                                        dragOffset.animateTo(screenWidth * 0.05f, tween(60))
+                                        dragOffset.animateTo(-screenWidth, tween(180))
+                                        latestOnNextPage()
+                                        dragOffset.snapTo(0f)
+                                    }
+                                }
                             }
-                        } else if (dragMode == 1) {
-                            coroutineScope.launch {
-                                val newVal = dragOffset.value + dragAmount.x
-                                dragOffset.snapTo(newVal)
-                            }
+                            else -> latestOnClickCenter()
                         }
                     }
-                )
+                }
             }
     ) {
         val widthPx = constraints.maxWidth.toFloat()
@@ -269,6 +309,8 @@ fun PageTurnContainer(
                 PageTurnType.SIMULATE -> {
                     Simulate3DCurlLayout(
                         dragPx = currentDrag,
+                        dragPy = dragOffsetY.value,
+                        touchDownY = touchDownY,
                         widthPx = widthPx,
                         heightPx = heightPx,
                         currentContent = currentContent,
@@ -316,6 +358,8 @@ fun PageTurnContainer(
 @Composable
 private fun Simulate3DCurlLayout(
     dragPx: Float,
+    dragPy: Float,
+    touchDownY: Float,
     widthPx: Float,
     heightPx: Float,
     currentContent: @Composable () -> Unit,
@@ -329,15 +373,59 @@ private fun Simulate3DCurlLayout(
         }
 
         val isNext = dragPx < 0
-        val progress = (abs(dragPx) / widthPx).coerceIn(0f, 1f)
+        val absDragX = abs(dragPx)
+        val progress = (absDragX / widthPx).coerceIn(0f, 1f)
 
         if (isNext) {
+            // Next Page (Underneath)
             Box(modifier = Modifier.fillMaxSize()) {
                 nextContent()
             }
 
-            val foldX = widthPx + dragPx
+            // Math model core: anchor point F and touch point P
+            val isTopCorner = touchDownY < heightPx * 0.35f
+            val isBottomCorner = touchDownY > heightPx * 0.65f
+            val anchorY = when {
+                isTopCorner -> 0f
+                isBottomCorner -> heightPx
+                else -> touchDownY.coerceIn(0f, heightPx)
+            }
+            val anchorF = Offset(widthPx, anchorY)
+            val touchP = Offset(
+                (widthPx + dragPx).coerceIn(0f, widthPx),
+                (anchorY + dragPy).coerceIn(0f, heightPx)
+            )
 
+            val vectorV = Offset(touchP.x - anchorF.x, touchP.y - anchorF.y)
+            val distanceV = kotlin.math.hypot(vectorV.x, vectorV.y).coerceAtLeast(0.1f)
+            val midpointM = Offset((anchorF.x + touchP.x) / 2f, (anchorF.y + touchP.y) / 2f)
+
+            // Fold line direction angle in degrees
+            val foldLineAngleRad = kotlin.math.atan2(vectorV.y.toDouble(), vectorV.x.toDouble()) + (Math.PI / 2.0)
+            val foldLineDirectionDeg = Math.toDegrees(foldLineAngleRad).toFloat()
+
+            // Curl radius as a function of distance |V|
+            val curlRadius = 25f + 0.12f * distanceV
+            val arcOffset = (curlRadius * 0.6f * (1f - progress)).coerceIn(4f, 40f)
+
+            val creaseX = midpointM.x
+            val touchX = touchP.x
+            val flapWidth = creaseX - touchX
+            val dy = touchP.y - anchorY
+
+            // Calculate diagonal fold line endpoints
+            val foldTopX = if (isTopCorner) (creaseX + dy * 0.15f).coerceIn(0f, widthPx) else creaseX
+            val foldBottomX = if (isBottomCorner) (creaseX + dy * 0.15f).coerceIn(0f, widthPx) else creaseX
+            val foldTop = Offset(foldTopX, 0f)
+            val foldBottom = Offset(foldBottomX, heightPx)
+
+            // Calculate touch line endpoints
+            val touchTopX = if (isTopCorner) (touchX + dy * 0.15f).coerceIn(0f, widthPx) else touchX
+            val touchBottomX = if (isBottomCorner) (touchX + dy * 0.15f).coerceIn(0f, widthPx) else touchX
+            val touchTop = Offset(touchTopX, 0f)
+            val touchBottom = Offset(touchBottomX, heightPx)
+
+            // Build clip shape for current page (Flat Region)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -351,13 +439,33 @@ private fun Simulate3DCurlLayout(
                             ): Outline {
                                 val path = Path().apply {
                                     moveTo(0f, 0f)
-                                    lineTo(foldX, 0f)
-                                    cubicTo(
-                                        foldX - 15f * (1f - progress), heightPx * 0.35f,
-                                        foldX + 15f * (1f - progress), heightPx * 0.65f,
-                                        foldX, heightPx
-                                    )
                                     lineTo(0f, heightPx)
+                                    if (isTopCorner) {
+                                        lineTo(widthPx, heightPx)
+                                        lineTo(foldBottom.x, heightPx)
+                                        cubicTo(
+                                            creaseX - arcOffset, heightPx * 0.65f,
+                                            creaseX - arcOffset, heightPx * 0.35f,
+                                            foldTop.x, 0f
+                                        )
+                                    } else if (isBottomCorner) {
+                                        lineTo(foldBottom.x, heightPx)
+                                        cubicTo(
+                                            creaseX - arcOffset, heightPx * 0.65f,
+                                            creaseX - arcOffset, heightPx * 0.35f,
+                                            foldTop.x, 0f
+                                        )
+                                        lineTo(widthPx, 0f)
+                                    } else {
+                                        // Standard vertical drag must NOT keep top-right or bottom-right corner!
+                                        // It should clip strictly at the fold line crease!
+                                        lineTo(foldBottom.x, heightPx)
+                                        cubicTo(
+                                            creaseX - arcOffset, heightPx * 0.65f,
+                                            creaseX - arcOffset, heightPx * 0.35f,
+                                            foldTop.x, 0f
+                                        )
+                                    }
                                     close()
                                 }
                                 return Outline.Generic(path)
@@ -369,63 +477,150 @@ private fun Simulate3DCurlLayout(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val creaseX = foldX.coerceIn(0f, widthPx)
-                val shadowWidth = 50f * (1f - progress)
+                // Drop shadow cast onto next page (aligned with diagonal foldTop to foldBottom)
+                val shadowWidth = (curlRadius * 1.8f * (1f - progress)).coerceIn(0f, 100f)
                 if (shadowWidth > 0f) {
+                    val shadowPath = Path().apply {
+                        moveTo(foldTop.x, 0f)
+                        lineTo(foldBottom.x, heightPx)
+                        lineTo(foldBottom.x + shadowWidth, heightPx)
+                        lineTo(foldTop.x + shadowWidth, 0f)
+                        close()
+                    }
                     val shadowBrush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Black.copy(alpha = 0.35f * (1f - progress)),
-                            Color.Black.copy(alpha = 0.10f * (1f - progress)),
+                            Color.Black.copy(alpha = 0.12f * (1f - progress)),
                             Color.Transparent
                         ),
                         startX = creaseX,
                         endX = creaseX + shadowWidth
                     )
-                    drawRect(
-                        brush = shadowBrush,
-                        topLeft = Offset(creaseX, 0f),
-                        size = Size(shadowWidth, heightPx)
-                    )
+                    drawPath(path = shadowPath, brush = shadowBrush)
                 }
 
-                val flapWidth = (widthPx - creaseX) * 0.4f
-                val flapBackPath = Path().apply {
-                    moveTo(creaseX, 0f)
-                    cubicTo(
-                        creaseX - 15f * (1f - progress), heightPx * 0.35f,
-                        creaseX + 15f * (1f - progress), heightPx * 0.65f,
-                        creaseX, heightPx
+                // Inner crease shadow on current page (aligned with diagonal foldTop to foldBottom)
+                val innerShadowWidth = (curlRadius * 1.0f).coerceIn(15f, 60f)
+                if (creaseX > innerShadowWidth) {
+                    val innerShadowPath = Path().apply {
+                        moveTo(foldTop.x - innerShadowWidth, 0f)
+                        lineTo(foldBottom.x - innerShadowWidth, heightPx)
+                        lineTo(foldBottom.x, heightPx)
+                        lineTo(foldTop.x, 0f)
+                        close()
+                    }
+                    val innerShadowBrush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.25f * (1f - progress))
+                        ),
+                        startX = creaseX - innerShadowWidth,
+                        endX = creaseX
                     )
-                    lineTo((creaseX - flapWidth).coerceAtLeast(0f), heightPx)
-                    lineTo((creaseX - flapWidth).coerceAtLeast(0f), 0f)
-                    close()
+                    drawPath(path = innerShadowPath, brush = innerShadowBrush)
                 }
 
-                val flapBrush = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color(0xFFE8E5DF),
-                        Color(0xFFF7F5F0),
-                        Color(0xFFD3CEC5)
-                    ),
-                    startX = creaseX - flapWidth,
-                    endX = creaseX
-                )
+                // Turned Flap Backside Path (Paper Backside)
+                if (flapWidth > 1f) {
+                    val flapPath = Path().apply {
+                        moveTo(foldTop.x, 0f)
+                        cubicTo(
+                            creaseX - arcOffset, heightPx * 0.35f,
+                            creaseX - arcOffset, heightPx * 0.65f,
+                            foldBottom.x, heightPx
+                        )
+                        lineTo(touchBottom.x, heightPx)
+                        cubicTo(
+                            touchX - arcOffset * 0.5f, heightPx * 0.65f,
+                            touchX - arcOffset * 0.5f, heightPx * 0.35f,
+                            touchTop.x, 0f
+                        )
+                        close()
+                    }
 
-                drawPath(path = flapBackPath, brush = flapBrush)
+                    // A beautiful matte, Lambertian warm beige gradient (no high-gloss plastic/metallic specular)
+                    val flapBrush = Brush.linearGradient(
+                        0.0f to Color(0xFF2C2216).copy(alpha = 0.42f), // Fold crease shadow (warm sepia)
+                        0.15f to Color(0xFFDFD4B2),                    // Cream shaded paper shadow
+                        0.45f to Color(0xFFFAF3DC),                    // Soft diffused light (no bright specular peak)
+                        0.80f to Color(0xFFF5ECD2),                    // Natural matte paper body
+                        1.0f to Color(0xFFD2C7B1),                     // Warm outer edge shadow
+                        start = midpointM,
+                        end = touchP
+                    )
 
-                drawLine(
-                    color = Color.White.copy(alpha = 0.8f),
-                    start = Offset(creaseX, 0f),
-                    end = Offset(creaseX, heightPx),
-                    strokeWidth = 2f
-                )
+                    drawPath(path = flapPath, brush = flapBrush)
+
+                    // Draw laid paper vertical ribs (extremely subtle matte texture)
+                    drawContext.canvas.save()
+                    drawContext.canvas.clipPath(flapPath)
+                    var x = creaseX.coerceAtMost(touchX)
+                    val endX = creaseX.coerceAtLeast(touchX)
+                    while (x < endX) {
+                        drawLine(
+                            color = Color(0xFF5C4E3B).copy(alpha = 0.03f),
+                            start = Offset(x, 0f),
+                            end = Offset(x, heightPx),
+                            strokeWidth = 1f
+                        )
+                        x += 6f
+                    }
+                    drawContext.canvas.restore()
+
+                    // Subtle paper edge shadow instead of stark white line
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.12f),
+                        start = foldTop,
+                        end = foldBottom,
+                        strokeWidth = 1.5f
+                    )
+                }
             }
         } else {
+            // Previous Page (Flipping Backward)
             Box(modifier = Modifier.fillMaxSize()) {
                 currentContent()
             }
 
-            val foldX = dragPx
+            val isTopCorner = touchDownY < heightPx * 0.35f
+            val isBottomCorner = touchDownY > heightPx * 0.65f
+            val anchorY = when {
+                isTopCorner -> 0f
+                isBottomCorner -> heightPx
+                else -> touchDownY.coerceIn(0f, heightPx)
+            }
+            val anchorF = Offset(0f, anchorY)
+            val touchP = Offset(
+                dragPx.coerceIn(0f, widthPx),
+                (anchorY + dragPy).coerceIn(0f, heightPx)
+            )
+
+            val vectorV = Offset(touchP.x - anchorF.x, touchP.y - anchorF.y)
+            val distanceV = kotlin.math.hypot(vectorV.x, vectorV.y).coerceAtLeast(0.1f)
+            val midpointM = Offset((anchorF.x + touchP.x) / 2f, (anchorF.y + touchP.y) / 2f)
+
+            val foldLineAngleRad = kotlin.math.atan2(vectorV.y.toDouble(), vectorV.x.toDouble()) + (Math.PI / 2.0)
+            val foldLineDirectionDeg = Math.toDegrees(foldLineAngleRad).toFloat()
+
+            val curlRadius = 25f + 0.12f * distanceV
+            val arcOffset = (curlRadius * 0.6f * (1f - progress)).coerceIn(4f, 40f)
+
+            val creaseX = midpointM.x
+            val touchX = touchP.x
+            val flapWidth = touchX - creaseX
+            val dy = touchP.y - anchorY
+
+            // Calculate diagonal fold line endpoints
+            val foldTopX = if (isTopCorner) (creaseX + dy * 0.15f).coerceIn(0f, widthPx) else creaseX
+            val foldBottomX = if (isBottomCorner) (creaseX + dy * 0.15f).coerceIn(0f, widthPx) else creaseX
+            val foldTop = Offset(foldTopX, 0f)
+            val foldBottom = Offset(foldBottomX, heightPx)
+
+            // Calculate touch line endpoints
+            val touchTopX = if (isTopCorner) (touchX + dy * 0.15f).coerceIn(0f, widthPx) else touchX
+            val touchBottomX = if (isBottomCorner) (touchX + dy * 0.15f).coerceIn(0f, widthPx) else touchX
+            val touchTop = Offset(touchTopX, 0f)
+            val touchBottom = Offset(touchBottomX, heightPx)
 
             Box(
                 modifier = Modifier
@@ -440,11 +635,11 @@ private fun Simulate3DCurlLayout(
                             ): Outline {
                                 val path = Path().apply {
                                     moveTo(0f, 0f)
-                                    lineTo(foldX, 0f)
+                                    lineTo(foldTop.x, 0f)
                                     cubicTo(
-                                        foldX + 15f * (1f - progress), heightPx * 0.35f,
-                                        foldX - 15f * (1f - progress), heightPx * 0.65f,
-                                        foldX, heightPx
+                                        creaseX + arcOffset, heightPx * 0.35f,
+                                        creaseX + arcOffset, heightPx * 0.65f,
+                                        foldBottom.x, heightPx
                                     )
                                     lineTo(0f, heightPx)
                                     close()
@@ -458,31 +653,82 @@ private fun Simulate3DCurlLayout(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val creaseX = foldX.coerceIn(0f, widthPx)
-                val shadowWidth = 50f * (1f - progress)
+                // Drop shadow cast onto the current page (on the right of touchX)
+                val shadowWidth = (curlRadius * 1.8f * (1f - progress)).coerceIn(0f, 100f)
                 if (shadowWidth > 0f) {
+                    val shadowPath = Path().apply {
+                        moveTo(touchTop.x, 0f)
+                        lineTo(touchBottom.x, heightPx)
+                        lineTo(touchBottom.x + shadowWidth, heightPx)
+                        lineTo(touchTop.x + shadowWidth, 0f)
+                        close()
+                    }
                     val shadowBrush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Black.copy(alpha = 0.35f * (1f - progress)),
-                            Color.Black.copy(alpha = 0.10f * (1f - progress)),
+                            Color.Black.copy(alpha = 0.12f * (1f - progress)),
                             Color.Transparent
                         ),
-                        startX = creaseX,
-                        endX = creaseX + shadowWidth
+                        startX = touchX,
+                        endX = touchX + shadowWidth
                     )
-                    drawRect(
-                        brush = shadowBrush,
-                        topLeft = Offset(creaseX, 0f),
-                        size = Size(shadowWidth, heightPx)
-                    )
+                    drawPath(path = shadowPath, brush = shadowBrush)
                 }
 
-                drawLine(
-                    color = Color.White.copy(alpha = 0.8f),
-                    start = Offset(creaseX, 0f),
-                    end = Offset(creaseX, heightPx),
-                    strokeWidth = 2f
-                )
+                if (flapWidth > 1f) {
+                    val flapPath = Path().apply {
+                        moveTo(foldTop.x, 0f)
+                        cubicTo(
+                            creaseX + arcOffset, heightPx * 0.35f,
+                            creaseX + arcOffset, heightPx * 0.65f,
+                            foldBottom.x, heightPx
+                        )
+                        lineTo(touchBottom.x, heightPx)
+                        cubicTo(
+                            touchX + arcOffset * 0.5f, heightPx * 0.65f,
+                            touchX + arcOffset * 0.5f, heightPx * 0.35f,
+                            touchTop.x, 0f
+                        )
+                        close()
+                    }
+
+                    // A beautiful matte, Lambertian warm beige gradient (no high-gloss plastic/metallic specular)
+                    val flapBrush = Brush.linearGradient(
+                        0.0f to Color(0xFF2C2216).copy(alpha = 0.42f), // Fold crease shadow (warm sepia)
+                        0.15f to Color(0xFFDFD4B2),                    // Cream shaded paper shadow
+                        0.45f to Color(0xFFFAF3DC),                    // Soft diffused light (no bright specular peak)
+                        0.80f to Color(0xFFF5ECD2),                    // Natural matte paper body
+                        1.0f to Color(0xFFD2C7B1),                     // Warm outer edge shadow
+                        start = midpointM,
+                        end = touchP
+                    )
+
+                    drawPath(path = flapPath, brush = flapBrush)
+
+                    // Draw laid paper vertical ribs (extremely subtle matte texture)
+                    drawContext.canvas.save()
+                    drawContext.canvas.clipPath(flapPath)
+                    var x = creaseX.coerceAtMost(touchX)
+                    val endX = creaseX.coerceAtLeast(touchX)
+                    while (x < endX) {
+                        drawLine(
+                            color = Color(0xFF5C4E3B).copy(alpha = 0.03f),
+                            start = Offset(x, 0f),
+                            end = Offset(x, heightPx),
+                            strokeWidth = 1f
+                        )
+                        x += 6f
+                    }
+                    drawContext.canvas.restore()
+
+                    // Subtle paper edge shadow instead of stark white line
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.12f),
+                        start = foldTop,
+                        end = foldBottom,
+                        strokeWidth = 1.5f
+                    )
+                }
             }
         }
     }

@@ -11,6 +11,9 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books")
     suspend fun getBooksCount(): Int
 
+    @Query("SELECT COUNT(*) FROM books WHERE filePath = :filePath")
+    suspend fun getBookCountByFilePath(filePath: String): Int
+
     @Query("SELECT * FROM books WHERE id = :id")
     suspend fun getBookById(id: Int): Book?
 

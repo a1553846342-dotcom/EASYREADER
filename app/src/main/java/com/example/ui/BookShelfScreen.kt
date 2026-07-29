@@ -30,9 +30,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import com.example.ui.components.AppButton
 import com.example.ui.components.AppIconButton
@@ -244,116 +250,244 @@ fun BookCardItem(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
+    var isPressed by remember { mutableStateOf(false) }
+    val rotationYAnim by animateFloatAsState(
+        targetValue = if (isPressed) -2f else -6f,
+        animationSpec = tween(durationMillis = 150),
+        label = "book_rotation"
+    )
+    val translationZAnim by animateFloatAsState(
+        targetValue = if (isPressed) 2f else 8f,
+        animationSpec = tween(durationMillis = 150),
+        label = "book_elevation"
+    )
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(210.dp)
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(16.dp))
-            .clickableWithFeedback { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            .height(220.dp)
+            .graphicsLayer {
+                rotationY = rotationYAnim
+                cameraDistance = 16f * density
+                shadowElevation = translationZAnim
+                shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+                clip = false
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onClick() }
+                )
+            }
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Optional cover image background if coverUri is present
-            if (!book.coverUri.isNullOrEmpty()) {
-                val coverFile = java.io.File(book.coverUri)
-                if (coverFile.exists()) {
+        // Main 3D Book Body Container
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+                )
+                .background(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+                )
+        ) {
+            // 1. Book Spine (Left Edge 3D Binding)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(12.dp)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFF1E2022),
+                                Color(0xFF3A3D40),
+                                Color(0xFF282A2C)
+                            )
+                        )
+                    )
+            ) {
+                // Spine golden line accent
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(2.dp)
+                        .align(Alignment.CenterEnd)
+                        .background(Color(0xFFD4AF37).copy(alpha = 0.6f))
+                )
+            }
+
+            // 2. Book Cover & Content Area
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
+            ) {
+                val hasValidCover = !book.coverUri.isNullOrEmpty() && java.io.File(book.coverUri!!).exists()
+                android.util.Log.d("EpubParser", "[COVER] 书架UI读取到的 coverPath: ${book.coverUri}")
+
+                if (hasValidCover) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val imageRequest = remember(book.coverUri) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(java.io.File(book.coverUri!!))
+                            .listener(
+                                onSuccess = { _, _ ->
+                                    android.util.Log.d("EpubParser", "[COVER] 图片加载库（Glide/Coil/Picasso等）加载该路径结果: 成功")
+                                },
+                                onError = { _, result ->
+                                    android.util.Log.e("EpubParser", "[COVER] 图片加载库（Glide/Coil/Picasso等）加载该路径结果: 失败, ${result.throwable.message}")
+                                }
+                            )
+                            .build()
+                    }
+
+                    // Full cover image with subtle glossy overlay
                     coil.compose.AsyncImage(
-                        model = coverFile,
-                        contentDescription = null,
+                        model = imageRequest,
+                        contentDescription = book.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    // Gradient dark overlay for text legibility at bottom
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.05f)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        alpha = 0.22f
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.35f),
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.75f)
+                                    )
+                                )
+                            )
                     )
-                }
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (book.isComic) Color(0xFFFF6B6B).copy(alpha = 0.18f) else MintPrimary.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = if (book.isComic) "漫画" else "TXT",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (book.isComic) Color(0xFFFF6B6B) else MintPrimary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    AppIconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "删除",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                Column {
-                    Text(
-                        text = book.title,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = book.author,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
-
-                Column {
-                    val progressText = if (book.totalChapters > 0) {
-                        "已读 ${((book.currentChapterIndex + 1).toFloat() / book.totalChapters * 100).toInt()}%"
-                    } else "未读"
-
-                    LinearProgressIndicator(
-                        progress = {
-                            if (book.totalChapters > 0) {
-                                (book.currentChapterIndex + 1).toFloat() / book.totalChapters
-                            } else 0f
-                        },
+                } else {
+                    // Styled elegant book cover background
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
-                        color = if (book.isComic) Color(0xFFFF6B6B) else MintPrimary,
-                        trackColor = (if (book.isComic) Color(0xFFFF6B6B) else MintPrimary).copy(alpha = 0.2f)
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = progressText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (book.isComic) Color(0xFFFF6B6B) else MintSecondary
+                            .fillMaxSize()
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = if (book.isComic) {
+                                        listOf(Color(0xFFFF8E8E), Color(0xFFFF5252))
+                                    } else {
+                                        listOf(Color(0xFF2E3D49), Color(0xFF1A2630))
+                                    }
+                                )
+                            )
                     )
                 }
+
+                // Foreground Information
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (book.isComic) Color(0xFFFF6B6B) else MintPrimary
+                        ) {
+                            Text(
+                                text = if (book.isComic) "漫画" else "EPUB/TXT",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        AppIconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "删除",
+                                tint = if (hasValidCover) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Column {
+                        Text(
+                            text = book.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 18.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = book.author,
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.8f),
+                            maxLines = 1
+                        )
+                    }
+
+                    Column {
+                        val progressText = if (book.totalChapters > 0) {
+                            "已读 ${((book.currentChapterIndex + 1).toFloat() / book.totalChapters * 100).toInt()}%"
+                        } else "未读"
+
+                        LinearProgressIndicator(
+                            progress = {
+                                if (book.totalChapters > 0) {
+                                    (book.currentChapterIndex + 1).toFloat() / book.totalChapters
+                                } else 0f
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp),
+                            color = if (book.isComic) Color(0xFFFF6B6B) else MintPrimary,
+                            trackColor = Color.White.copy(alpha = 0.3f)
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = progressText,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.9f)
+                        )
+                    }
+                }
             }
+
+            // 3. Book Paper Thickness (Right Edge Pages Stack)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(6.dp)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFFE8E2CE),
+                                Color(0xFFFBF8EE),
+                                Color(0xFFDCD6C2)
+                            )
+                        )
+                    )
+            )
         }
     }
 }

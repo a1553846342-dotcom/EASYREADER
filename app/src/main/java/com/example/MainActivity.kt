@@ -197,6 +197,7 @@ class MainActivity : ComponentActivity() {
                                                     selectedTab = 1
                                                 },
                                                 totalReadTimeSeconds = viewModel.prefs.totalReadTimeSeconds,
+                                                streakDays = viewModel.prefs.calculateStreak(),
                                                 onDeleteBook = { book ->
                                                     viewModel.deleteBook(book)
                                                 }

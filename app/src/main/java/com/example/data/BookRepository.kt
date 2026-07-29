@@ -72,6 +72,9 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     suspend fun importBookFromUri(uri: Uri, fileName: String): Result<Book> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("BookImport", "[BookRepository] Starting streaming import: $fileName, uri: $uri")
+            if (EpubParser.isEpubFile(fileName)) {
+                return@withContext EpubParser.importEpub(context, uri, fileName, bookDao)
+            }
             if (ComicParser.isComicFile(fileName)) {
                 return@withContext ComicParser.importComic(context, uri, fileName, bookDao)
             }
@@ -259,33 +262,54 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     }
 
     suspend fun checkAndSeedDefaultBooks() = withContext(Dispatchers.IO) {
-        if (bookDao.getBooksCount() > 0) return@withContext
+        val testNovelTitle = "5页测试小说：星海漫游纪"
+        val sampleTestNovelCount = bookDao.getBookCountByFilePath("sample_test_novel")
 
-        // 1. Seed Sample Novel
-        val novelTitle = "示例小说：极简阅读体验指南"
-        val novelBook = Book(
-            title = novelTitle,
-            author = "系统示例",
-            filePath = "sample_novel",
-            totalChapters = 2,
-            contentType = "NOVEL"
-        )
-        val novelId = bookDao.insertBook(novelBook).toInt()
-        val novelChapters = listOf(
-            Chapter(
-                bookId = novelId,
-                chapterOrder = 0,
-                title = "第一章 欢迎使用极简阅读器",
-                content = "欢迎使用极简阅读器！\n\n这是一款专为小说与漫画爱好者打造的高颜值、轻量级阅读应用。\n\n【核心特色】\n1. 支持 TXT 小说与 CBZ / ZIP / PDF 漫画格式。\n2. 支持书签、高亮划线、进度同步与阅读统计。\n3. 极简护眼模式与自定义排版样式。\n\n点击屏幕中央可呼出阅读菜单，进行字号与背景调节。"
-            ),
-            Chapter(
-                bookId = novelId,
-                chapterOrder = 1,
-                title = "第二章 快捷操作技巧",
-                content = "【常用操作说明】\n\n1. 导入新书：在书库或首页点击‘导入新书’按钮，选择本地 TXT 文本或 CBZ/ZIP/PDF 漫画文件即可。\n2. 分类管理：可以在书库页面自由创建自定义分类标签并归类。\n3. 朗读与统计：支持语音朗读（TTS）与周阅读时长统计柱状图。\n\n祝您阅读愉快！"
+        if (sampleTestNovelCount == 0) {
+            // Seed 5-Page Test Novel
+            val novelBook = Book(
+                title = testNovelTitle,
+                author = "测试专用",
+                filePath = "sample_test_novel",
+                totalChapters = 5,
+                contentType = "NOVEL"
             )
-        )
-        bookDao.insertChapters(novelChapters)
+            val novelId = bookDao.insertBook(novelBook).toInt()
+            val novelChapters = listOf(
+                Chapter(
+                    bookId = novelId,
+                    chapterOrder = 0,
+                    title = "第一页：启航与星空",
+                    content = "【第 1 页 / 共 5 页】\n\n浩瀚的星海在舷窗外缓缓流转，沉寂的宇宙犹如无边无际的深蓝织锦。\n\n探索号飞船徐徐启动曲率引擎，尾焰划破夜空。这是星际探险家迈向未知星系的第一步。\n\n请点击屏幕右侧或向左滑动，翻至【第二页】继续阅读测试。"
+                ),
+                Chapter(
+                    bookId = novelId,
+                    chapterOrder = 1,
+                    title = "第二页：深空信号",
+                    content = "【第 2 页 / 共 5 页】\n\n飞船的离散感应器捕捉到了来自猎户座旋臂边缘的微弱脉冲信号。\n\n频率稳定，节奏明快，宛如远古文明发出的问候。队长紧盯显示屏，指令飞行员调转航向，直奔信号源头。\n\n请点击屏幕右侧或向左滑动，翻至【第三页】继续阅读测试。"
+                ),
+                Chapter(
+                    bookId = novelId,
+                    chapterOrder = 2,
+                    title = "第三页：遗迹遗风",
+                    content = "【第 3 页 / 共 5 页】\n\n穿过漫长的曲率隧道，眼前出现了一座巨大无朋的古代环形空间站。\n\n空间站外壁雕刻着神秘的星图符文，历经千万年沧桑依然熠熠生辉。队员们身穿防护服，缓步踏入遗迹闸门。\n\n请点击屏幕右侧或向左滑动，翻至【第四页】继续阅读测试。"
+                ),
+                Chapter(
+                    bookId = novelId,
+                    chapterOrder = 3,
+                    title = "第四页：光明之界",
+                    content = "【第 4 页 / 共 5 页】\n\n环形空间站核心处散发着柔和而温暖的光芒，仿佛无尽黑夜中的避风港。\n\n主控台水晶矩阵亮起，展现出整个银河系的壮丽全景图。探险队长记录下这历史性的一刻，心中充满了震撼。\n\n请点击屏幕右侧或向左滑动，翻至【第五页】完成翻页验证。"
+                ),
+                Chapter(
+                    bookId = novelId,
+                    chapterOrder = 4,
+                    title = "第五页：新纪元的黎明",
+                    content = "【第 5 页 / 共 5 页】\n\n当第一缕恒星风拂过飞船的装甲，测试员成功完成了全部 5 页的连续翻页验证！\n\n【测试结果确认】\n恭喜！第一页 → 第二页 → 第三页 → 第四页 → 第五页 连续翻页平滑顺畅，无回退，状态无错乱。\n\n感谢您参与极简阅读器的功能测试！"
+                )
+            )
+            bookDao.insertChapters(novelChapters)
+        }
+
 
         // 2. Seed Sample Comic
         try {
@@ -347,5 +371,17 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        // 3. Seed Sample EPUB3 Book
+        try {
+            if (bookDao.getBookCountByFilePath("sample_epub3.epub") == 0) {
+                val epub3File = EpubParser.createSampleEpubFile(context, isEpub3 = true)
+                val uri = android.net.Uri.fromFile(epub3File)
+                EpubParser.importEpub(context, uri, epub3File.name, bookDao)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("BookRepository", "Error seeding sample EPUB3", e)
+        }
+
     }
 }
