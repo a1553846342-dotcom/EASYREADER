@@ -1,0 +1,1131 @@
+package com.example.ui
+
+import android.app.Activity
+import android.net.Uri
+import android.view.WindowManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import coil.compose.AsyncImage
+import com.example.R
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.*
+import com.example.ui.pageturn.PageTurnContainer
+import com.example.ui.pageturn.PageTurnType
+import com.example.ui.components.CustomSwitch
+import com.example.ui.components.AppIconButton
+import com.example.ui.components.AppButton
+import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.theme.MintGold
+import com.example.ui.theme.MintPrimary
+import com.example.ui.theme.MintSecondary
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReaderScreen(
+    book: Book?,
+    bookTitle: String,
+    chapters: List<Chapter>,
+    onBack: () -> Unit,
+    onUpdateProgress: (Int, Int, Int, Boolean) -> Unit,
+    prefs: PreferencesManager,
+    ttsManager: TtsManager,
+    highlights: List<Highlight>,
+    bookmarks: List<Bookmark>,
+    onAddBookmark: (Int, Int, Int, String, String) -> Unit,
+    onDeleteBookmark: (Int) -> Unit,
+    onAddHighlight: (Int, Int, String, String, String) -> Unit,
+    onDeleteHighlight: (Int) -> Unit,
+    searchResults: List<SearchResultItem>,
+    isSearching: Boolean,
+    onSearch: (String) -> Unit,
+    onRecordTime: (Long) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var showTocSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showSearchDialog by remember { mutableStateOf(false) }
+    var showAnnotationsSheet by remember { mutableStateOf(false) }
+    var showEasterEgg by remember { mutableStateOf(false) }
+    var showTtsBar by remember { mutableStateOf(false) }
+    var showRestDialog by remember { mutableStateOf(false) }
+
+    var currentChapterIndex by remember(book) { mutableIntStateOf(book?.currentChapterIndex ?: 0) }
+    var showBars by remember { mutableStateOf(false) }
+
+    var previousPosition by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var showReturnChip by remember { mutableStateOf(false) }
+
+    var fontSize by remember { mutableFloatStateOf(prefs.fontSize) }
+    var lineHeight by remember { mutableFloatStateOf(prefs.lineHeight) }
+    var marginHorizontal by remember { mutableIntStateOf(prefs.marginHorizontal) }
+    var firstLineIndent by remember { mutableStateOf(prefs.firstLineIndent) }
+    var readerTheme by remember { mutableIntStateOf(prefs.readerTheme) }
+    var fontFamilyIndex by remember { mutableIntStateOf(prefs.fontFamilyIndex) }
+    var pageTurnMode by remember { mutableIntStateOf(prefs.pageTurnMode) }
+
+    val isTtsPlaying by ttsManager.isPlaying.collectAsState()
+    var searchKeyword by remember { mutableStateOf("") }
+
+    var customPosterUri by remember { mutableStateOf(prefs.customSplashPosterUri) }
+    val readerPosterLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(it)
+                val file = java.io.File(context.filesDir, "custom_poster.jpg")
+                inputStream?.use { input ->
+                    file.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                val localUriStr = Uri.fromFile(file).toString()
+                customPosterUri = localUriStr
+                prefs.customSplashPosterUri = localUriStr
+                Toast.makeText(context, "开屏海报已更新", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "图片设置失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val currentChapter = chapters.getOrNull(currentChapterIndex)
+    val scrollState = rememberScrollState()
+
+    DisposableEffect(prefs.keepScreenOn) {
+        val activity = context as? Activity
+        if (prefs.keepScreenOn) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        var elapsedSeconds = 0L
+        while (true) {
+            delay(1000)
+            elapsedSeconds++
+            if (elapsedSeconds % 30 == 0L) {
+                onRecordTime(30)
+            }
+            val restMins = prefs.restReminderMinutes
+            if (restMins > 0 && elapsedSeconds > 0 && elapsedSeconds % (restMins * 60) == 0L) {
+                showRestDialog = true
+            }
+        }
+    }
+
+    LaunchedEffect(book, chapters) {
+        if (book != null && chapters.isNotEmpty() && book.scrollOffset > 0) {
+            if (currentChapterIndex == book.currentChapterIndex) {
+                scrollState.scrollTo(book.scrollOffset)
+            }
+        }
+    }
+
+    LaunchedEffect(currentChapterIndex, scrollState.value) {
+        if (book != null && chapters.isNotEmpty()) {
+            val isFinished = currentChapterIndex == chapters.size - 1 && scrollState.value > 100
+            onUpdateProgress(book.id, currentChapterIndex, scrollState.value, isFinished)
+        }
+    }
+
+    val (bgColor, textColor) = when (readerTheme) {
+        0 -> Color.White to Color(0xFF18191C) // Pure Light
+        1 -> Color.White to Color(0xFF18191C) // Default White
+        2 -> Color(0xFFFBF0D9) to Color(0xFF5F4B32) // Sepia
+        3 -> Color(0xFF18191C) to Color(0xFFD4D4D4) // Dark
+        4 -> Color(0xFFE8F5E9) to Color(0xFF1B5E20) // Eye Green
+        5 -> Color.Black to Color(0xFFE0E0E0) // OLED Black
+        else -> Color.White to Color(0xFF18191C)
+    }
+
+    val selectedFontFamily = when (fontFamilyIndex) {
+        1 -> FontFamily.Serif
+        2 -> FontFamily.SansSerif
+        3 -> FontFamily.Monospace
+        else -> FontFamily.Default
+    }
+
+    val formattedContent = remember(currentChapter, firstLineIndent) {
+        val text = currentChapter?.content ?: ""
+        if (firstLineIndent) {
+            text.split("\n").joinToString("\n") { line ->
+                if (line.isNotBlank() && !line.startsWith("\u3000\u3000")) "\u3000\u3000$line" else line
+            }
+        } else {
+            text
+        }
+    }
+
+    var currentSubPageIndex by remember(currentChapterIndex) { mutableIntStateOf(0) }
+    val isScrollMode = pageTurnMode == PageTurnType.SCROLL.id
+
+    val pagesList = remember(formattedContent, fontSize, isScrollMode) {
+        if (isScrollMode || formattedContent.isEmpty()) {
+            listOf(formattedContent)
+        } else {
+            val charLimit = (420 * (18f / fontSize.coerceAtLeast(12f))).toInt().coerceIn(200, 800)
+            val list = mutableListOf<String>()
+            var start = 0
+            while (start < formattedContent.length) {
+                var end = (start + charLimit).coerceAtMost(formattedContent.length)
+                if (end < formattedContent.length) {
+                    val sub = formattedContent.substring(start, end)
+                    val lastBreak = sub.lastIndexOfAny(charArrayOf('\n', '。', '！', '？', '；', ' '))
+                    if (lastBreak > charLimit / 3) {
+                        end = start + lastBreak + 1
+                    }
+                }
+                list.add(formattedContent.substring(start, end))
+                start = end
+            }
+            if (list.isEmpty()) listOf(formattedContent) else list
+        }
+    }
+
+    val activeSubPageIndex = currentSubPageIndex.coerceIn(0, (pagesList.size - 1).coerceAtLeast(0))
+
+    val handleNextPage = {
+        if (isScrollMode) {
+            if (currentChapterIndex < chapters.size - 1) {
+                currentChapterIndex++
+                scope.launch { scrollState.scrollTo(0) }
+            }
+        } else {
+            if (activeSubPageIndex < pagesList.size - 1) {
+                currentSubPageIndex = activeSubPageIndex + 1
+            } else if (currentChapterIndex < chapters.size - 1) {
+                currentChapterIndex++
+                currentSubPageIndex = 0
+            }
+        }
+    }
+
+    val handlePrevPage = {
+        if (isScrollMode) {
+            if (currentChapterIndex > 0) {
+                currentChapterIndex--
+                scope.launch { scrollState.scrollTo(0) }
+            }
+        } else {
+            if (activeSubPageIndex > 0) {
+                currentSubPageIndex = activeSubPageIndex - 1
+            } else if (currentChapterIndex > 0) {
+                currentChapterIndex--
+                currentSubPageIndex = 9999
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+            .drawBehind {
+                if (prefs.blueLightFilter) {
+                    drawRect(Color(0xFFFF9800).copy(alpha = prefs.blueLightAlpha))
+                }
+            }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+
+            if (chapters.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MintPrimary)
+                }
+            } else {
+                currentChapter?.let { chapter ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, _, zoom, _ ->
+                                    if (zoom != 1.0f) {
+                                        val newSize = (fontSize * zoom).coerceIn(12f, 36f)
+                                        fontSize = newSize
+                                        prefs.fontSize = newSize
+                                    }
+                                }
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                
+                        ) {
+                            if (prefs.showOverlayHeaderFooter && !showBars) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(chapter.title, fontSize = 10.sp, color = textColor.copy(alpha = 0.5f), maxLines = 1)
+                                    val timeStr = remember { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
+                                    Text(timeStr, fontSize = 10.sp, color = textColor.copy(alpha = 0.5f))
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                            ) {
+                                PageTurnContainer(
+                                    pageTurnMode = pageTurnMode,
+                                    currentContent = {
+                                        if (isScrollMode) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .verticalScroll(scrollState)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
+                                            ) {
+                                                Text(
+                                                    text = chapter.title,
+                                                    style = MaterialTheme.typography.headlineSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = textColor,
+                                                    modifier = Modifier.padding(bottom = 20.dp, top = if (!showBars) 12.dp else 0.dp)
+                                                )
+
+                                                SelectionContainer {
+                                                    Text(
+                                                        text = formattedContent,
+                                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                                            fontSize = fontSize.sp,
+                                                            lineHeight = lineHeight.sp,
+                                                            fontFamily = selectedFontFamily,
+                                                            color = textColor.copy(alpha = 0.92f)
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(bgColor)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
+                                            ) {
+                                                if (activeSubPageIndex == 0) {
+                                                    Text(
+                                                        text = chapter.title,
+                                                        style = MaterialTheme.typography.headlineSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = textColor,
+                                                        modifier = Modifier.padding(bottom = 12.dp, top = if (!showBars) 8.dp else 0.dp)
+                                                    )
+                                                }
+
+                                                SelectionContainer(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = pagesList.getOrNull(activeSubPageIndex) ?: "",
+                                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                                            fontSize = fontSize.sp,
+                                                            lineHeight = lineHeight.sp,
+                                                            fontFamily = selectedFontFamily,
+                                                            color = textColor.copy(alpha = 0.92f)
+                                                        ),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    nextContent = {
+                                        if (!isScrollMode && activeSubPageIndex < pagesList.size - 1) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(bgColor)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
+                                            ) {
+                                                Text(
+                                                    text = pagesList.getOrNull(activeSubPageIndex + 1) ?: "",
+                                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                                        fontSize = fontSize.sp,
+                                                        lineHeight = lineHeight.sp,
+                                                        fontFamily = selectedFontFamily,
+                                                        color = textColor.copy(alpha = 0.92f)
+                                                    )
+                                                )
+                                            }
+                                        } else {
+                                            val nextChapter = chapters.getOrNull(currentChapterIndex + 1)
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(bgColor)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
+                                            ) {
+                                                Text(
+                                                    text = nextChapter?.title ?: "最后一章",
+                                                    style = MaterialTheme.typography.headlineSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = textColor
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = nextChapter?.content?.take(400) ?: "",
+                                                    fontSize = fontSize.sp,
+                                                    color = textColor.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    prevContent = {
+                                        if (!isScrollMode && activeSubPageIndex > 0) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(bgColor)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
+                                            ) {
+                                                Text(
+                                                    text = pagesList.getOrNull(activeSubPageIndex - 1) ?: "",
+                                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                                        fontSize = fontSize.sp,
+                                                        lineHeight = lineHeight.sp,
+                                                        fontFamily = selectedFontFamily,
+                                                        color = textColor.copy(alpha = 0.92f)
+                                                    )
+                                                )
+                                            }
+                                        } else {
+                                            val prevChapter = chapters.getOrNull(currentChapterIndex - 1)
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(bgColor)
+                                                    .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
+                                            ) {
+                                                Text(
+                                                    text = prevChapter?.title ?: "第一章",
+                                                    style = MaterialTheme.typography.headlineSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = textColor
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = prevChapter?.content?.take(400) ?: "",
+                                                    fontSize = fontSize.sp,
+                                                    color = textColor.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onNextPage = handleNextPage,
+                                    onPrevPage = handlePrevPage,
+                                    onClickCenter = { showBars = !showBars },
+                                    onClickLeft = handlePrevPage,
+                                    onClickRight = handleNextPage,
+                                    isBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex },
+                                    onToggleBookmark = {
+                                        val currentBookId = book?.id ?: 0
+                                        val existingBookmark = bookmarks.find { (it.bookId == currentBookId || it.bookId == 0) && it.chapterIndex == currentChapterIndex }
+                                        if (existingBookmark != null) {
+                                            onDeleteBookmark(existingBookmark.id)
+                                            Toast.makeText(context, "已取消书签", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            currentChapter?.let { ch ->
+                                                val snippet = ch.content.take(60)
+                                                onAddBookmark(currentBookId, currentChapterIndex, scrollState.value, ch.title, snippet)
+                                                Toast.makeText(context, "已添加书签", Toast.LENGTH_SHORT).show()
+                                                scope.launch {
+                                                    showEasterEgg = true
+                                                    delay(2500)
+                                                    showEasterEgg = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                )
+
+                                val isCurrentBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex }
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isCurrentBookmarked,
+                                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(end = 20.dp)
+                                ) {
+                                    BookmarkHangingRibbon()
+                                }
+                            }
+
+                            if (prefs.showOverlayHeaderFooter && !showBars) {
+                                val pct = ((currentChapterIndex + 1).toFloat() / chapters.size * 100).toInt()
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val pageProgressText = if (isScrollMode) {
+                                        "第 ${currentChapterIndex + 1}/${chapters.size} 章"
+                                    } else {
+                                        "第 ${activeSubPageIndex + 1}/${pagesList.size} 页 · 第 ${currentChapterIndex + 1}/${chapters.size} 章"
+                                    }
+                                    Text(pageProgressText, fontSize = 10.sp, color = textColor.copy(alpha = 0.5f))
+                                    Text("$pct%", fontSize = 10.sp, color = textColor.copy(alpha = 0.5f))
+                                }
+                            }
+                        }
+
+                        if (showTtsBar) {
+                            Card(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(16.dp)
+                                    .fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("朗读播放器", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        AppIconButton(onClick = { showTtsBar = false }) {
+                                            Icon(Icons.Filled.Close, contentDescription = "关闭")
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AppIconButton(onClick = { ttsManager.previousParagraph() }) {
+                                            Icon(Icons.Filled.SkipPrevious, contentDescription = "上一段")
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .background(MintPrimary, CircleShape)
+                                                .clickableWithFeedback {
+                                                    if (isTtsPlaying) {
+                                                        ttsManager.pause()
+                                                    } else {
+                                                        currentChapter?.let { ch ->
+                                                            ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
+                                                        }
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                if (isTtsPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                                contentDescription = "播放暂停",
+                                                tint = Color.White
+                                            )
+                                        }
+
+                                        AppIconButton(onClick = { ttsManager.nextParagraph() }) {
+                                            Icon(Icons.Filled.SkipNext, contentDescription = "下一段")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (showReturnChip && previousPosition != null) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 80.dp)
+                                    .clickableWithFeedback {
+                                        previousPosition?.let { (ch, offset) ->
+                                            currentChapterIndex = ch
+                                            scope.launch { scrollState.scrollTo(offset) }
+                                        }
+                                        showReturnChip = false
+                                    },
+                                shape = RoundedCornerShape(20.dp),
+                                color = MintPrimary,
+                                shadowElevation = 6.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null, tint = Color.White)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("返回上次处", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        // Reader Overlay (Background Mask)
+        AnimatedVisibility(
+            visible = showBars,
+            enter = fadeIn(tween(300)),
+            exit = fadeOut(tween(300)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f))
+            )
+        }
+
+        // Top and Bottom Bars
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                AnimatedVisibility(
+                                    visible = showBars,
+                                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+                                ) {
+                                    TopAppBar(
+                                        title = {
+                                            Text(
+                                                currentChapter?.title ?: bookTitle,
+                                                maxLines = 1,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 18.sp,
+                                                color = textColor
+                                            )
+                                        },
+                                        navigationIcon = {
+                                            AppIconButton(onClick = onBack) {
+                                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
+                                            }
+                                        },
+                                        actions = {
+                                            AppIconButton(onClick = {
+                                                showTtsBar = true
+                                                if (!isTtsPlaying) {
+                                                    currentChapter?.let { ch ->
+                                                        ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
+                                                        Toast.makeText(context, "已开启语音听书：${ch.title}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }) {
+                                                Icon(
+                                                    imageVector = if (isTtsPlaying) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Headphones,
+                                                    contentDescription = "听书模式",
+                                                    tint = if (isTtsPlaying) MintGold else textColor
+                                                )
+                                            }
+                                            AppIconButton(onClick = { showSearchDialog = true }) {
+                                                Icon(Icons.Filled.Search, contentDescription = "搜索", tint = textColor)
+                                            }
+                                            AppIconButton(onClick = { showTocSheet = true }) {
+                                                Icon(Icons.Filled.Menu, contentDescription = "目录", tint = textColor)
+                                            }
+                                            AppIconButton(onClick = { showAnnotationsSheet = true }) {
+                                                Icon(Icons.Filled.Bookmark, contentDescription = "书签", tint = textColor)
+                                            }
+                                            AppIconButton(onClick = { showSettingsSheet = true }) {
+                                                Icon(Icons.Filled.Settings, contentDescription = "排版", tint = textColor)
+                                            }
+                                        },
+                                        colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor),
+                                        modifier = Modifier.graphicsLayer { shadowElevation = 4f }
+                                    )
+                                }
+            }
+            Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                AnimatedVisibility(
+                                    visible = showBars && chapters.isNotEmpty(),
+                                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                                ) {
+                                    BottomAppBar(
+                                        containerColor = bgColor,
+                                        modifier = Modifier.graphicsLayer { shadowElevation = 4f }
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                TextButton(
+                                                    onClick = {
+                                                        if (currentChapterIndex > 0) {
+                                                            currentChapterIndex--
+                                                            scope.launch { scrollState.scrollTo(0) }
+                                                        }
+                                                    },
+                                                    enabled = currentChapterIndex > 0
+                                                ) {
+                                                    Text("上一章", fontWeight = FontWeight.Bold, color = textColor)
+                                                }
+                
+                                                Slider(
+                                                    value = currentChapterIndex.toFloat(),
+                                                    onValueChange = {
+                                                        currentChapterIndex = it.toInt()
+                                                        scope.launch { scrollState.scrollTo(0) }
+                                                    },
+                                                    valueRange = 0f..(chapters.size - 1).coerceAtLeast(1).toFloat(),
+                                                    steps = (chapters.size - 2).coerceAtLeast(0),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                
+                                                TextButton(
+                                                    onClick = {
+                                                        if (currentChapterIndex < chapters.size - 1) {
+                                                            currentChapterIndex++
+                                                            scope.launch { scrollState.scrollTo(0) }
+                                                        }
+                                                    },
+                                                    enabled = currentChapterIndex < chapters.size - 1
+                                                ) {
+                                                    Text("下一章", fontWeight = FontWeight.Bold, color = textColor)
+                                                }
+                                            }
+                
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    "第 ${currentChapterIndex + 1} / ${chapters.size} 章",
+                                                    fontSize = 12.sp,
+                                                    color = textColor
+                                                )
+                
+                                                FilledTonalButton(
+                                                    onClick = {
+                                                        showTtsBar = true
+                                                        if (!isTtsPlaying) {
+                                                            currentChapter?.let { ch ->
+                                                                ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
+                                                                Toast.makeText(context, "开启语音听书：${ch.title}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                                        containerColor = if (isTtsPlaying) MintGold.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primaryContainer,
+                                                        contentColor = if (isTtsPlaying) MintGold else MaterialTheme.colorScheme.onPrimaryContainer
+                                                    ),
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isTtsPlaying) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Headphones,
+                                                        contentDescription = "听书模式",
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(if (isTtsPlaying) "朗读中..." else "🎧 听书模式", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+            }
+        }
+
+        }
+    }
+
+    if (showTocSheet) {
+        var tocFilter by remember { mutableStateOf("") }
+        val filteredChapters = remember(chapters, tocFilter) {
+            if (tocFilter.isBlank()) chapters else chapters.filter { it.title.contains(tocFilter, ignoreCase = true) }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showTocSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                Text("目录 (${chapters.size}章)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = tocFilter,
+                    onValueChange = { tocFilter = it },
+                    placeholder = { Text("搜索章节...") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn {
+                    itemsIndexed(filteredChapters) { _, chapter ->
+                        val index = chapter.chapterOrder
+                        TextButton(
+                            onClick = {
+                                previousPosition = currentChapterIndex to scrollState.value
+                                showReturnChip = true
+                                currentChapterIndex = index
+                                showTocSheet = false
+                                scope.launch { scrollState.scrollTo(0) }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = chapter.title,
+                                color = if (index == currentChapterIndex) MintPrimary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (index == currentChapterIndex) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Start
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSettingsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSettingsSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
+                Text("阅读排版", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("字号: ${fontSize.toInt()} sp", fontWeight = FontWeight.Medium)
+                Slider(
+                    value = fontSize,
+                    onValueChange = { fontSize = it; prefs.fontSize = it },
+                    valueRange = 12f..36f
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("行间距: ${lineHeight.toInt()} sp", fontWeight = FontWeight.Medium)
+                Slider(
+                    value = lineHeight,
+                    onValueChange = { lineHeight = it; prefs.lineHeight = it },
+                    valueRange = 20f..48f
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("页边距: ${marginHorizontal} dp", fontWeight = FontWeight.Medium)
+                Slider(
+                    value = marginHorizontal.toFloat(),
+                    onValueChange = { marginHorizontal = it.toInt(); prefs.marginHorizontal = it.toInt() },
+                    valueRange = 8f..48f
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("首行缩进", fontWeight = FontWeight.Medium)
+                    CustomSwitch(
+                        checked = firstLineIndent,
+                        onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("主题风格", fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val themes = listOf(0 to "薄荷", 1 to "白底", 2 to "羊皮", 3 to "夜间", 4 to "护眼", 5 to "纯黑")
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        themes.take(3).forEach { (id, name) ->
+                            FilterChip(
+                                selected = readerTheme == id,
+                                onClick = { readerTheme = id; prefs.readerTheme = id },
+                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        themes.drop(3).forEach { (id, name) ->
+                            FilterChip(
+                                selected = readerTheme == id,
+                                onClick = { readerTheme = id; prefs.readerTheme = id },
+                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("翻页动画", fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PageTurnType.entries.take(3).forEach { modeType ->
+                            FilterChip(
+                                selected = pageTurnMode == modeType.id,
+                                onClick = { pageTurnMode = modeType.id; prefs.pageTurnMode = modeType.id },
+                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PageTurnType.entries.drop(3).forEach { modeType ->
+                            FilterChip(
+                                selected = pageTurnMode == modeType.id,
+                                onClick = { pageTurnMode = modeType.id; prefs.pageTurnMode = modeType.id },
+                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSearchDialog) {
+        AlertDialog(
+            onDismissRequest = { showSearchDialog = false },
+            title = { Text("全文搜索") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = searchKeyword,
+                        onValueChange = {
+                            searchKeyword = it
+                            onSearch(it)
+                        },
+                        placeholder = { Text("输入关键词...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (isSearching) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (searchResults.isEmpty() && searchKeyword.isNotBlank()) {
+                        Text("未找到匹配", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        LazyColumn(modifier = Modifier.height(240.dp)) {
+                            itemsIndexed(searchResults) { _, item ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clickableWithFeedback {
+                                            previousPosition = currentChapterIndex to scrollState.value
+                                            showReturnChip = true
+                                            currentChapterIndex = item.chapterIndex
+                                            showSearchDialog = false
+                                            scope.launch { scrollState.scrollTo(0) }
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(item.chapterTitle, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MintPrimary)
+                                        Text(item.snippet, fontSize = 11.sp, maxLines = 2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSearchDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
+
+    if (showAnnotationsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAnnotationsSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                Text("书签记录 (${bookmarks.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (bookmarks.isEmpty()) {
+                    Text("无书签", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    LazyColumn(modifier = Modifier.height(280.dp)) {
+                        itemsIndexed(bookmarks) { _, bm ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickableWithFeedback {
+                                        previousPosition = currentChapterIndex to scrollState.value
+                                        showReturnChip = true
+                                        currentChapterIndex = bm.chapterIndex
+                                        showAnnotationsSheet = false
+                                        scope.launch { scrollState.scrollTo(bm.scrollOffset) }
+                                    }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(bm.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(bm.snippet, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                }
+                                IconButton(onClick = { onDeleteBookmark(bm.id) }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRestDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestDialog = false },
+            title = { Text("眼部休息") },
+            text = { Text("已持续阅读 ${prefs.restReminderMinutes} 分钟，建议远眺片刻！") },
+            confirmButton = {
+                TextButton(onClick = { showRestDialog = false }) {
+                    Text("确定")
+                }
+            }
+        )
+    }
+
+    // Cute Anime Easter Egg UI Overlay
+    AnimatedVisibility(
+        visible = showEasterEgg,
+        enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(animationSpec = tween(400, easing = EaseOut)),
+        exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(animationSpec = tween(400, easing = EaseOut)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = R.drawable.anime_mascot_chibi,
+                contentDescription = "Anime Mascot Easter Egg",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 24.dp, bottom = 48.dp)
+                    .size(160.dp),
+                contentScale = ContentScale.Inside
+            )
+            // Speech bubble
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 120.dp, bottom = 160.dp)
+                    .shadow(8.dp, RoundedCornerShape(16.dp))
+            ) {
+                Text(
+                    text = "书签已保存~ 喵!",
+                    modifier = Modifier.padding(16.dp, 8.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookmarkHangingRibbon(
+    modifier: Modifier = Modifier
+) {
+    Canvas(
+        modifier = modifier
+            .width(20.dp)
+            .height(34.dp)
+            .graphicsLayer {
+                shadowElevation = 6f
+            }
+    ) {
+        val w = size.width
+        val h = size.height
+
+        val ribbonPath = Path().apply {
+            moveTo(0f, 0f)
+            lineTo(w, 0f)
+            lineTo(w, h)
+            lineTo(w / 2f, h - 8.dp.toPx()) // Triangular V-notch
+            lineTo(0f, h)
+            close()
+        }
+
+        drawPath(
+            path = ribbonPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    MintGold,
+                    Color(0xFFFFB300),
+                    Color(0xFFE65100)
+                )
+            )
+        )
+
+        drawPath(
+            path = ribbonPath,
+            color = Color.White.copy(alpha = 0.6f),
+            style = Stroke(width = 1.dp.toPx())
+        )
+    }
+}
