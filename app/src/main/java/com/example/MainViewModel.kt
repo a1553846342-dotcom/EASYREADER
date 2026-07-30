@@ -24,6 +24,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _blueLightAlpha = MutableStateFlow(prefs.blueLightAlpha)
     val blueLightAlpha: StateFlow<Float> = _blueLightAlpha.asStateFlow()
 
+    private val _colorPrimaryIndex = MutableStateFlow(prefs.colorPrimaryIndex)
+    val colorPrimaryIndex: StateFlow<Int> = _colorPrimaryIndex.asStateFlow()
+
+    private val _colorSecondaryIndex = MutableStateFlow(prefs.colorSecondaryIndex)
+    val colorSecondaryIndex: StateFlow<Int> = _colorSecondaryIndex.asStateFlow()
+
     fun updateAutoNightMode(enabled: Boolean) {
         prefs.autoNightMode = enabled
         _autoNightMode.value = enabled
@@ -37,6 +43,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateBlueLightAlpha(alpha: Float) {
         prefs.blueLightAlpha = alpha
         _blueLightAlpha.value = alpha
+    }
+
+    fun updateColorTheme(primary: Int, secondary: Int) {
+        prefs.colorPrimaryIndex = primary
+        prefs.colorSecondaryIndex = secondary
+        _colorPrimaryIndex.value = primary
+        _colorSecondaryIndex.value = secondary
     }
 
     init {

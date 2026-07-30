@@ -52,7 +52,10 @@ fun SettingsTabScreen(
     blueLightFilterVal: Boolean = prefs.blueLightFilter,
     onBlueLightFilterChange: (Boolean) -> Unit = { prefs.blueLightFilter = it },
     blueLightAlphaVal: Float = prefs.blueLightAlpha,
-    onBlueLightAlphaChange: (Float) -> Unit = { prefs.blueLightAlpha = it }
+    onBlueLightAlphaChange: (Float) -> Unit = { prefs.blueLightAlpha = it },
+    colorPrimaryIndexVal: Int = prefs.colorPrimaryIndex,
+    colorSecondaryIndexVal: Int = prefs.colorSecondaryIndex,
+    onColorThemeChange: (Int, Int) -> Unit = { p, s -> prefs.colorPrimaryIndex = p; prefs.colorSecondaryIndex = s }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -63,6 +66,8 @@ fun SettingsTabScreen(
     var blueLightAlpha by remember(blueLightAlphaVal) { mutableStateOf(blueLightAlphaVal) }
     var pageTurnMode by remember { mutableStateOf(prefs.pageTurnMode) }
     var orientationLock by remember { mutableStateOf(prefs.screenOrientationLock) }
+    var colorPrimaryIndex by remember(colorPrimaryIndexVal) { mutableStateOf(colorPrimaryIndexVal) }
+    var colorSecondaryIndex by remember(colorSecondaryIndexVal) { mutableStateOf(colorSecondaryIndexVal) }
 
     var splashPosterUri by remember { mutableStateOf(prefs.customSplashPosterUri) }
     var splashPureMode by remember { mutableStateOf(prefs.splashPureMode) }
@@ -127,6 +132,108 @@ fun SettingsTabScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Section 0: Custom Color Theme (3.4)
+                item {
+                    Text("主界面配色高度自定义", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)
+                }
+
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("主色调选择 (Primary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
+                                com.example.ui.theme.BasePrimaryColors.forEachIndexed { index, color ->
+                                    val selected = colorPrimaryIndex == index
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = {
+                                            colorPrimaryIndex = index
+                                            onColorThemeChange(index, colorSecondaryIndex)
+                                        },
+                                        shape = CircleShape,
+                                        leadingIcon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(color)
+                                            )
+                                        },
+                                        label = { Text(colorNames[index], fontSize = 12.sp) }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("强调色/副色选择 (Secondary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
+                                com.example.ui.theme.BaseSecondaryColors.forEachIndexed { index, color ->
+                                    val selected = colorSecondaryIndex == index
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = {
+                                            colorSecondaryIndex = index
+                                            onColorThemeChange(colorPrimaryIndex, index)
+                                        },
+                                        shape = CircleShape,
+                                        leadingIcon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clip(CircleShape)
+                                                    .background(color)
+                                            )
+                                        },
+                                        label = { Text(colorNames[index], fontSize = 12.sp) }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("当前主题实时预览", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(com.example.ui.theme.BaseSecondaryColors[colorSecondaryIndex])
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Section 1: Splash Poster
                 item {
                     Text("开屏海报设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)

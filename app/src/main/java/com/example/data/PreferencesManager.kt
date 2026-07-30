@@ -127,4 +127,12 @@ class PreferencesManager(context: Context) {
     var clickZoneRightAction: Int
         get() = prefs.getInt("click_zone_right_action", 2)
         set(value) = prefs.edit().putInt("click_zone_right_action", value).apply()
+
+    var colorPrimaryIndex: Int
+        get() = prefs.getInt("color_primary_index", 2)
+        set(value) = prefs.edit().putInt("color_primary_index", value).apply()
+
+    var colorSecondaryIndex: Int
+        get() = prefs.getInt("color_secondary_index", 2)
+        set(value) = prefs.edit().putInt("color_secondary_index", value).apply()
 }

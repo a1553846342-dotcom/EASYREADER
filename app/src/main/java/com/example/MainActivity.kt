@@ -41,8 +41,14 @@ class MainActivity : ComponentActivity() {
             val autoNightMode by viewModel.autoNightMode.collectAsState()
             val blueLightFilter by viewModel.blueLightFilter.collectAsState()
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
+            val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
+            val colorSecondaryIndex by viewModel.colorSecondaryIndex.collectAsState()
 
-            MyApplicationTheme(darkTheme = autoNightMode) {
+            MyApplicationTheme(
+                darkTheme = autoNightMode,
+                colorPrimaryIndex = colorPrimaryIndex,
+                colorSecondaryIndex = colorSecondaryIndex
+            ) {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
@@ -245,7 +251,10 @@ class MainActivity : ComponentActivity() {
                                                 blueLightFilterVal = blueLightFilter,
                                                 onBlueLightFilterChange = { viewModel.updateBlueLightFilter(it) },
                                                 blueLightAlphaVal = blueLightAlpha,
-                                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) }
+                                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) },
+                                                colorPrimaryIndexVal = colorPrimaryIndex,
+                                                colorSecondaryIndexVal = colorSecondaryIndex,
+                                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) }
                                             )
                                         }
                                     }
@@ -270,7 +279,10 @@ class MainActivity : ComponentActivity() {
                                 blueLightFilterVal = blueLightFilter,
                                 onBlueLightFilterChange = { viewModel.updateBlueLightFilter(it) },
                                 blueLightAlphaVal = blueLightAlpha,
-                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) }
+                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) },
+                                colorPrimaryIndexVal = colorPrimaryIndex,
+                                colorSecondaryIndexVal = colorSecondaryIndex,
+                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) }
                             )
                         }
 
