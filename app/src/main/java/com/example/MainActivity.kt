@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
@@ -34,14 +35,32 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val viewModel: MainViewModel = viewModel()
+            mainViewModel = viewModel
+
+            val autoNightMode by viewModel.autoNightMode.collectAsState()
+            val blueLightFilter by viewModel.blueLightFilter.collectAsState()
+            val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
+
+            MyApplicationTheme(darkTheme = autoNightMode) {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawWithContent {
+                            drawContent()
+                            if (blueLightFilter) {
+                                // Real warm-orange color filter overlay drawn on top of the entire application
+                                // Maximum opacity of 0.65f to allow reading comfortably at 100% slider value
+                                val maxOpacity = 0.65f
+                                drawRect(
+                                    color = Color(0xFFFF9E0D),
+                                    alpha = blueLightAlpha * maxOpacity
+                                )
+                            }
+                        },
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
-                    val viewModel: MainViewModel = viewModel()
-                    mainViewModel = viewModel
 
                     val orientationLock = viewModel.prefs.screenOrientationLock
                     DisposableEffect(orientationLock) {
@@ -61,6 +80,8 @@ class MainActivity : ComponentActivity() {
                             viewModel.clearImportMessage()
                         }
                     }
+
+                    var selectedCategoryForImport by remember { mutableStateOf("全部") }
 
                     val fileLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
@@ -87,8 +108,8 @@ class MainActivity : ComponentActivity() {
                             if (fileName == "book.txt") {
                                 fileName = it.lastPathSegment?.substringAfterLast('/') ?: "book.txt"
                             }
-                            android.util.Log.d("BookImport", "[MainActivity] File selected: $fileName, uri: $it")
-                            viewModel.importBook(it, fileName)
+                            android.util.Log.d("BookImport", "[MainActivity] File selected: $fileName, uri: $it, category: $selectedCategoryForImport")
+                            viewModel.importBook(it, fileName, selectedCategoryForImport)
                         }
                     }
 
@@ -116,6 +137,7 @@ class MainActivity : ComponentActivity() {
                         composable("home") {
                             val books by viewModel.allBooks.collectAsState()
                             val categories by viewModel.allCategories.collectAsState()
+                            val readingRecords by viewModel.allReadingRecords.collectAsState()
 
                             Scaffold(
                                 bottomBar = {
@@ -184,8 +206,12 @@ class MainActivity : ComponentActivity() {
                                                         navController.navigate("reader")
                                                     }
                                                 },
-                                                onImportClick = {
+                                                onImportClick = { category ->
+                                                    selectedCategoryForImport = category
                                                     fileLauncher.launch("*/*")
+                                                },
+                                                onAddCategory = { name ->
+                                                    viewModel.addCategory(name)
                                                 },
                                                 onSettingsClick = {
                                                     selectedTab = 2
@@ -204,7 +230,8 @@ class MainActivity : ComponentActivity() {
                                             )
                                             1 -> StatisticsScreen(
                                                 books = books,
-                                                totalReadTimeSeconds = viewModel.prefs.totalReadTimeSeconds
+                                                totalReadTimeSeconds = viewModel.prefs.totalReadTimeSeconds,
+                                                readingRecords = readingRecords
                                             )
                                             2 -> SettingsTabScreen(
                                                 prefs = viewModel.prefs,
@@ -212,7 +239,13 @@ class MainActivity : ComponentActivity() {
                                                 categories = categories,
                                                 onAddCategory = { name ->
                                                     viewModel.addCategory(name)
-                                                }
+                                                },
+                                                autoNightModeVal = autoNightMode,
+                                                onAutoNightModeChange = { viewModel.updateAutoNightMode(it) },
+                                                blueLightFilterVal = blueLightFilter,
+                                                onBlueLightFilterChange = { viewModel.updateBlueLightFilter(it) },
+                                                blueLightAlphaVal = blueLightAlpha,
+                                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) }
                                             )
                                         }
                                     }
@@ -231,7 +264,13 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onBack = {
                                     navController.popBackStack()
-                                }
+                                },
+                                autoNightModeVal = autoNightMode,
+                                onAutoNightModeChange = { viewModel.updateAutoNightMode(it) },
+                                blueLightFilterVal = blueLightFilter,
+                                onBlueLightFilterChange = { viewModel.updateBlueLightFilter(it) },
+                                blueLightAlphaVal = blueLightAlpha,
+                                onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) }
                             )
                         }
 

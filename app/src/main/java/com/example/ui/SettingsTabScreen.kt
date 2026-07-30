@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -44,15 +46,21 @@ fun SettingsTabScreen(
     backupManager: BackupManager,
     categories: List<CategoryEntity>,
     onAddCategory: (String) -> Unit,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    autoNightModeVal: Boolean = prefs.autoNightMode,
+    onAutoNightModeChange: (Boolean) -> Unit = { prefs.autoNightMode = it },
+    blueLightFilterVal: Boolean = prefs.blueLightFilter,
+    onBlueLightFilterChange: (Boolean) -> Unit = { prefs.blueLightFilter = it },
+    blueLightAlphaVal: Float = prefs.blueLightAlpha,
+    onBlueLightAlphaChange: (Float) -> Unit = { prefs.blueLightAlpha = it }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var restReminderMinutes by remember { mutableStateOf(prefs.restReminderMinutes) }
-    var autoNightMode by remember { mutableStateOf(prefs.autoNightMode) }
-    var blueLightFilter by remember { mutableStateOf(prefs.blueLightFilter) }
-    var blueLightAlpha by remember { mutableStateOf(prefs.blueLightAlpha) }
+    var autoNightMode by remember(autoNightModeVal) { mutableStateOf(autoNightModeVal) }
+    var blueLightFilter by remember(blueLightFilterVal) { mutableStateOf(blueLightFilterVal) }
+    var blueLightAlpha by remember(blueLightAlphaVal) { mutableStateOf(blueLightAlphaVal) }
     var pageTurnMode by remember { mutableStateOf(prefs.pageTurnMode) }
     var orientationLock by remember { mutableStateOf(prefs.screenOrientationLock) }
 
@@ -395,8 +403,14 @@ fun SettingsTabScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                listOf(0 to "关", 15 to "15分", 30 to "30分", 45 to "45分", 60 to "60分").forEach { (min, label) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                val presets = listOf(0 to "关", 15 to "15分", 30 to "30分", 45 to "45分", 60 to "60分")
+                                presets.forEach { (min, label) ->
                                     FilterChip(
                                         selected = restReminderMinutes == min,
                                         onClick = {
@@ -406,6 +420,50 @@ fun SettingsTabScreen(
                                         shape = CircleShape,
                                         label = { Text(label, fontSize = 11.sp) }
                                     )
+                                }
+                                if (restReminderMinutes !in listOf(0, 15, 30, 45, 60)) {
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = {},
+                                        shape = CircleShape,
+                                        label = { Text("${restReminderMinutes}分(自定义)", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                var customText by remember(restReminderMinutes) { mutableStateOf(if (restReminderMinutes !in listOf(0, 15, 30, 45, 60)) restReminderMinutes.toString() else "") }
+                                OutlinedTextField(
+                                    value = customText,
+                                    onValueChange = { customText = it.filter { char -> char.isDigit() } },
+                                    label = { Text("自定义时间 (分钟)", fontSize = 12.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MintPrimary,
+                                        unfocusedBorderColor = Color.LightGray.copy(alpha = 0.5f),
+                                        focusedLabelColor = MintPrimary
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                Button(
+                                    onClick = {
+                                        val mins = customText.toIntOrNull() ?: 0
+                                        if (mins > 0) {
+                                            restReminderMinutes = mins
+                                            prefs.restReminderMinutes = mins
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("设置", color = Color.White)
                                 }
                             }
 
@@ -427,7 +485,7 @@ fun SettingsTabScreen(
                                     checked = autoNightMode,
                                     onCheckedChange = {
                                         autoNightMode = it
-                                        prefs.autoNightMode = it
+                                        onAutoNightModeChange(it)
                                     }
                                 )
                             }
@@ -450,7 +508,7 @@ fun SettingsTabScreen(
                                     checked = blueLightFilter,
                                     onCheckedChange = {
                                         blueLightFilter = it
-                                        prefs.blueLightFilter = it
+                                        onBlueLightFilterChange(it)
                                     }
                                 )
                             }
@@ -462,44 +520,11 @@ fun SettingsTabScreen(
                                     value = blueLightAlpha,
                                     onValueChange = {
                                         blueLightAlpha = it
-                                        prefs.blueLightAlpha = it
+                                        onBlueLightAlphaChange(it)
                                     },
-                                    valueRange = 0.05f..0.5f,
+                                    valueRange = 0.0f..1.0f,
                                     colors = SliderDefaults.colors(thumbColor = MintPrimary, activeTrackColor = MintPrimary)
                                 )
-                            }
-                        }
-                    }
-                }
-
-                // Section 6: Custom Shelf Categories
-                item {
-                    Text("分类管理", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
-                }
-
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.Category, contentDescription = null, tint = MintPrimary)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("新建分类", fontWeight = FontWeight.SemiBold)
-                                }
-                                AppButton(
-                                    onClick = { showAddCategoryDialog = true }
-                                ) {
-                                    Text("新建", color = Color.White)
-                                }
                             }
                         }
                     }

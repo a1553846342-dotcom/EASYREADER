@@ -15,6 +15,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val ttsManager = TtsManager(application)
     val repository = BookRepository(application, database.bookDao())
 
+    private val _autoNightMode = MutableStateFlow(prefs.autoNightMode)
+    val autoNightMode: StateFlow<Boolean> = _autoNightMode.asStateFlow()
+
+    private val _blueLightFilter = MutableStateFlow(prefs.blueLightFilter)
+    val blueLightFilter: StateFlow<Boolean> = _blueLightFilter.asStateFlow()
+
+    private val _blueLightAlpha = MutableStateFlow(prefs.blueLightAlpha)
+    val blueLightAlpha: StateFlow<Float> = _blueLightAlpha.asStateFlow()
+
+    fun updateAutoNightMode(enabled: Boolean) {
+        prefs.autoNightMode = enabled
+        _autoNightMode.value = enabled
+    }
+
+    fun updateBlueLightFilter(enabled: Boolean) {
+        prefs.blueLightFilter = enabled
+        _blueLightFilter.value = enabled
+    }
+
+    fun updateBlueLightAlpha(alpha: Float) {
+        prefs.blueLightAlpha = alpha
+        _blueLightAlpha.value = alpha
+    }
+
     init {
         viewModelScope.launch {
             repository.checkAndSeedDefaultBooks()
@@ -28,6 +52,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val allCategories: StateFlow<List<CategoryEntity>> = repository.allCategories.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val allReadingRecords: StateFlow<List<ReadingRecord>> = repository.allReadingRecords.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -118,14 +148,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun importBook(uri: Uri, fileName: String) {
+    fun importBook(uri: Uri, fileName: String, category: String = "未分类") {
         viewModelScope.launch {
             try {
-                android.util.Log.d("BookImport", "[MainViewModel] Starting import: $fileName")
+                android.util.Log.d("BookImport", "[MainViewModel] Starting import: $fileName, category: $category")
                 val result = repository.importBookFromUri(uri, fileName)
-                result.onSuccess {
-                    android.util.Log.d("BookImport", "[MainViewModel] Import success: ${it.title}")
-                    _importStatusMessage.value = "《${it.title}》 导入成功"
+                result.onSuccess { book ->
+                    val finalBook = if (category != "全部" && category != "未分类") {
+                        val updated = book.copy(category = category)
+                        database.bookDao().updateBook(updated)
+                        updated
+                    } else {
+                        book
+                    }
+                    android.util.Log.d("BookImport", "[MainViewModel] Import success: ${finalBook.title}")
+                    _importStatusMessage.value = "《${finalBook.title}》 导入成功"
                 }.onFailure {
                     android.util.Log.e("BookImport", "[MainViewModel] Import failure", it)
                     _importStatusMessage.value = "导入失败: ${it.localizedMessage ?: "未知错误"}"
@@ -242,6 +279,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
         val currentDaily = prefs.getDailyReadTime(todayStr)
         prefs.setDailyReadTime(todayStr, currentDaily + seconds)
+
+        // Also record to reading_records database table
+        val currentBook = _selectedBook.value
+        if (currentBook != null) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val record = database.bookDao().getReadingRecordForBookAndDate(currentBook.id, todayStr)
+                    if (record != null) {
+                        database.bookDao().insertReadingRecord(
+                            record.copy(durationSeconds = record.durationSeconds + seconds)
+                        )
+                    } else {
+                        database.bookDao().insertReadingRecord(
+                            ReadingRecord(
+                                bookId = currentBook.id,
+                                bookTitle = currentBook.title,
+                                dateStr = todayStr,
+                                durationSeconds = seconds
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MainViewModel", "Error saving reading record to DB", e)
+                }
+            }
+        }
     }
 
     fun searchFullText(query: String) {

@@ -73,11 +73,26 @@ interface BookDao {
 
     @Delete
     suspend fun deleteCategory(category: CategoryEntity)
+
+    @Query("SELECT * FROM reading_records WHERE dateStr IN (:dates)")
+    suspend fun getReadingRecordsForDates(dates: List<String>): List<ReadingRecord>
+
+    @Query("SELECT * FROM reading_records WHERE bookId = :bookId AND dateStr = :dateStr LIMIT 1")
+    suspend fun getReadingRecordForBookAndDate(bookId: Int, dateStr: String): ReadingRecord?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReadingRecord(record: ReadingRecord)
+
+    @Query("UPDATE reading_records SET bookId = NULL WHERE bookId = :bookId")
+    suspend fun nullifyBookIdInReadingRecords(bookId: Int)
+
+    @Query("SELECT * FROM reading_records ORDER BY dateStr DESC")
+    fun getAllReadingRecordsFlow(): Flow<List<ReadingRecord>>
 }
 
 @Database(
-    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class],
-    version = 3,
+    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

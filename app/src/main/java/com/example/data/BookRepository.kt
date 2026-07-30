@@ -13,6 +13,7 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
 
     val allBooks: Flow<List<Book>> = bookDao.getAllBooks()
     val allCategories: Flow<List<CategoryEntity>> = bookDao.getAllCategories()
+    val allReadingRecords: Flow<List<ReadingRecord>> = bookDao.getAllReadingRecordsFlow()
 
     private fun detectCharset(context: Context, uri: Uri): java.nio.charset.Charset {
         val buffer = ByteArray(8192)
@@ -239,6 +240,7 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     }
 
     suspend fun deleteBook(book: Book) {
+        bookDao.nullifyBookIdInReadingRecords(book.id)
         bookDao.deleteChaptersForBook(book.id)
         bookDao.deleteBook(book)
     }

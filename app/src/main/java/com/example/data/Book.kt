@@ -71,6 +71,15 @@ data class CategoryEntity(
     val name: String
 )
 
+@Entity(tableName = "reading_records")
+data class ReadingRecord(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val bookId: Int?,
+    val bookTitle: String,
+    val dateStr: String,
+    val durationSeconds: Long
+)
+
 data class SearchResultItem(
     val chapterIndex: Int,
     val chapterTitle: String,

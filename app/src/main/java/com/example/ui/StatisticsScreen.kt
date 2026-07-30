@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Book
+import com.example.data.ReadingRecord
 import com.example.ui.components.WeeklyReadingChart
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
@@ -28,7 +29,8 @@ import com.example.ui.theme.MintSecondary
 @Composable
 fun StatisticsScreen(
     books: List<Book>,
-    totalReadTimeSeconds: Long
+    totalReadTimeSeconds: Long,
+    readingRecords: List<ReadingRecord> = emptyList()
 ) {
     val totalHours = totalReadTimeSeconds / 3600
     val totalMins = (totalReadTimeSeconds % 3600) / 60
@@ -139,16 +141,48 @@ fun StatisticsScreen(
                     val cal = java.util.Calendar.getInstance()
                     (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7 // 0=Mon, 1=Tue, ..., 6=Sun
                 }
-                val totalMinsAcc = (totalReadTimeSeconds / 60).toInt()
 
-                val minutesList = remember(totalReadTimeSeconds, todayIdx) {
-                    List(7) { i ->
-                        if (i == todayIdx) totalMinsAcc else 0
+                val weekDates = remember {
+                    val cal = java.util.Calendar.getInstance()
+                    val dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
+                    // Adjust to Monday of current week
+                    val diffToMonday = if (dayOfWeek == java.util.Calendar.SUNDAY) -6 else 2 - dayOfWeek
+                    cal.add(java.util.Calendar.DAY_OF_YEAR, diffToMonday)
+                    
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    List(7) {
+                        val dateStr = sdf.format(cal.time)
+                        cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                        dateStr
                     }
                 }
-                val booksList = remember(books, totalReadTimeSeconds, todayIdx) {
-                    List(7) { i ->
-                        if (i == todayIdx && totalMinsAcc > 0) (books.firstOrNull()?.title ?: "自选图书") else ""
+
+                val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds, todayIdx) {
+                    val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
+                    if (hasAnyRecords) {
+                        weekDates.map { date ->
+                            val dailyRecords = readingRecords.filter { it.dateStr == date }
+                            (dailyRecords.sumOf { it.durationSeconds } / 60).toInt()
+                        }
+                    } else {
+                        List(7) { i ->
+                            if (i == todayIdx) (totalReadTimeSeconds / 60).toInt() else 0
+                        }
+                    }
+                }
+
+                val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds, todayIdx) {
+                    val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
+                    if (hasAnyRecords) {
+                        weekDates.map { date ->
+                            val dailyRecords = readingRecords.filter { it.dateStr == date }
+                            if (dailyRecords.isEmpty()) ""
+                            else dailyRecords.map { it.bookTitle }.distinct().joinToString(", ")
+                        }
+                    } else {
+                        List(7) { i ->
+                            if (i == todayIdx && totalReadTimeSeconds > 0) (books.firstOrNull()?.title ?: "自选图书") else ""
+                        }
                     }
                 }
 

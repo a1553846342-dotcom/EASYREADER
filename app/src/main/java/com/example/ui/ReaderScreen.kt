@@ -9,6 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
@@ -17,6 +22,7 @@ import com.example.R
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -218,16 +224,17 @@ fun ReaderScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .drawBehind {
-                if (prefs.blueLightFilter) {
-                    drawRect(Color(0xFFFF9800).copy(alpha = prefs.blueLightAlpha))
-                }
-            }
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val density = LocalDensity.current
+            val navBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
+            val statusBarsTopPx = WindowInsets.statusBars.getTop(density)
+
             val containerWidthPx = with(density) { (maxWidth - marginHorizontal.dp * 2).toPx().toInt() }.coerceAtLeast(100)
-            val containerHeightPx = with(density) { (maxHeight - 64.dp).toPx().toInt() }.coerceAtLeast(100)
+            val containerHeightPx = with(density) {
+                val totalHeightPx = maxHeight.toPx().toInt()
+                (totalHeightPx - statusBarsTopPx - navBarsBottomPx - 64.dp.toPx().toInt()).coerceAtLeast(100)
+            }
 
             val bodyTextStyle = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = fontSize.sp,
@@ -297,7 +304,10 @@ fun ReaderScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
                         ) {
                             if (prefs.showOverlayHeaderFooter && !showBars) {
                                 Row(
@@ -1033,17 +1043,72 @@ fun ReaderScreen(
         }
     }
 
-    if (showRestDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestDialog = false },
-            title = { Text("眼部休息") },
-            text = { Text("已持续阅读 ${prefs.restReminderMinutes} 分钟，建议远眺片刻！") },
-            confirmButton = {
-                TextButton(onClick = { showRestDialog = false }) {
-                    Text("确定")
+    AnimatedVisibility(
+        visible = showRestDialog,
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .statusBarsPadding()
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "glow")
+        val glowAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 0.9f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glowAlpha"
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(12.dp, RoundedCornerShape(16.dp))
+                .border(2.dp, MintPrimary.copy(alpha = glowAlpha), RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Timer,
+                        contentDescription = null,
+                        tint = MintPrimary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "定时休息提醒",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "已持续阅读 ${prefs.restReminderMinutes} 分钟，建议远眺片刻！",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = { showRestDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("好的", color = Color.White, fontSize = 12.sp)
                 }
             }
-        )
+        }
     }
 
     // Cute Anime Easter Egg UI Overlay

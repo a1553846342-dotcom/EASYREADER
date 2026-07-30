@@ -5,6 +5,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -60,7 +64,8 @@ fun HomeScreen(
     books: List<Book>,
     categories: List<CategoryEntity>,
     onBookClick: (Book) -> Unit,
-    onImportClick: () -> Unit,
+    onImportClick: (String) -> Unit,
+    onAddCategory: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onNavigateToShelf: () -> Unit,
     onNavigateToStats: () -> Unit,
@@ -72,6 +77,8 @@ fun HomeScreen(
     var isSearchExpanded by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("全部") }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryText by remember { mutableStateOf("") }
 
     // Unified animation driver for book breathing
     val globalBreathingTransition = rememberInfiniteTransition(label = "global_breathing")
@@ -121,6 +128,54 @@ fun HomeScreen(
         )
     }
 
+    // New Category Dialog
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddCategoryDialog = false },
+            title = { Text("新建分类", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = newCategoryText,
+                    onValueChange = { newCategoryText = it },
+                    label = { Text("名称", color = Color.White.copy(alpha = 0.6f)) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = MintPrimary,
+                        unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                        focusedIndicatorColor = MintPrimary,
+                        unfocusedIndicatorColor = Color.White.copy(alpha = 0.4f),
+                        cursorColor = MintPrimary,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            containerColor = Color(0xFF1B143F),
+            shape = RoundedCornerShape(24.dp),
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newCategoryText.isNotBlank()) {
+                            onAddCategory(newCategoryText.trim())
+                            newCategoryText = ""
+                            showAddCategoryDialog = false
+                        }
+                    }
+                ) {
+                    Text("新建", color = MintPrimary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategoryDialog = false }) {
+                    Text("取消", color = Color.Gray)
+                }
+            }
+        )
+    }
+
     StarryNightBackground(showLamp = true) {
         Column(
             modifier = Modifier
@@ -129,13 +184,20 @@ fun HomeScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // 1. TOP BAR GREETINGS & SEARCH
+            val isDark = MaterialTheme.colorScheme.background == com.example.ui.theme.DarkCharcoal
+            val barBgColor = if (isDark) Color(0xFF222428) else Color.White
+            val searchPlaceholderColor = if (isDark) Color.LightGray.copy(alpha = 0.6f) else Color.Gray
+            val searchTextColor = if (isDark) Color.White else Color.DarkGray
+            val iconBtnBgColor = if (isDark) Color(0xFF2B2D31) else Color(0xFFF4F4F4)
+            val iconCloseTint = if (isDark) Color.LightGray else Color.DarkGray
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 12.dp)
                     .shadow(8.dp, RoundedCornerShape(24.dp)),
                 shape = RoundedCornerShape(24.dp),
-                color = Color.White
+                color = barBgColor
             ) {
             Row(
                 modifier = Modifier
@@ -152,14 +214,14 @@ fun HomeScreen(
                             text = "我的书架",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.DarkGray,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontFamily = FontFamily.Serif
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "欢迎回到私人数字书库",
                             fontSize = 12.sp,
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -179,27 +241,31 @@ fun HomeScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("搜索书籍...", color = Color.Gray, fontSize = 12.sp) },
+                            placeholder = { Text("输入书名或作者", color = searchPlaceholderColor, fontSize = 13.sp) },
                             singleLine = true,
+                            textStyle = TextStyle(
+                                fontSize = 13.sp,
+                                color = searchTextColor
+                            ),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.DarkGray,
-                                unfocusedTextColor = Color.DarkGray,
+                                focusedTextColor = searchTextColor,
+                                unfocusedTextColor = searchTextColor,
                                 focusedBorderColor = MintPrimary,
-                                unfocusedBorderColor = Color.LightGray,
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White
+                                unfocusedBorderColor = if (isDark) Color(0xFF383A40) else Color.LightGray,
+                                focusedContainerColor = if (isDark) Color(0xFF2B2D31) else Color.White,
+                                unfocusedContainerColor = if (isDark) Color(0xFF2B2D31) else Color.White
                             ),
                             shape = RoundedCornerShape(24.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp)
+                                .height(48.dp)
                                 .padding(end = 8.dp),
                             trailingIcon = {
                                 IconButton(onClick = {
                                     searchQuery = ""
                                     isSearchExpanded = false
                                 }) {
-                                    Icon(Icons.Filled.Close, contentDescription = "Clear", tint = Color.DarkGray)
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear", tint = iconCloseTint)
                                 }
                             }
                         )
@@ -209,7 +275,7 @@ fun HomeScreen(
                         AppIconButton(
                             onClick = { isSearchExpanded = true },
                             modifier = Modifier
-                                .shadow(2.dp, CircleShape).background(Color(0xFFF4F4F4), CircleShape)
+                                .shadow(2.dp, CircleShape).background(iconBtnBgColor, CircleShape)
                                 
                         ) {
                             Icon(
@@ -225,7 +291,7 @@ fun HomeScreen(
                         AppIconButton(
                             onClick = onSettingsClick,
                             modifier = Modifier
-                                .shadow(2.dp, CircleShape).background(Color(0xFFF4F4F4), CircleShape)
+                                .shadow(2.dp, CircleShape).background(iconBtnBgColor, CircleShape)
                                 
                         ) {
                             Icon(
@@ -290,7 +356,7 @@ fun HomeScreen(
                             text = "「书架暂无书籍」",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.DarkGray,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                             fontFamily = FontFamily.Serif
@@ -301,7 +367,7 @@ fun HomeScreen(
                         Text(
                             text = "导入本地 TXT 格式电子书开始阅读",
                             fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -309,7 +375,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(24.dp))
 
                         AppButton(
-                            onClick = onImportClick,
+                            onClick = { onImportClick("全部") },
                             containerColor = MintPrimary,
                             modifier = Modifier
                                 .align(Alignment.CenterHorizontally)
@@ -378,7 +444,7 @@ fun HomeScreen(
                                 text = "正在阅读",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.DarkGray,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontFamily = FontFamily.Serif,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -450,7 +516,7 @@ fun HomeScreen(
                                                     text = currentlyReading.title,
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = Color.DarkGray,
+                                                    color = Color.White,
                                                     maxLines = 3,
                                                     overflow = TextOverflow.Ellipsis,
                                                     textAlign = TextAlign.Center,
@@ -478,7 +544,7 @@ fun HomeScreen(
                                             text = currentlyReading.title,
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.DarkGray,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                             fontFamily = FontFamily.Serif
@@ -487,7 +553,7 @@ fun HomeScreen(
                                         Text(
                                             text = "著  ${currentlyReading.author}",
                                             fontSize = 13.sp,
-                                            color = Color.Gray
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -547,18 +613,34 @@ fun HomeScreen(
                                     text = "我的书架",
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.DarkGray,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontFamily = FontFamily.Serif
                                 )
 
-                                TextButton(
-                                    onClick = onImportClick,
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Filled.Add, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("导入新书", color = MintPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(
+                                        onClick = { onImportClick(selectedCategory) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Filled.Add, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("导入新书", color = MintPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    IconButton(
+                                        onClick = { showAddCategoryDialog = true },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Add,
+                                            contentDescription = "新建分类",
+                                            tint = MintPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -583,17 +665,18 @@ fun HomeScreen(
                                         targetValue = if (isSelected) 0.5f else 0.15f,
                                         label = "category_border_anim"
                                     )
-                                    val textColor = if (isSelected) MintPrimary else Color.White.copy(alpha = 0.5f)
+                                    val textColor = if (isSelected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    val baseColor = if (isSelected) MintPrimary else MaterialTheme.colorScheme.onSurface
 
                                     Box(
                                         modifier = Modifier
                                             .drawBehind {
                                                 drawRoundRect(
-                                                    color = Color.White.copy(alpha = bgAlphaState.value),
+                                                    color = baseColor.copy(alpha = bgAlphaState.value),
                                                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx())
                                                 )
                                             }
-                                            .border(1.dp, Color.White.copy(alpha = borderAlphaState.value), RoundedCornerShape(16.dp))
+                                            .border(1.dp, baseColor.copy(alpha = borderAlphaState.value), RoundedCornerShape(16.dp))
                                             .clickableWithFeedback { selectedCategory = name }
                                             .padding(horizontal = 14.dp, vertical = 6.dp),
                                         contentAlignment = Alignment.Center
@@ -621,7 +704,7 @@ fun HomeScreen(
                             ) {
                                 Text(
                                     "在此分类下没有找到书籍哦",
-                                    color = Color.Gray,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp
                                 )
                             }
@@ -676,18 +759,27 @@ fun HomeScreen(
                                     ),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
+                                val isThemeDark = MaterialTheme.colorScheme.background == com.example.ui.theme.DarkCharcoal
+                                val coverGradColors = if (isThemeDark) {
+                                    listOf(
+                                        Color(0xFF2B2D31),
+                                        Color(0xFF1E2022),
+                                        MintSecondary.copy(alpha = 0.15f)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color(0xFFF4F4F4),
+                                        Color(0xFFE3E5E7),
+                                        MintSecondary.copy(alpha = 0.3f)
+                                    )
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .aspectRatio(0.72f)
                                         .fillMaxWidth()
                                         .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(
-                                                    Color(0xFFF4F4F4),
-                                                    Color(0xFFE3E5E7),
-                                                    MintSecondary.copy(alpha = 0.3f)
-                                                )
-                                            ),
+                                            Brush.verticalGradient(colors = coverGradColors),
                                             RoundedCornerShape(10.dp)
                                         )
                                         .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
@@ -735,7 +827,7 @@ fun HomeScreen(
                                                 text = book.title,
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Color.DarkGray,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 3,
                                                 overflow = TextOverflow.Ellipsis,
                                                 textAlign = TextAlign.Center,
@@ -768,7 +860,7 @@ fun HomeScreen(
                                     text = book.title,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color.DarkGray,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.Center,
@@ -785,7 +877,7 @@ fun HomeScreen(
                                 text = "阅读统计",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.DarkGray,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontFamily = FontFamily.Serif,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -807,13 +899,13 @@ fun HomeScreen(
                                             text = "今日已阅读 $minutes 分钟",
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = "保持阅读，遇见更好的自己。",
                                             fontSize = 11.sp,
-                                            color = Color.White.copy(alpha = 0.5f)
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         )
                                     }
 

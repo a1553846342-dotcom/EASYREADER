@@ -538,18 +538,18 @@ private fun Simulate3DCurlLayout(
                         close()
                     }
 
-                    // A beautiful matte, Lambertian warm beige gradient (no high-gloss plastic/metallic specular)
-                    val flapBrush = Brush.linearGradient(
-                        0.0f to Color(0xFF2C2216).copy(alpha = 0.42f), // Fold crease shadow (warm sepia)
-                        0.15f to Color(0xFFDFD4B2),                    // Cream shaded paper shadow
-                        0.45f to Color(0xFFFAF3DC),                    // Soft diffused light (no bright specular peak)
-                        0.80f to Color(0xFFF5ECD2),                    // Natural matte paper body
-                        1.0f to Color(0xFFD2C7B1),                     // Warm outer edge shadow
+                    // Draw solid matte paper background (fully opaque #F5F0E6, alpha = 1)
+                    drawPath(path = flapPath, color = Color(0xFFF5F0E6))
+
+                    // Draw a subtle soft shadow gradient along the fold line (alpha 0.15 -> 0, no high-gloss specular)
+                    val flapShadowBrush = Brush.linearGradient(
+                        0.0f to Color.Black.copy(alpha = 0.15f), // Shaded crease fold
+                        0.5f to Color.Black.copy(alpha = 0.05f),
+                        1.0f to Color.Transparent,               // Outer edge (no shadow)
                         start = midpointM,
                         end = touchP
                     )
-
-                    drawPath(path = flapPath, brush = flapBrush)
+                    drawPath(path = flapPath, brush = flapShadowBrush)
 
                     // Draw laid paper vertical ribs (extremely subtle matte texture)
                     drawContext.canvas.save()
@@ -692,18 +692,18 @@ private fun Simulate3DCurlLayout(
                         close()
                     }
 
-                    // A beautiful matte, Lambertian warm beige gradient (no high-gloss plastic/metallic specular)
-                    val flapBrush = Brush.linearGradient(
-                        0.0f to Color(0xFF2C2216).copy(alpha = 0.42f), // Fold crease shadow (warm sepia)
-                        0.15f to Color(0xFFDFD4B2),                    // Cream shaded paper shadow
-                        0.45f to Color(0xFFFAF3DC),                    // Soft diffused light (no bright specular peak)
-                        0.80f to Color(0xFFF5ECD2),                    // Natural matte paper body
-                        1.0f to Color(0xFFD2C7B1),                     // Warm outer edge shadow
+                    // Draw solid matte paper background (fully opaque #F5F0E6, alpha = 1)
+                    drawPath(path = flapPath, color = Color(0xFFF5F0E6))
+
+                    // Draw a subtle soft shadow gradient along the fold line (alpha 0.15 -> 0, no high-gloss specular)
+                    val flapShadowBrush = Brush.linearGradient(
+                        0.0f to Color.Black.copy(alpha = 0.15f), // Shaded crease fold
+                        0.5f to Color.Black.copy(alpha = 0.05f),
+                        1.0f to Color.Transparent,               // Outer edge (no shadow)
                         start = midpointM,
                         end = touchP
                     )
-
-                    drawPath(path = flapPath, brush = flapBrush)
+                    drawPath(path = flapPath, brush = flapShadowBrush)
 
                     // Draw laid paper vertical ribs (extremely subtle matte texture)
                     drawContext.canvas.save()
