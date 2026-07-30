@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
@@ -117,6 +119,9 @@ fun ReaderScreen(
     var readerTheme by remember { mutableIntStateOf(prefs.readerTheme) }
     var fontFamilyIndex by remember { mutableIntStateOf(prefs.fontFamilyIndex) }
     var pageTurnMode by remember { mutableIntStateOf(prefs.pageTurnMode) }
+    val isScrollMode = pageTurnMode == PageTurnType.SCROLL.id
+    var currentSubPageIndex by remember { mutableIntStateOf(0) }
+    var currentCharOffset by remember { mutableIntStateOf(0) }
 
     val isTtsPlaying by ttsManager.isPlaying.collectAsState()
     var searchKeyword by remember { mutableStateOf("") }
@@ -177,15 +182,20 @@ fun ReaderScreen(
     LaunchedEffect(book, chapters) {
         if (book != null && chapters.isNotEmpty() && book.scrollOffset > 0) {
             if (currentChapterIndex == book.currentChapterIndex) {
-                scrollState.scrollTo(book.scrollOffset)
+                if (isScrollMode) {
+                    scrollState.scrollTo(book.scrollOffset)
+                } else {
+                    currentCharOffset = book.scrollOffset
+                }
             }
         }
     }
 
-    LaunchedEffect(currentChapterIndex, scrollState.value) {
+    LaunchedEffect(currentChapterIndex, scrollState.value, currentCharOffset, isScrollMode) {
         if (book != null && chapters.isNotEmpty()) {
-            val isFinished = currentChapterIndex == chapters.size - 1 && scrollState.value > 100
-            onUpdateProgress(book.id, currentChapterIndex, scrollState.value, isFinished)
+            val offsetToSave = if (isScrollMode) scrollState.value else currentCharOffset
+            val isFinished = currentChapterIndex == chapters.size - 1 && (if (isScrollMode) scrollState.value > 100 else true)
+            onUpdateProgress(book.id, currentChapterIndex, offsetToSave, isFinished)
         }
     }
 
@@ -217,24 +227,36 @@ fun ReaderScreen(
         }
     }
 
-    var currentSubPageIndex by remember { mutableIntStateOf(0) }
-    val isScrollMode = pageTurnMode == PageTurnType.SCROLL.id
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            var pageContainerSize by remember { mutableStateOf<IntSize?>(null) }
             val density = LocalDensity.current
             val navBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
             val statusBarsTopPx = WindowInsets.statusBars.getTop(density)
 
-            val containerWidthPx = with(density) { (maxWidth - marginHorizontal.dp * 2).toPx().toInt() }.coerceAtLeast(100)
-            val containerHeightPx = with(density) {
-                val totalHeightPx = maxHeight.toPx().toInt()
-                (totalHeightPx - statusBarsTopPx - navBarsBottomPx - 64.dp.toPx().toInt()).coerceAtLeast(100)
+            val fallbackWidthPx = with(density) { (maxWidth - marginHorizontal.dp * 2).toPx().toInt() }.coerceAtLeast(100)
+            val headerFooterPaddingPx = with(density) {
+                var pad = 24.dp.toPx().toInt()
+                if (prefs.showOverlayHeaderFooter && !showBars) {
+                    pad += 48.dp.toPx().toInt()
+                }
+                pad
             }
+            val fallbackHeightPx = with(density) {
+                (maxHeight.toPx().toInt() - statusBarsTopPx - navBarsBottomPx - headerFooterPaddingPx).coerceAtLeast(100)
+            }
+
+            val containerWidthPx = pageContainerSize?.let {
+                (it.width - with(density) { (marginHorizontal.dp * 2).toPx().toInt() }).coerceAtLeast(100)
+            } ?: fallbackWidthPx
+
+            val containerHeightPx = pageContainerSize?.let {
+                (it.height - with(density) { 24.dp.toPx().toInt() }).coerceAtLeast(100)
+            } ?: fallbackHeightPx
 
             val bodyTextStyle = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = fontSize.sp,
@@ -249,15 +271,79 @@ fun ReaderScreen(
                 widthPx = containerWidthPx,
                 heightPx = containerHeightPx,
                 titleText = currentChapter?.title,
+                showBars = showBars,
+                isScrollMode = isScrollMode
+            )
+
+            val nextChapter = chapters.getOrNull(currentChapterIndex + 1)
+            val nextChapterFormattedContent = remember(nextChapter, firstLineIndent) {
+                val text = nextChapter?.content ?: ""
+                if (firstLineIndent) {
+                    text.split("\n").joinToString("\n") { line ->
+                        if (line.isNotBlank() && !line.startsWith("\u3000\u3000")) "\u3000\u3000$line" else line
+                    }
+                } else {
+                    text
+                }
+            }
+            val nextChapterPages = rememberPaginatedPages(
+                content = nextChapterFormattedContent,
+                style = bodyTextStyle,
+                widthPx = containerWidthPx,
+                heightPx = containerHeightPx,
+                titleText = nextChapter?.title,
+                showBars = showBars,
+                isScrollMode = isScrollMode
+            )
+
+            val prevChapter = chapters.getOrNull(currentChapterIndex - 1)
+            val prevChapterFormattedContent = remember(prevChapter, firstLineIndent) {
+                val text = prevChapter?.content ?: ""
+                if (firstLineIndent) {
+                    text.split("\n").joinToString("\n") { line ->
+                        if (line.isNotBlank() && !line.startsWith("\u3000\u3000")) "\u3000\u3000$line" else line
+                    }
+                } else {
+                    text
+                }
+            }
+            val prevChapterPages = rememberPaginatedPages(
+                content = prevChapterFormattedContent,
+                style = bodyTextStyle,
+                widthPx = containerWidthPx,
+                heightPx = containerHeightPx,
+                titleText = prevChapter?.title,
+                showBars = showBars,
                 isScrollMode = isScrollMode
             )
 
             val activeSubPageIndex = currentSubPageIndex.coerceIn(0, (pagesList.size - 1).coerceAtLeast(0))
 
-            LaunchedEffect(pagesList, currentChapterIndex) {
-                if (currentSubPageIndex >= pagesList.size) {
-                    currentSubPageIndex = (pagesList.size - 1).coerceAtLeast(0)
+            // Re-anchor subpage index based on currentCharOffset when pagesList recalculates (e.g. screen rotation / layout change)
+            LaunchedEffect(pagesList) {
+                if (!isScrollMode && pagesList.isNotEmpty()) {
+                    var accumulated = 0
+                    var targetPageIndex = 0
+                    for (index in pagesList.indices) {
+                        val pageLen = pagesList[index].length
+                        if (accumulated + pageLen > currentCharOffset || index == pagesList.lastIndex) {
+                            targetPageIndex = index
+                            break
+                        }
+                        accumulated += pageLen
+                    }
+                    currentSubPageIndex = targetPageIndex
                 }
+            }
+
+            val updateSubPage = { newIndex: Int ->
+                val clamped = newIndex.coerceIn(0, (pagesList.size - 1).coerceAtLeast(0))
+                currentSubPageIndex = clamped
+                var offset = 0
+                for (i in 0 until clamped) {
+                    offset += pagesList.getOrNull(i)?.length ?: 0
+                }
+                currentCharOffset = offset
             }
 
             val handleNextPage = {
@@ -268,9 +354,10 @@ fun ReaderScreen(
                     }
                 } else {
                     if (activeSubPageIndex < pagesList.size - 1) {
-                        currentSubPageIndex = activeSubPageIndex + 1
+                        updateSubPage(activeSubPageIndex + 1)
                     } else if (currentChapterIndex < chapters.size - 1) {
                         currentChapterIndex++
+                        currentCharOffset = 0
                         currentSubPageIndex = 0
                         scope.launch { scrollState.scrollTo(0) }
                     }
@@ -285,9 +372,10 @@ fun ReaderScreen(
                     }
                 } else {
                     if (activeSubPageIndex > 0) {
-                        currentSubPageIndex = activeSubPageIndex - 1
+                        updateSubPage(activeSubPageIndex - 1)
                     } else if (currentChapterIndex > 0) {
                         currentChapterIndex--
+                        currentCharOffset = Int.MAX_VALUE
                         currentSubPageIndex = 9999
                         scope.launch { scrollState.scrollTo(0) }
                     }
@@ -326,6 +414,11 @@ fun ReaderScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxWidth()
+                                    .onSizeChanged { size ->
+                                        if (size.width > 0 && size.height > 0) {
+                                            pageContainerSize = size
+                                        }
+                                    }
                             ) {
                                 PageTurnContainer(
                                     pageTurnMode = pageTurnMode,
@@ -359,115 +452,105 @@ fun ReaderScreen(
                                                 }
                                             }
                                         } else {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(bgColor)
-                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
-                                            ) {
-                                                if (activeSubPageIndex == 0) {
-                                                    Text(
-                                                        text = chapter.title,
-                                                        style = MaterialTheme.typography.headlineSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = textColor,
-                                                        modifier = Modifier.padding(bottom = 12.dp, top = if (!showBars) 8.dp else 0.dp)
-                                                    )
-                                                }
-
-                                                Box(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = pagesList.getOrNull(activeSubPageIndex) ?: "",
-                                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                                            fontSize = fontSize.sp,
-                                                            lineHeight = lineHeight.sp,
-                                                            fontFamily = selectedFontFamily,
-                                                            color = textColor.copy(alpha = 0.92f)
-                                                        ),
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    )
-                                                }
-                                            }
+                                            RenderSinglePage(
+                                                pageIndex = activeSubPageIndex,
+                                                pageText = pagesList.getOrNull(activeSubPageIndex) ?: "",
+                                                chapterTitle = chapter.title,
+                                                bgColor = bgColor,
+                                                textColor = textColor,
+                                                fontSize = fontSize,
+                                                lineHeight = lineHeight,
+                                                selectedFontFamily = selectedFontFamily,
+                                                marginHorizontal = marginHorizontal,
+                                                showBars = showBars
+                                            )
                                         }
                                     },
                                     nextContent = {
-                                        if (!isScrollMode && activeSubPageIndex < pagesList.size - 1) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(bgColor)
-                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
-                                            ) {
-                                                Text(
-                                                    text = pagesList.getOrNull(activeSubPageIndex + 1) ?: "",
-                                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                                        fontSize = fontSize.sp,
-                                                        lineHeight = lineHeight.sp,
-                                                        fontFamily = selectedFontFamily,
-                                                        color = textColor.copy(alpha = 0.92f)
-                                                    )
+                                        if (!isScrollMode) {
+                                            if (activeSubPageIndex < pagesList.size - 1) {
+                                                RenderSinglePage(
+                                                    pageIndex = activeSubPageIndex + 1,
+                                                    pageText = pagesList.getOrNull(activeSubPageIndex + 1) ?: "",
+                                                    chapterTitle = chapter.title,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
-                                            }
-                                        } else {
-                                            val nextChapter = chapters.getOrNull(currentChapterIndex + 1)
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(bgColor)
-                                                    .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
-                                            ) {
-                                                Text(
-                                                    text = nextChapter?.title ?: "最后一章",
-                                                    style = MaterialTheme.typography.headlineSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = textColor
+                                            } else if (nextChapter != null) {
+                                                RenderSinglePage(
+                                                    pageIndex = 0,
+                                                    pageText = nextChapterPages.firstOrNull() ?: "",
+                                                    chapterTitle = nextChapter.title,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
-                                                Spacer(modifier = Modifier.height(16.dp))
-                                                Text(
-                                                    text = nextChapter?.content?.take(400) ?: "",
-                                                    fontSize = fontSize.sp,
-                                                    color = textColor.copy(alpha = 0.7f)
+                                            } else {
+                                                RenderSinglePage(
+                                                    pageIndex = 0,
+                                                    pageText = "已经是最后一页了",
+                                                    chapterTitle = null,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
                                             }
                                         }
                                     },
                                     prevContent = {
-                                        if (!isScrollMode && activeSubPageIndex > 0) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(bgColor)
-                                                    .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
-                                            ) {
-                                                Text(
-                                                    text = pagesList.getOrNull(activeSubPageIndex - 1) ?: "",
-                                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                                        fontSize = fontSize.sp,
-                                                        lineHeight = lineHeight.sp,
-                                                        fontFamily = selectedFontFamily,
-                                                        color = textColor.copy(alpha = 0.92f)
-                                                    )
+                                        if (!isScrollMode) {
+                                            if (activeSubPageIndex > 0) {
+                                                RenderSinglePage(
+                                                    pageIndex = activeSubPageIndex - 1,
+                                                    pageText = pagesList.getOrNull(activeSubPageIndex - 1) ?: "",
+                                                    chapterTitle = chapter.title,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
-                                            }
-                                        } else {
-                                            val prevChapter = chapters.getOrNull(currentChapterIndex - 1)
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(bgColor)
-                                                    .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
-                                            ) {
-                                                Text(
-                                                    text = prevChapter?.title ?: "第一章",
-                                                    style = MaterialTheme.typography.headlineSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = textColor
+                                            } else if (prevChapter != null) {
+                                                val lastIdx = (prevChapterPages.size - 1).coerceAtLeast(0)
+                                                RenderSinglePage(
+                                                    pageIndex = lastIdx,
+                                                    pageText = prevChapterPages.getOrNull(lastIdx) ?: "",
+                                                    chapterTitle = prevChapter.title,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
-                                                Spacer(modifier = Modifier.height(16.dp))
-                                                Text(
-                                                    text = prevChapter?.content?.take(400) ?: "",
-                                                    fontSize = fontSize.sp,
-                                                    color = textColor.copy(alpha = 0.7f)
+                                            } else {
+                                                RenderSinglePage(
+                                                    pageIndex = 0,
+                                                    pageText = "已经是第一页了",
+                                                    chapterTitle = null,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    fontSize = fontSize,
+                                                    lineHeight = lineHeight,
+                                                    selectedFontFamily = selectedFontFamily,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = showBars
                                                 )
                                             }
                                         }
@@ -488,7 +571,6 @@ fun ReaderScreen(
                                             currentChapter?.let { ch ->
                                                 val snippet = ch.content.take(60)
                                                 onAddBookmark(currentBookId, currentChapterIndex, scrollState.value, ch.title, snippet)
-                                                Toast.makeText(context, "已添加书签", Toast.LENGTH_SHORT).show()
                                                 scope.launch {
                                                     showEasterEgg = true
                                                     delay(2500)
@@ -1138,7 +1220,7 @@ fun ReaderScreen(
                     .shadow(8.dp, RoundedCornerShape(16.dp))
             ) {
                 Text(
-                    text = "书签已保存~ 喵!",
+                    text = "Ciallo～(∠・ω< )⌒★",
                     modifier = Modifier.padding(16.dp, 8.dp),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.Bold,
@@ -1199,20 +1281,25 @@ fun rememberPaginatedPages(
     widthPx: Int,
     heightPx: Int,
     titleText: String?,
+    showBars: Boolean,
     isScrollMode: Boolean
 ): List<String> {
     if (isScrollMode || content.isEmpty()) {
         return listOf(content)
     }
     val textMeasurer = rememberTextMeasurer()
-    val titleStyle = MaterialTheme.typography.headlineSmall
+    val density = LocalDensity.current
+    val titleStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
 
-    return remember(content, style, widthPx, heightPx, titleText) {
+    return remember(content, style, widthPx, heightPx, titleText, showBars) {
         if (content.isEmpty() || widthPx <= 20 || heightPx <= 20) return@remember listOf(content)
 
         val pages = mutableListOf<String>()
         var startOffset = 0
         var isFirstPage = true
+
+        val titleTopPaddingPx = with(density) { (if (!showBars) 8.dp else 0.dp).toPx().toInt() }
+        val titleBottomPaddingPx = with(density) { 12.dp.toPx().toInt() }
 
         var page0AvailableHeight = heightPx
         if (!titleText.isNullOrEmpty()) {
@@ -1221,7 +1308,8 @@ fun rememberPaginatedPages(
                 style = titleStyle,
                 constraints = Constraints(maxWidth = widthPx)
             )
-            page0AvailableHeight = (heightPx - titleLayout.size.height - 36).coerceAtLeast(heightPx / 3)
+            val totalTitleHeightPx = titleLayout.size.height + titleTopPaddingPx + titleBottomPaddingPx
+            page0AvailableHeight = (heightPx - totalTitleHeightPx).coerceAtLeast(heightPx / 3)
         }
 
         while (startOffset < content.length) {
@@ -1239,7 +1327,8 @@ fun rememberPaginatedPages(
 
             var fitLine = -1
             for (line in 0 until totalLines) {
-                if (layoutResult.getLineBottom(line) <= targetHeight) {
+                val lineBottom = layoutResult.getLineBottom(line)
+                if (lineBottom <= targetHeight + 1.5f) {
                     fitLine = line
                 } else {
                     break
@@ -1247,7 +1336,7 @@ fun rememberPaginatedPages(
             }
 
             if (fitLine < 0) {
-                val pageEnd = layoutResult.getLineEnd(0, visibleEnd = true).coerceAtLeast(1)
+                val pageEnd = layoutResult.getLineEnd(0, visibleEnd = false).coerceAtLeast(1)
                 val take = pageEnd.coerceAtMost(remainingText.length)
                 pages.add(remainingText.substring(0, take))
                 startOffset += take
@@ -1255,7 +1344,7 @@ fun rememberPaginatedPages(
                 pages.add(remainingText)
                 break
             } else {
-                var pageEnd = layoutResult.getLineEnd(fitLine, visibleEnd = true)
+                var pageEnd = layoutResult.getLineEnd(fitLine, visibleEnd = false)
                 if (pageEnd <= 0) pageEnd = 1
                 val take = pageEnd.coerceAtMost(remainingText.length)
                 pages.add(remainingText.substring(0, take))
@@ -1264,6 +1353,55 @@ fun rememberPaginatedPages(
             isFirstPage = false
         }
 
+        android.util.Log.d(
+            "PageSplitter",
+            "Paginated into ${pages.size} pages. Measured container: width=$widthPx px, normalHeight=$heightPx px, page0Height=$page0AvailableHeight px. ShowBars=$showBars"
+        )
+
         if (pages.isEmpty()) listOf(content) else pages
+    }
+}
+
+@Composable
+private fun RenderSinglePage(
+    pageIndex: Int,
+    pageText: String,
+    chapterTitle: String?,
+    bgColor: Color,
+    textColor: Color,
+    fontSize: Float,
+    lineHeight: Float,
+    selectedFontFamily: FontFamily,
+    marginHorizontal: Int,
+    showBars: Boolean
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+            .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
+    ) {
+        if (pageIndex == 0 && !chapterTitle.isNullOrEmpty()) {
+            Text(
+                text = chapterTitle,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = textColor,
+                modifier = Modifier.padding(bottom = 12.dp, top = if (!showBars) 8.dp else 0.dp)
+            )
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            Text(
+                text = pageText,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = fontSize.sp,
+                    lineHeight = lineHeight.sp,
+                    fontFamily = selectedFontFamily,
+                    color = textColor.copy(alpha = 0.92f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }

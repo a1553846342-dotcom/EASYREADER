@@ -1,0 +1,89 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- Twin Braids Drooping -->
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 32,52 C 22,64 18,82 24,100 C 28,104 34,100 32,88 C 36,76 38,62 36,52 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 88,52 C 98,64 102,82 96,100 C 92,104 86,100 88,88 C 84,76 82,62 84,52 Z" />
+
+    <!-- Outer Brown Cloak -->
+    <path
+        android:fillColor="#B1885C"
+        android:pathData="M 32,80 L 60,72 L 88,80 L 98,112 L 22,112 Z" />
+    <path
+        android:fillColor="#ECE5D8"
+        android:pathData="M 32,80 L 38,112 L 22,112 Z" />
+    <path
+        android:fillColor="#ECE5D8"
+        android:pathData="M 88,80 L 98,112 L 82,112 Z" />
+
+    <!-- Dark Inner Tunic -->
+    <path
+        android:fillColor="#2C303E"
+        android:pathData="M 42,76 L 60,72 L 78,76 L 82,112 L 38,112 Z" />
+
+    <!-- Head Face Base -->
+    <path
+        android:fillColor="#FFF2E6"
+        android:pathData="M 60,35 C 82,35 96,49 96,69 C 96,87 80,97 60,97 C 40,97 24,87 24,69 C 24,49 38,35 60,35 Z" />
+
+    <!-- Blush -->
+    <path
+        android:fillColor="#FBA2AC"
+        android:pathData="M 32,71 A 6,4 0 1,1 44,71 A 6,4 0 1,1 32,71" />
+    <path
+        android:fillColor="#FBA2AC"
+        android:pathData="M 76,71 A 6,4 0 1,1 88,71 A 6,4 0 1,1 76,71" />
+
+    <!-- Sad Droopy Eyes -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 38,58 C 42,66 48,66 52,58"
+        android:strokeWidth="3.5"
+        android:strokeColor="#343A6E"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 68,58 C 72,66 78,66 82,58"
+        android:strokeWidth="3.5"
+        android:strokeColor="#343A6E"
+        android:strokeLineCap="round" />
+
+    <!-- Tiny Tear Drop -->
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M 34,65 C 30,73 38,73 34,65 Z" />
+
+    <!-- Sad Mouth -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 54,79 Q 60,73 66,79"
+        android:strokeWidth="2.5"
+        android:strokeColor="#5C4538"
+        android:strokeLineCap="round" />
+
+    <!-- Hair Bangs -->
+    <path
+        android:fillColor="#7278C5"
+        android:pathData="M 28,51 Q 40,65 48,53 Q 58,69 62,51 Q 72,65 80,49 Q 90,61 92,51 Q 96,35 60,35 Q 24,35 28,51 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 26,49 C 22,61 24,73 28,77 C 31,71 30,59 32,51 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 94,49 C 98,61 96,73 92,77 C 89,71 90,59 88,51 Z" />
+
+    <!-- Sad Drooping Ahoge -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 60,35 C 50,22 42,28 46,38"
+        android:strokeWidth="3.5"
+        android:strokeColor="#7278C5"
+        android:strokeLineCap="round" />
+</vector>

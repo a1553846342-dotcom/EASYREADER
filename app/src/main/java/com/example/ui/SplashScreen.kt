@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -39,17 +40,6 @@ import java.io.File
 
 private const val TAG = "SplashScreen"
 
-val LiteraryQuotes = listOf(
-    "粗缯大布裹生涯，腹有诗书气自华。—— 苏轼",
-    "书卷多情似故人，晨昏忧乐每相亲。—— 于谦",
-    "读书破万卷，下笔如有神。—— 杜甫",
-    "立身以立学为先，立学以读书为本。—— 欧阳修",
-    "发愤识遍天下字，立志读尽人间书。—— 苏轼",
-    "旧书不厌百回读，熟读深思子自知。—— 苏轼",
-    "路漫漫其修远兮，吾将上下而求索。—— 屈原",
-    "博观而约取，厚积而薄发。—— 苏轼"
-)
-
 @Composable
 fun SplashScreen(
     prefs: PreferencesManager,
@@ -58,7 +48,11 @@ fun SplashScreen(
     val context = LocalContext.current
     val scale = remember { Animatable(1.05f) }
     val alpha = remember { Animatable(0f) }
-    val randomQuote = remember { LiteraryQuotes.random() }
+    val splashQuotes = remember(context) {
+        val array = context.resources.getStringArray(R.array.splash_quotes)
+        if (array.isNotEmpty()) array else arrayOf("如果不战斗，就无法获胜！ ——《进击的巨人》")
+    }
+    val randomQuote = remember(splashQuotes) { splashQuotes.random() }
 
     val customPoster = prefs.customSplashPosterUri
     val isPureMode = prefs.splashPureMode
@@ -144,7 +138,9 @@ fun SplashScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .alpha(alpha.value)
+                .graphicsLayer {
+                    this.alpha = alpha.value
+                }
         ) {
             if (loadedBitmap != null) {
                 Image(
@@ -153,7 +149,10 @@ fun SplashScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
-                        .scale(scale.value)
+                        .graphicsLayer {
+                            scaleX = scale.value
+                            scaleY = scale.value
+                        }
                 )
             } else {
                 // Procedural Artistic Fallback Poster (Cozy Night Ambient)
@@ -214,6 +213,7 @@ private fun rememberLoadedSplashBitmap(model: Any?): ImageBitmap? {
             try {
                 val options = BitmapFactory.Options().apply {
                     inSampleSize = 2 // Downsample 2x for fast decoding and low memory
+                    inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
                 }
                 when (model) {
                     is Int -> {

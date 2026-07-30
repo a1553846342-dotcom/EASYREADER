@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.MintPrimary
+import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
 
 /**
@@ -31,7 +31,7 @@ fun CustomSwitch(
 ) {
     // Background color animation
     val trackColor by animateColorAsState(
-        targetValue = if (checked) MintPrimary else Color(0xFFD2D5DA),
+        targetValue = if (checked) MintSecondary else Color(0xFFD2D5DA),
         animationSpec = tween(durationMillis = 200),
         label = "switch_track_color"
     )

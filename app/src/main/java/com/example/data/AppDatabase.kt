@@ -8,6 +8,9 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY lastReadTime DESC")
     fun getAllBooks(): Flow<List<Book>>
 
+    @Query("SELECT * FROM books")
+    suspend fun getAllBooksSync(): List<Book>
+
     @Query("SELECT COUNT(*) FROM books")
     suspend fun getBooksCount(): Int
 

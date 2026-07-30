@@ -4,7 +4,10 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -19,6 +22,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -132,107 +137,7 @@ fun SettingsTabScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Section 0: Custom Color Theme (3.4)
-                item {
-                    Text("主界面配色高度自定义", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)
-                }
 
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("主色调选择 (Primary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
-                                com.example.ui.theme.BasePrimaryColors.forEachIndexed { index, color ->
-                                    val selected = colorPrimaryIndex == index
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = {
-                                            colorPrimaryIndex = index
-                                            onColorThemeChange(index, colorSecondaryIndex)
-                                        },
-                                        shape = CircleShape,
-                                        leadingIcon = {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(16.dp)
-                                                    .clip(CircleShape)
-                                                    .background(color)
-                                            )
-                                        },
-                                        label = { Text(colorNames[index], fontSize = 12.sp) }
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("强调色/副色选择 (Secondary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
-                                com.example.ui.theme.BaseSecondaryColors.forEachIndexed { index, color ->
-                                    val selected = colorSecondaryIndex == index
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = {
-                                            colorSecondaryIndex = index
-                                            onColorThemeChange(colorPrimaryIndex, index)
-                                        },
-                                        shape = CircleShape,
-                                        leadingIcon = {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(16.dp)
-                                                    .clip(CircleShape)
-                                                    .background(color)
-                                            )
-                                        },
-                                        label = { Text(colorNames[index], fontSize = 12.sp) }
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("当前主题实时预览", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(CircleShape)
-                                            .background(com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(CircleShape)
-                                            .background(com.example.ui.theme.BaseSecondaryColors[colorSecondaryIndex])
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
 
                 // Section 1: Splash Poster
                 item {
@@ -318,6 +223,152 @@ fun SettingsTabScreen(
                                         prefs.splashPureMode = it
                                     }
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // Section: 外观与主题自定义
+                item {
+                    Text("外观与主题", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                }
+
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Palette, contentDescription = null, tint = MintPrimary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("主题配色方案", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text("主色调 (Primary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceAround
+                            ) {
+                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
+                                com.example.ui.theme.BasePrimaryColors.forEachIndexed { index, color ->
+                                    val selected = colorPrimaryIndex == index
+                                    val scale by animateFloatAsState(targetValue = if (selected) 1.15f else 1f, label = "scalePrimary")
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .scale(scale)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                            .then(
+                                                if (selected) {
+                                                    Modifier.border(3.dp, Color.White, CircleShape)
+                                                        .shadow(4.dp, CircleShape)
+                                                } else {
+                                                    Modifier
+                                                }
+                                            )
+                                            .clickable {
+                                                colorPrimaryIndex = index
+                                                onColorThemeChange(index, colorSecondaryIndex)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selected) {
+                                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text("强调色 / 副色 (Secondary)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceAround
+                            ) {
+                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
+                                com.example.ui.theme.BaseSecondaryColors.forEachIndexed { index, color ->
+                                    val selected = colorSecondaryIndex == index
+                                    val scale by animateFloatAsState(targetValue = if (selected) 1.15f else 1f, label = "scaleSecondary")
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .scale(scale)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                            .then(
+                                                if (selected) {
+                                                    Modifier.border(3.dp, Color.White, CircleShape)
+                                                        .shadow(4.dp, CircleShape)
+                                                } else {
+                                                    Modifier
+                                                }
+                                            )
+                                            .clickable {
+                                                colorSecondaryIndex = index
+                                                onColorThemeChange(colorPrimaryIndex, index)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selected) {
+                                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Text("实时配色预览卡片", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex].copy(alpha = 0.08f)
+                                ),
+                                border = BorderStroke(1.dp, com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex].copy(alpha = 0.3f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("CIallo 阅览室", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = com.example.ui.theme.BaseSecondaryColors[colorSecondaryIndex]
+                                        ) {
+                                            Text("副色标签", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Button(
+                                        onClick = {},
+                                        colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex]),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                                    ) {
+                                        Text("主色按钮实时联动效果", color = Color.White, fontSize = 12.sp)
+                                    }
+                                }
                             }
                         }
                     }

@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -71,12 +73,14 @@ fun HomeScreen(
     onNavigateToStats: () -> Unit,
     totalReadTimeSeconds: Long,
     streakDays: Int = 0,
-    onDeleteBook: (Book) -> Unit
+    onDeleteBook: (Book) -> Unit,
+    onMoveBook: (Book, String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("全部") }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
+    var bookToMove by remember { mutableStateOf<Book?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
 
@@ -100,6 +104,42 @@ fun HomeScreen(
                                 book.author.contains(searchQuery, ignoreCase = true)
             matchesCategory && matchesSearch
         }
+    }
+
+    // Move dialog
+    if (bookToMove != null) {
+        AlertDialog(
+            onDismissRequest = { bookToMove = null },
+            title = { Text("选择目标分类", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = {
+                androidx.compose.foundation.layout.Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val availableCategories = categories.filter { it.name != bookToMove?.category }
+                    if (availableCategories.isEmpty()) {
+                        Text("没有其他可用的分类。", color = Color.White.copy(alpha = 0.8f))
+                    } else {
+                        availableCategories.forEach { cat ->
+                            TextButton(
+                                onClick = {
+                                    onMoveBook(bookToMove!!, cat.name)
+                                    bookToMove = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(cat.name, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { bookToMove = null }) {
+                    Text("取消", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1B143F),
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 
     // Delete dialog
@@ -665,8 +705,8 @@ fun HomeScreen(
                                         targetValue = if (isSelected) 0.5f else 0.15f,
                                         label = "category_border_anim"
                                     )
-                                    val textColor = if (isSelected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    val baseColor = if (isSelected) MintPrimary else MaterialTheme.colorScheme.onSurface
+                                    val textColor = if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    val baseColor = if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurface
 
                                     Box(
                                         modifier = Modifier
@@ -747,18 +787,78 @@ fun HomeScreen(
                                 }
                             }
 
-                            Column(
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        val phase = (book.id.hashCode() % 1000) / 1000f * 2f * Math.PI.toFloat()
-                                        translationY = (kotlin.math.sin(globalBreathingProgress + phase) * 3.dp.toPx()).toFloat()
+                            var isPressed by remember { mutableStateOf(false) }
+                            var isLongPressed by remember { mutableStateOf(false) }
+                            var showMenu by remember { mutableStateOf(false) }
+
+                            val scaleAnim by animateFloatAsState(
+                                targetValue = if (isLongPressed) 1.05f else 1f,
+                                animationSpec = tween(durationMillis = 200),
+                                label = "book_scale"
+                            )
+                            val translationZAnim by animateFloatAsState(
+                                targetValue = if (isLongPressed) -8f else 0f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "book_elevation"
+                            )
+
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = {
+                                        showMenu = false
+                                        isLongPressed = false
                                     }
-                                    .combinedClickable(
-                                        onClick = { onBookClick(book) },
-                                        onLongClick = { bookToDelete = book }
-                                    ),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("移动到其他书架") },
+                                        onClick = {
+                                            showMenu = false
+                                            isLongPressed = false
+                                            bookToMove = book
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("删除图书", color = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            showMenu = false
+                                            isLongPressed = false
+                                            // Set bookToDelete to trigger the delete confirmation dialog (or delete directly if required)
+                                            // Requirements: "如果'删除图书'这个菜单项本身还需要二次确认(防误删),可以保留一个简洁的二次确认,但必须先经过长按菜单"
+                                            bookToDelete = book
+                                        }
+                                    )
+                                }
+
+                                Column(
+                                    modifier = Modifier
+                                        .offset(y = translationZAnim.dp)
+                                        .graphicsLayer {
+                                            val phase = (book.id.hashCode() % 1000) / 1000f * 2f * Math.PI.toFloat()
+                                            translationY = (kotlin.math.sin(globalBreathingProgress + phase) * 3.dp.toPx()).toFloat()
+                                            scaleX = scaleAnim
+                                            scaleY = scaleAnim
+                                        }
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onPress = {
+                                                    isPressed = true
+                                                    if (tryAwaitRelease()) {
+                                                        isPressed = false
+                                                        isLongPressed = false
+                                                    } else {
+                                                        isPressed = false
+                                                    }
+                                                },
+                                                onLongPress = {
+                                                    isLongPressed = true
+                                                    showMenu = true
+                                                },
+                                                onTap = { onBookClick(book) }
+                                            )
+                                        },
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                 val isThemeDark = MaterialTheme.colorScheme.background == com.example.ui.theme.DarkCharcoal
                                 val coverGradColors = if (isThemeDark) {
                                     listOf(
@@ -778,13 +878,12 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .aspectRatio(0.72f)
                                         .fillMaxWidth()
-                                        .background(
-                                            Brush.verticalGradient(colors = coverGradColors),
-                                            RoundedCornerShape(10.dp)
-                                        )
-                                        .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
                                         .shadow(4.dp, RoundedCornerShape(10.dp))
-                                        .clip(RoundedCornerShape(10.dp)),
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            Brush.verticalGradient(colors = coverGradColors)
+                                        )
+                                        .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(10.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (hasValidCover && imageRequest != null) {
@@ -867,6 +966,7 @@ fun HomeScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
+                            } // Close Box
                         }
                     }
 

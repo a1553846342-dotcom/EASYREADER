@@ -1,10 +1,18 @@
 package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 
-// Bilibili Style Theme Palette
-val MintPrimary = Color(0xFFFB7299) // Bilibili Pink
-val MintSecondary = Color(0xFF00AEEC) // Bilibili Blue
+// Bilibili Style Theme Palette (Dynamic via MaterialTheme)
+val MintPrimary: Color
+    @Composable
+    get() = MaterialTheme.colorScheme.primary
+
+val MintSecondary: Color
+    @Composable
+    get() = MaterialTheme.colorScheme.secondary
+
 val MintGold = Color(0xFFE8C97A)
 
 val DarkCharcoal = Color(0xFF18191C)

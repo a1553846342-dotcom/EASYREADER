@@ -747,7 +747,7 @@ private fun CoverPageTurnLayout(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { translationX = dragPx * 0.15f }
+                    .graphicsLayer { translationX = (1f + dragPx / widthPx.coerceAtLeast(1f)) * (-0.15f * widthPx) }
             ) {
                 nextContent()
             }

@@ -264,126 +264,82 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     }
 
     suspend fun checkAndSeedDefaultBooks() = withContext(Dispatchers.IO) {
-        val testNovelTitle = "5页测试小说：星海漫游纪"
-        val sampleTestNovelCount = bookDao.getBookCountByFilePath("sample_test_novel")
+        // 1. Remove legacy test / placeholder books
+        try {
+            val allBooks = bookDao.getAllBooksSync()
+            val oldTestPaths = setOf("sample_test_novel", "sample_comic", "sample_epub3.epub")
+            for (book in allBooks) {
+                if (book.filePath in oldTestPaths ||
+                    book.title.contains("5页测试小说") ||
+                    book.title.contains("示例漫画") ||
+                    book.title.contains("示例 EPUB")
+                ) {
+                    bookDao.deleteChaptersForBook(book.id)
+                    bookDao.nullifyBookIdInReadingRecords(book.id)
+                    bookDao.deleteBook(book)
+                }
+            }
+            val comicDir = java.io.File(context.filesDir, "sample_comic")
+            if (comicDir.exists()) comicDir.deleteRecursively()
+            val epubFile = java.io.File(context.cacheDir, "sample_epub3.epub")
+            if (epubFile.exists()) epubFile.delete()
+        } catch (e: Exception) {
+            android.util.Log.e("BookRepository", "Error cleaning old test books", e)
+        }
 
-        if (sampleTestNovelCount == 0) {
-            // Seed 5-Page Test Novel
-            val novelBook = Book(
-                title = testNovelTitle,
-                author = "测试专用",
-                filePath = "sample_test_novel",
-                totalChapters = 5,
+        // 2. Seed 《Ciallo阅读使用指南》 as default book
+        val guideFilePath = "ciallo_guide_novel"
+        val existingGuideCount = bookDao.getBookCountByFilePath(guideFilePath)
+
+        if (existingGuideCount == 0) {
+            val guideTitle = "《Ciallo阅读使用指南》"
+            val guideBook = Book(
+                title = guideTitle,
+                author = "Ciallo阅读器团队",
+                filePath = guideFilePath,
+                totalChapters = 6,
                 contentType = "NOVEL"
             )
-            val novelId = bookDao.insertBook(novelBook).toInt()
-            val novelChapters = listOf(
+            val bookId = bookDao.insertBook(guideBook).toInt()
+            val guideChapters = listOf(
                 Chapter(
-                    bookId = novelId,
+                    bookId = bookId,
                     chapterOrder = 0,
-                    title = "第一页：启航与星空",
-                    content = "【第 1 页 / 共 5 页】\n\n浩瀚的星海在舷窗外缓缓流转，沉寂的宇宙犹如无边无际的深蓝织锦。\n\n探索号飞船徐徐启动曲率引擎，尾焰划破夜空。这是星际探险家迈向未知星系的第一步。\n\n请点击屏幕右侧或向左滑动，翻至【第二页】继续阅读测试。"
+                    title = "第一章：欢迎使用 Ciallo 阅读器",
+                    content = "欢迎使用 Ciallo 阅读器！\n\nCiallo 阅读器是一款专为二次元与小说/漫画爱好者打造的极简、流畅且充满陪伴感的高品质阅读应用。\n\n无论你是喜爱阅读长篇网络小说、经典文学著作，还是习惯追更日漫与条漫，Ciallo 阅读器都能为你提供极佳的阅读排版体验与智能贴心的辅助功能。\n\n本指南将带你快速了解 Ciallo 阅读器的各项核心功能与使用技巧，帮助你开启一段惬意的阅读之旅。"
                 ),
                 Chapter(
-                    bookId = novelId,
+                    bookId = bookId,
                     chapterOrder = 1,
-                    title = "第二页：深空信号",
-                    content = "【第 2 页 / 共 5 页】\n\n飞船的离散感应器捕捉到了来自猎户座旋臂边缘的微弱脉冲信号。\n\n频率稳定，节奏明快，宛如远古文明发出的问候。队长紧盯显示屏，指令飞行员调转航向，直奔信号源头。\n\n请点击屏幕右侧或向左滑动，翻至【第三页】继续阅读测试。"
+                    title = "第二章：书架管理与图书导入",
+                    content = "【图书导入与支持格式】\n1. 点击书架右上角或底部的「+」导入按钮，即可从手机本地文件选择并导入图书。\n2. 应用原生支持 TXT 纯文本小说、EPUB 电子书以及 CBZ/ZIP/PDF 格式的漫画文件。\n\n【分类与搜索】\n• 可以在书架顶栏搜索框中快速搜索书名或作者名。\n• 支持创建自定义分类标签（如：奇幻、科幻、漫画、轻小说），长按书籍卡片即可方便地归类或编辑书籍信息。\n• 最近阅读区域将置顶显示你近期读过的书籍，方便一键继续阅读。"
                 ),
                 Chapter(
-                    bookId = novelId,
+                    bookId = bookId,
                     chapterOrder = 2,
-                    title = "第三页：遗迹遗风",
-                    content = "【第 3 页 / 共 5 页】\n\n穿过漫长的曲率隧道，眼前出现了一座巨大无朋的古代环形空间站。\n\n空间站外壁雕刻着神秘的星图符文，历经千万年沧桑依然熠熠生辉。队员们身穿防护服，缓步踏入遗迹闸门。\n\n请点击屏幕右侧或向左滑动，翻至【第四页】继续阅读测试。"
+                    title = "第三章：小说阅读与个性化排版",
+                    content = "【精确排版引擎】\nCiallo 阅读器采用了基于真实控件高度与逐行测量的动态排版算法。无论在竖屏还是横屏下切换，文字都不会出现被半截切断或丢失漏行的现象，同时会自动保持位置锚点衔接。\n\n【版式与主题定制】\n• 点击屏幕中央区域唤出阅读控制栏，点击「设置」图标即可调整：\n  - 字号大小与行间距\n  - 首行缩进与段落边距\n  - 阅读背景主题：包含羊皮纸、夜间深色、护眼绿、极简白等多款精心调配的色彩组合\n  - 字体切换：支持自定义系统字体与优雅衬线/无衬线体选择。"
                 ),
                 Chapter(
-                    bookId = novelId,
+                    bookId = bookId,
                     chapterOrder = 3,
-                    title = "第四页：光明之界",
-                    content = "【第 4 页 / 共 5 页】\n\n环形空间站核心处散发着柔和而温暖的光芒，仿佛无尽黑夜中的避风港。\n\n主控台水晶矩阵亮起，展现出整个银河系的壮丽全景图。探险队长记录下这历史性的一刻，心中充满了震撼。\n\n请点击屏幕右侧或向左滑动，翻至【第五页】完成翻页验证。"
+                    title = "第四章：仿真翻页与书签互动",
+                    content = "【多样化翻页模式】\n应用内置了多种高帧率平滑翻页效果，可在阅读设置中自由切换：\n1. 仿真翻页：还原纸质书的卷角与平滑弯曲视差。\n2. 覆盖/平移：现代优雅的推移效果。\n3. 淡入淡出：柔和不刺眼的渐变过渡。\n4. 连续滚动：适合快速浏览的长图文模式。\n\n【书签与划词高亮】\n• 点击顶部控制栏的书签图标，或长按页面右上角即可快速添加书签。\n• 在正文中长按并拖动选取文字，可呼出高亮与笔记菜单，记录你的阅读心得与精彩名句。"
                 ),
                 Chapter(
-                    bookId = novelId,
+                    bookId = bookId,
                     chapterOrder = 4,
-                    title = "第五页：新纪元的黎明",
-                    content = "【第 5 页 / 共 5 页】\n\n当第一缕恒星风拂过飞船的装甲，测试员成功完成了全部 5 页的连续翻页验证！\n\n【测试结果确认】\n恭喜！第一页 → 第二页 → 第三页 → 第四页 → 第五页 连续翻页平滑顺畅，无回退，状态无错乱。\n\n感谢您参与极简阅读器的功能测试！"
+                    title = "第五章：漫画阅读器使用技巧",
+                    content = "【漫画专享优化】\n当你打开 CBZ / ZIP / PDF 漫画或图集时，Ciallo 阅读器会自动切换至专属漫画引擎：\n1. 支持双指自由缩放与双击快速放大图像，细节一览无余。\n2. 支持切换「横向翻页」与「纵向条漫」模式，满足不同漫画排版需求。\n3. 支持调整读向：可切换日漫（右至左）或欧美漫（左至右）阅读顺序。"
+                ),
+                Chapter(
+                    bookId = bookId,
+                    chapterOrder = 5,
+                    title = "第六章：Roxy 助手与阅读统计",
+                    content = "【看板娘 Roxy 动态陪伴】\n在阅读界面与应用主页中，可爱贴心的魔法少女 Roxy 会静静陪伴着你：\n• 添加书签或完成阅读目标时，Roxy 会展示萌趣的交互与魔法动画。\n• 互动响应流畅，并在连续触发时具备打断重播平滑过渡。\n\n【阅读统计与成就】\n进入「统计」标签页，可以直观查看你的总阅读时长、阅读天数、章节进度分布以及每日阅读趋势图表，记录你读过的点点滴滴。\n\n祝你阅读愉快！—— Ciallo 阅读器团队"
                 )
             )
-            bookDao.insertChapters(novelChapters)
+            bookDao.insertChapters(guideChapters)
         }
-
-
-        // 2. Seed Sample Comic
-        try {
-            val comicDir = java.io.File(context.filesDir, "sample_comic")
-            if (!comicDir.exists()) comicDir.mkdirs()
-
-            // Page 1 Image
-            val p1File = java.io.File(comicDir, "page1.jpg")
-            val b1 = android.graphics.Bitmap.createBitmap(1080, 1600, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas1 = android.graphics.Canvas(b1)
-            canvas1.drawColor(android.graphics.Color.parseColor("#12181F"))
-            val paintText1 = android.graphics.Paint().apply {
-                color = android.graphics.Color.WHITE
-                textSize = 54f
-                isAntiAlias = true
-                textAlign = android.graphics.Paint.Align.CENTER
-            }
-            val paintSub1 = android.graphics.Paint().apply {
-                color = android.graphics.Color.parseColor("#7FD8C8")
-                textSize = 36f
-                isAntiAlias = true
-                textAlign = android.graphics.Paint.Align.CENTER
-            }
-            canvas1.drawText("示例漫画：应用功能体验", 540f, 600f, paintText1)
-            canvas1.drawText("【第 1 页】支持双指缩放与双击放大", 540f, 720f, paintSub1)
-            canvas1.drawText("点击屏幕中央可呼出阅读控制栏", 540f, 840f, paintSub1)
-            java.io.FileOutputStream(p1File).use { out ->
-                b1.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
-            }
-            b1.recycle()
-
-            // Page 2 Image
-            val p2File = java.io.File(comicDir, "page2.jpg")
-            val b2 = android.graphics.Bitmap.createBitmap(1080, 1600, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas2 = android.graphics.Canvas(b2)
-            canvas2.drawColor(android.graphics.Color.parseColor("#12181F"))
-            canvas2.drawText("示例漫画：模式切换", 540f, 600f, paintText1)
-            canvas2.drawText("【第 2 页】支持横向/纵向条漫模式与日漫右至左", 540f, 720f, paintSub1)
-            canvas2.drawText("导入 CBZ / ZIP / PDF 即可开始阅读", 540f, 840f, paintSub1)
-            java.io.FileOutputStream(p2File).use { out ->
-                b2.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
-            }
-            b2.recycle()
-
-            val comicBook = Book(
-                title = "示例漫画：应用功能指南",
-                author = "系统示例",
-                filePath = comicDir.absolutePath,
-                coverUri = p1File.absolutePath,
-                totalChapters = 2,
-                contentType = "COMIC"
-            )
-            val comicId = bookDao.insertBook(comicBook).toInt()
-            val comicChapters = listOf(
-                Chapter(bookId = comicId, chapterOrder = 0, title = "第 1 页", content = p1File.absolutePath),
-                Chapter(bookId = comicId, chapterOrder = 1, title = "第 2 页", content = p2File.absolutePath)
-            )
-            bookDao.insertChapters(comicChapters)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 3. Seed Sample EPUB3 Book
-        try {
-            if (bookDao.getBookCountByFilePath("sample_epub3.epub") == 0) {
-                val epub3File = EpubParser.createSampleEpubFile(context, isEpub3 = true)
-                val uri = android.net.Uri.fromFile(epub3File)
-                EpubParser.importEpub(context, uri, epub3File.name, bookDao)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("BookRepository", "Error seeding sample EPUB3", e)
-        }
-
     }
 }

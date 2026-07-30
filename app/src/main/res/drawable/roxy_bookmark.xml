@@ -1,0 +1,103 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- Twin Braids -->
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 32,50 C 22,62 18,80 24,98 C 28,102 34,98 32,86 C 36,74 38,60 36,50 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 88,50 C 98,62 102,80 96,98 C 92,102 86,98 88,86 C 84,74 82,60 84,50 Z" />
+
+    <!-- Cloak Mantle -->
+    <path
+        android:fillColor="#B1885C"
+        android:pathData="M 30,76 L 60,68 L 90,76 L 100,112 L 20,112 Z" />
+    <path
+        android:fillColor="#ECE5D8"
+        android:pathData="M 30,76 L 36,112 L 20,112 Z" />
+    <path
+        android:fillColor="#ECE5D8"
+        android:pathData="M 90,76 L 100,112 L 84,112 Z" />
+
+    <!-- Dark Inner Tunic -->
+    <path
+        android:fillColor="#2C303E"
+        android:pathData="M 42,74 L 60,70 L 78,74 L 82,112 L 38,112 Z" />
+
+    <!-- Head Face -->
+    <path
+        android:fillColor="#FFF2E6"
+        android:pathData="M 60,32 C 82,32 96,46 96,66 C 96,84 80,94 60,94 C 40,94 24,84 24,66 C 24,46 38,32 60,32 Z" />
+
+    <!-- Blush -->
+    <path
+        android:fillColor="#FBA2AC"
+        android:pathData="M 32,68 A 6,4 0 1,1 44,68 A 6,4 0 1,1 32,68" />
+    <path
+        android:fillColor="#FBA2AC"
+        android:pathData="M 76,68 A 6,4 0 1,1 88,68 A 6,4 0 1,1 76,68" />
+
+    <!-- Eyes -->
+    <path
+        android:fillColor="#343A6E"
+        android:pathData="M 38,54 A 7,9 0 1,1 52,54 A 7,9 0 1,1 38,54" />
+    <path
+        android:fillColor="#1F2348"
+        android:pathData="M 41,56 A 4,6 0 1,1 49,56 A 4,6 0 1,1 41,56" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 41,50 A 2.5,2.5 0 1,1 46,50 A 2.5,2.5 0 1,1 41,50" />
+
+    <path
+        android:fillColor="#343A6E"
+        android:pathData="M 68,54 A 7,9 0 1,1 82,54 A 7,9 0 1,1 68,54" />
+    <path
+        android:fillColor="#1F2348"
+        android:pathData="M 71,56 A 4,6 0 1,1 79,56 A 4,6 0 1,1 71,56" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 71,50 A 2.5,2.5 0 1,1 76,50 A 2.5,2.5 0 1,1 71,50" />
+
+    <!-- Smile Mouth -->
+    <path
+        android:fillColor="#E57373"
+        android:pathData="M 54,74 C 54,81 66,81 66,74 Z" />
+
+    <!-- Hair Bangs -->
+    <path
+        android:fillColor="#7278C5"
+        android:pathData="M 28,48 Q 40,62 48,50 Q 58,66 62,48 Q 72,62 80,46 Q 90,58 92,48 Q 96,32 60,32 Q 24,32 28,48 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 26,46 C 22,58 24,70 28,74 C 31,68 30,56 32,48 Z" />
+    <path
+        android:fillColor="#585EA0"
+        android:pathData="M 94,46 C 98,58 96,70 92,74 C 89,68 90,56 88,48 Z" />
+
+    <!-- Roxy Ahoge -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 60,32 C 58,16 72,10 68,22"
+        android:strokeWidth="4"
+        android:strokeColor="#7278C5"
+        android:strokeLineCap="round" />
+
+    <!-- Golden Bookmark Ribbon held in Hands -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M 50,76 L 70,76 L 70,116 L 60,108 L 50,116 Z" />
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M 56,76 L 70,76 L 70,116 L 60,108 Z" />
+    <!-- Cute Paws/Hands -->
+    <path
+        android:fillColor="#FFF2E6"
+        android:pathData="M 44,82 A 5,5 0 1,1 54,82 A 5,5 0 1,1 44,82" />
+    <path
+        android:fillColor="#FFF2E6"
+        android:pathData="M 66,82 A 5,5 0 1,1 76,82 A 5,5 0 1,1 66,82" />
+</vector>

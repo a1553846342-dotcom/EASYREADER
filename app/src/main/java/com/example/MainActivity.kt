@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                                     it,
                                     android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                                 )
-                            } catch (_: Throwable) {}
+                            } catch (e: Exception) { e.printStackTrace() }
 
                             var fileName = "book.txt"
                             try {
@@ -124,10 +124,10 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = "splash",
-                        enterTransition = { fadeIn(tween(300)) + slideInHorizontally { it / 4 } },
-                        exitTransition = { fadeOut(tween(300)) + slideOutHorizontally { -it / 4 } },
-                        popEnterTransition = { fadeIn(tween(300)) + slideInHorizontally { -it / 4 } },
-                        popExitTransition = { fadeOut(tween(300)) + slideOutHorizontally { it / 4 } }
+                        enterTransition = { fadeIn(tween(250)) },
+                        exitTransition = { fadeOut(tween(250)) },
+                        popEnterTransition = { fadeIn(tween(250)) },
+                        popExitTransition = { fadeOut(tween(250)) }
                     ) {
                         composable("splash") {
                             SplashScreen(
@@ -232,7 +232,12 @@ class MainActivity : ComponentActivity() {
                                                 streakDays = viewModel.prefs.calculateStreak(),
                                                 onDeleteBook = { book ->
                                                     viewModel.deleteBook(book)
-                                                }
+                                                    com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.DeleteBook)
+                                                },
+                                                onMoveBook = { book, newCategory ->
+                                                    viewModel.moveBookToCategory(book, newCategory)
+                                                    com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.MoveBook)
+                                                },
                                             )
                                             1 -> StatisticsScreen(
                                                 books = books,
@@ -308,6 +313,7 @@ class MainActivity : ComponentActivity() {
                                 bookmarks = bookmarks,
                                 onAddBookmark = { bookId, chIdx, offset, title, snippet ->
                                     viewModel.addBookmark(bookId, chIdx, offset, title, snippet)
+                                    com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.AddBookmark)
                                 },
                                 onDeleteBookmark = { id ->
                                     viewModel.deleteBookmark(id)
@@ -325,7 +331,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onRecordTime = { seconds ->
                                     viewModel.recordTime(seconds)
-                                }
+                                },
                             )
                         }
 
@@ -346,6 +352,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    com.example.ui.mascot.MascotOverlay()
                 }
             }
         }

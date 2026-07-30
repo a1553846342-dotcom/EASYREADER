@@ -53,7 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.checkAndSeedDefaultBooks()
         }
     }
@@ -158,6 +158,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.getHighlightsForBook(book.id).collect {
                 _highlights.value = it
             }
+        }
+    }
+
+    fun moveBookToCategory(book: Book, newCategory: String) {
+        viewModelScope.launch {
+            val updated = book.copy(category = newCategory)
+            database.bookDao().updateBook(updated)
         }
     }
 

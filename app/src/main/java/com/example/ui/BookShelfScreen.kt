@@ -124,7 +124,7 @@ fun BookShelfScreen(
                 actions = {
                     AppButton(
                         onClick = onImportClick,
-                        containerColor = MintPrimary,
+                        containerColor = MintSecondary,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
@@ -159,12 +159,12 @@ fun BookShelfScreen(
                 categoryNames.forEach { name ->
                     val isSelected = selectedCategory == name
                     val backgroundColor by animateColorAsState(
-                        targetValue = if (isSelected) MintPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                        targetValue = if (isSelected) MintSecondary.copy(alpha = 0.15f) else Color.Transparent,
                         animationSpec = tween(durationMillis = 200),
                         label = "category_bg_anim"
                     )
                     val textColor by animateColorAsState(
-                        targetValue = if (isSelected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        targetValue = if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         animationSpec = tween(durationMillis = 200),
                         label = "category_text_anim"
                     )
@@ -248,16 +248,26 @@ fun BookShelfScreen(
 fun BookCardItem(
     book: Book,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMove: () -> Unit = {}
 ) {
     var isPressed by remember { mutableStateOf(false) }
+    var isLongPressed by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+
+    val scaleAnim by animateFloatAsState(
+        targetValue = if (isLongPressed) 1.05f else 1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "book_scale"
+    )
+
     val rotationYAnim by animateFloatAsState(
-        targetValue = if (isPressed) -2f else -6f,
+        targetValue = if (isPressed || isLongPressed) -2f else -6f,
         animationSpec = tween(durationMillis = 150),
         label = "book_rotation"
     )
     val translationZAnim by animateFloatAsState(
-        targetValue = if (isPressed) 2f else 8f,
+        targetValue = if (isLongPressed) 20f else if (isPressed) 2f else 8f,
         animationSpec = tween(durationMillis = 150),
         label = "book_elevation"
     )
@@ -267,34 +277,66 @@ fun BookCardItem(
             .fillMaxWidth()
             .height(220.dp)
             .graphicsLayer {
+                scaleX = scaleAnim
+                scaleY = scaleAnim
                 rotationY = rotationYAnim
                 cameraDistance = 16f * density
-                shadowElevation = translationZAnim
-                shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
-                clip = false
             }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
                         isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
+                        if (tryAwaitRelease()) {
+                            isPressed = false
+                            isLongPressed = false
+                        } else {
+                            isPressed = false
+                        }
+                    },
+                    onLongPress = {
+                        isLongPressed = true
+                        showMenu = true
                     },
                     onTap = { onClick() }
                 )
             }
     ) {
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = {
+                showMenu = false
+                isLongPressed = false
+            }
+        ) {
+            DropdownMenuItem(
+                text = { Text("移动到其他书架") },
+                onClick = {
+                    showMenu = false
+                    isLongPressed = false
+                    onMove()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("删除图书", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    showMenu = false
+                    isLongPressed = false
+                    onDelete()
+                }
+            )
+        }
+
         // Main 3D Book Body Container
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .shadow(
-                    elevation = 6.dp,
+                    elevation = translationZAnim.dp,
                     shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
                 )
+                .clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp))
                 .background(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 12.dp, bottomEnd = 12.dp)
+                    color = MaterialTheme.colorScheme.surface
                 )
         ) {
             // 1. Book Spine (Left Edge 3D Binding)
@@ -327,7 +369,6 @@ fun BookCardItem(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
             ) {
                 val hasValidCover = !book.coverUri.isNullOrEmpty() && java.io.File(book.coverUri!!).exists()
                 android.util.Log.d("EpubParser", "[COVER] 书架UI读取到的 coverPath: ${book.coverUri}")

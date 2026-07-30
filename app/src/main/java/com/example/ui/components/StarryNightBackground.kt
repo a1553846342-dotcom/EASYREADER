@@ -32,6 +32,7 @@ fun StarryNightBackground(
 ) {
     val bgColor = MaterialTheme.colorScheme.background
     val isDark = bgColor == DarkCharcoal
+    val currentPrimary = MintPrimary
 
     Box(
         modifier = modifier
@@ -45,12 +46,12 @@ fun StarryNightBackground(
                     brush = Brush.radialGradient(
                         colors = if (isDark) {
                             listOf(
-                                MintPrimary.copy(alpha = 0.12f),
+                                currentPrimary.copy(alpha = 0.12f),
                                 Color.Transparent
                             )
                         } else {
                             listOf(
-                                MintPrimary.copy(alpha = 0.05f),
+                                currentPrimary.copy(alpha = 0.05f),
                                 Color.White.copy(alpha = 0.0f)
                             )
                         },
