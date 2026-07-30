@@ -71,11 +71,26 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onNavigateToShelf: () -> Unit,
     onNavigateToStats: () -> Unit,
-    totalReadTimeSeconds: Long,
+    totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
     streakDays: Int = 0,
     onDeleteBook: (Book) -> Unit,
     onMoveBook: (Book, String) -> Unit
 ) {
+    SideEffect {
+        android.util.Log.d("PerformanceProof", "[Root Cause 3 Check] HomeScreen top-level Composable recomposed. Thread: ${Thread.currentThread().name}")
+    }
+
+    val currentlyReading = remember(books) {
+        val startT = System.currentTimeMillis()
+        val result = if (books.isEmpty()) {
+            Book(id = -1, title = "Empty", filePath = "")
+        } else {
+            books.maxByOrNull { it.lastReadTime } ?: books.first()
+        }
+        android.util.Log.d("PerformanceProof", "[Root Cause 4] Computed currentlyReading. Books size: ${books.size}, Thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
+        result
+    }
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("全部") }
@@ -86,7 +101,7 @@ fun HomeScreen(
 
     // Unified animation driver for book breathing
     val globalBreathingTransition = rememberInfiniteTransition(label = "global_breathing")
-    val globalBreathingProgress by globalBreathingTransition.animateFloat(
+    val globalBreathingProgressState = globalBreathingTransition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * Math.PI).toFloat(),
         animationSpec = infiniteRepeatable(
@@ -440,41 +455,29 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "hero_section") {
-                        // 2. HERO: RECENTLY READ BIG BOOK CARD
-                        val currentlyReading = books.maxByOrNull { it.lastReadTime } ?: books.first()
+                        // 2. HERO: RECENTLY READ BIG BOOK CARD (pre-calculated and remembered at top)
 
-                        val heroHasValidCover = !currentlyReading.coverUri.isNullOrEmpty() && (
-                            currentlyReading.coverUri!!.startsWith("content://") ||
-                            (currentlyReading.coverUri!!.startsWith("file://") && java.io.File(currentlyReading.coverUri!!.substring(7)).exists()) ||
-                            java.io.File(currentlyReading.coverUri!!).exists()
-                        )
-
-                        val heroCoverData = remember(currentlyReading.coverUri) {
+                        val heroCoverData = remember(currentlyReading.coverUri, currentlyReading.isCoverValid) {
                             if (currentlyReading.coverUri.isNullOrEmpty()) null
                             else if (currentlyReading.coverUri!!.startsWith("content://")) {
                                 android.net.Uri.parse(currentlyReading.coverUri!!)
-                            } else {
+                            } else if (currentlyReading.isCoverValid) {
                                 val path = if (currentlyReading.coverUri!!.startsWith("file://")) currentlyReading.coverUri!!.substring(7) else currentlyReading.coverUri!!
                                 java.io.File(path)
+                            } else {
+                                null
                             }
                         }
+                        val heroHasValidCover = heroCoverData != null
 
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val heroImageRequest = remember(currentlyReading.coverUri, heroCoverData) {
                             if (heroCoverData == null) null else {
-                                val fileTimestamp = if (heroCoverData is java.io.File) heroCoverData.lastModified() else System.currentTimeMillis()
                                 coil.request.ImageRequest.Builder(context)
                                     .data(heroCoverData)
-                                    .memoryCacheKey("${currentlyReading.coverUri}_$fileTimestamp")
-                                    .diskCacheKey("${currentlyReading.coverUri}_$fileTimestamp")
-                                    .listener(
-                                        onSuccess = { _, _ ->
-                                            android.util.Log.d("EpubParser", "[COVER] UI Cover hero load success: ${currentlyReading.coverUri}")
-                                        },
-                                        onError = { _, result ->
-                                            android.util.Log.e("EpubParser", "[COVER] UI Cover hero load error for ${currentlyReading.coverUri}: ${result.throwable.message}")
-                                        }
-                                    )
+                                    .memoryCacheKey(currentlyReading.coverUri)
+                                    .diskCacheKey(currentlyReading.coverUri)
+                                    .crossfade(true)
                                     .build()
                             }
                         }
@@ -751,38 +754,32 @@ fun HomeScreen(
                         }
                     } else {
                         items(items = filteredBooks, key = { it.id }) { book ->
-                            val hasValidCover = !book.coverUri.isNullOrEmpty() && (
-                                book.coverUri!!.startsWith("content://") ||
-                                (book.coverUri!!.startsWith("file://") && java.io.File(book.coverUri!!.substring(7)).exists()) ||
-                                java.io.File(book.coverUri!!).exists()
-                            )
-
-                            val coverData = remember(book.coverUri) {
+                            val coverData = remember(book.coverUri, book.isCoverValid) {
                                 if (book.coverUri.isNullOrEmpty()) null
                                 else if (book.coverUri!!.startsWith("content://")) {
                                     android.net.Uri.parse(book.coverUri!!)
-                                } else {
+                                } else if (book.isCoverValid) {
                                     val path = if (book.coverUri!!.startsWith("file://")) book.coverUri!!.substring(7) else book.coverUri!!
                                     java.io.File(path)
+                                } else {
+                                    null
                                 }
+                            }
+                            val hasValidCover = coverData != null
+
+                            // Proof logging for list scrolling without on-the-fly exists() check
+                            SideEffect {
+                                android.util.Log.d("PerformanceProof", "[Root Cause 2 Check] Rendered book: ${book.title}, cover valid: ${book.isCoverValid}. Thread: ${Thread.currentThread().name}")
                             }
 
                             val context = androidx.compose.ui.platform.LocalContext.current
                             val imageRequest = remember(book.coverUri, coverData) {
                                 if (coverData == null) null else {
-                                    val fileTimestamp = if (coverData is java.io.File) coverData.lastModified() else System.currentTimeMillis()
                                     coil.request.ImageRequest.Builder(context)
                                         .data(coverData)
-                                        .memoryCacheKey("${book.coverUri}_$fileTimestamp")
-                                        .diskCacheKey("${book.coverUri}_$fileTimestamp")
-                                        .listener(
-                                            onSuccess = { _, _ ->
-                                                android.util.Log.d("EpubParser", "[COVER] UI Cover grid load success: ${book.coverUri}")
-                                            },
-                                            onError = { _, result ->
-                                                android.util.Log.e("EpubParser", "[COVER] UI Cover grid load error for ${book.coverUri}: ${result.throwable.message}")
-                                            }
-                                        )
+                                        .memoryCacheKey(book.coverUri)
+                                        .diskCacheKey(book.coverUri)
+                                        .crossfade(true)
                                         .build()
                                 }
                             }
@@ -835,7 +832,7 @@ fun HomeScreen(
                                         .offset(y = translationZAnim.dp)
                                         .graphicsLayer {
                                             val phase = (book.id.hashCode() % 1000) / 1000f * 2f * Math.PI.toFloat()
-                                            translationY = (kotlin.math.sin(globalBreathingProgress + phase) * 3.dp.toPx()).toFloat()
+                                            translationY = (kotlin.math.sin(globalBreathingProgressState.value + phase) * 3.dp.toPx()).toFloat()
                                             scaleX = scaleAnim
                                             scaleY = scaleAnim
                                         }
@@ -994,13 +991,7 @@ fun HomeScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        val minutes = (totalReadTimeSeconds / 60).coerceAtLeast(1)
-                                        Text(
-                                            text = "今日已阅读 $minutes 分钟",
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
+                                        TodayReadTimeText(totalReadTimeSecondsFlow)
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = "保持阅读，遇见更好的自己。",
@@ -1042,3 +1033,21 @@ fun HomeScreen(
             }
         }
     }
+
+@Composable
+private fun TodayReadTimeText(totalReadTimeFlow: kotlinx.coroutines.flow.StateFlow<Long>) {
+    val totalSeconds by totalReadTimeFlow.collectAsState()
+    val minutes = (totalSeconds / 60).coerceAtLeast(1)
+
+    // Log recomposition of this tiny component to prove Root Cause 3 is solved
+    SideEffect {
+        android.util.Log.d("PerformanceProof", "[Root Cause 3 Check] TodayReadTimeText (timer UI) recomposed. Value: $totalSeconds seconds. Thread: ${Thread.currentThread().name}")
+    }
+
+    Text(
+        text = "今日已阅读 $minutes 分钟",
+        fontSize = 15.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}

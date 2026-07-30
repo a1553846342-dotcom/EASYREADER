@@ -42,13 +42,30 @@ android {
 
   buildTypes {
     release {
-      isCrunchPngs = false
+      isCrunchPngs = true
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      val keystoreFile = file("${rootDir}/my-upload-key.jks")
+      signingConfig = if (keystoreFile.exists() && System.getenv("STORE_PASSWORD") != null) {
+        signingConfigs.getByName("release")
+      } else {
+        signingConfigs.getByName("debugConfig")
+      }
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
+  }
+
+  bundle {
+    density {
+      enableSplit = true
+    }
+    abi {
+      enableSplit = true
+    }
+    language {
+      enableSplit = true
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

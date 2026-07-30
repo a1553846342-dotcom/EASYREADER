@@ -370,22 +370,28 @@ fun BookCardItem(
                     .weight(1f)
                     .fillMaxHeight()
             ) {
-                val hasValidCover = !book.coverUri.isNullOrEmpty() && java.io.File(book.coverUri!!).exists()
-                android.util.Log.d("EpubParser", "[COVER] 书架UI读取到的 coverPath: ${book.coverUri}")
+                val hasValidCover = book.isCoverValid
+                val coverData = remember(book.coverUri, hasValidCover) {
+                    if (!hasValidCover || book.coverUri.isNullOrEmpty()) null
+                    else {
+                        val path = if (book.coverUri!!.startsWith("file://")) book.coverUri!!.substring(7) else book.coverUri!!
+                        java.io.File(path)
+                    }
+                }
+
+                // Proof logging for list scrolling without on-the-fly exists() check
+                SideEffect {
+                    android.util.Log.d("PerformanceProof", "[Root Cause 2 Check] Rendered BookShelf book: ${book.title}, cover valid: ${book.isCoverValid}. Thread: ${Thread.currentThread().name}")
+                }
 
                 if (hasValidCover) {
                     val context = androidx.compose.ui.platform.LocalContext.current
-                    val imageRequest = remember(book.coverUri) {
+                    val imageRequest = remember(book.coverUri, coverData) {
                         coil.request.ImageRequest.Builder(context)
-                            .data(java.io.File(book.coverUri!!))
-                            .listener(
-                                onSuccess = { _, _ ->
-                                    android.util.Log.d("EpubParser", "[COVER] 图片加载库（Glide/Coil/Picasso等）加载该路径结果: 成功")
-                                },
-                                onError = { _, result ->
-                                    android.util.Log.e("EpubParser", "[COVER] 图片加载库（Glide/Coil/Picasso等）加载该路径结果: 失败, ${result.throwable.message}")
-                                }
-                            )
+                            .data(coverData)
+                            .memoryCacheKey(book.coverUri)
+                            .diskCacheKey(book.coverUri)
+                            .crossfade(true)
                             .build()
                     }
 

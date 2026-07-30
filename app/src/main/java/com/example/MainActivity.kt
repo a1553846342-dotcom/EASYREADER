@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
             val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
             val colorSecondaryIndex by viewModel.colorSecondaryIndex.collectAsState()
+            val totalReadTimeSeconds by viewModel.totalReadTimeSeconds.collectAsState()
+            val streakDays by viewModel.streakDays.collectAsState()
 
             MyApplicationTheme(
                 darkTheme = autoNightMode,
@@ -228,8 +230,8 @@ class MainActivity : ComponentActivity() {
                                                 onNavigateToStats = {
                                                     selectedTab = 1
                                                 },
-                                                totalReadTimeSeconds = viewModel.prefs.totalReadTimeSeconds,
-                                                streakDays = viewModel.prefs.calculateStreak(),
+                                                totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
+                                                streakDays = streakDays,
                                                 onDeleteBook = { book ->
                                                     viewModel.deleteBook(book)
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.DeleteBook)
@@ -241,7 +243,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                             1 -> StatisticsScreen(
                                                 books = books,
-                                                totalReadTimeSeconds = viewModel.prefs.totalReadTimeSeconds,
+                                                totalReadTimeSeconds = totalReadTimeSeconds,
                                                 readingRecords = readingRecords
                                             )
                                             2 -> SettingsTabScreen(

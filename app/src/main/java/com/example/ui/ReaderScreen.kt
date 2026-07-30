@@ -455,7 +455,7 @@ fun ReaderScreen(
                                             RenderSinglePage(
                                                 pageIndex = activeSubPageIndex,
                                                 pageText = pagesList.getOrNull(activeSubPageIndex) ?: "",
-                                                chapterTitle = chapter.title,
+                                                chapterTitle = currentChapter?.title,
                                                 bgColor = bgColor,
                                                 textColor = textColor,
                                                 fontSize = fontSize,
@@ -472,7 +472,7 @@ fun ReaderScreen(
                                                 RenderSinglePage(
                                                     pageIndex = activeSubPageIndex + 1,
                                                     pageText = pagesList.getOrNull(activeSubPageIndex + 1) ?: "",
-                                                    chapterTitle = chapter.title,
+                                                    chapterTitle = currentChapter?.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
                                                     fontSize = fontSize,
@@ -516,7 +516,7 @@ fun ReaderScreen(
                                                 RenderSinglePage(
                                                     pageIndex = activeSubPageIndex - 1,
                                                     pageText = pagesList.getOrNull(activeSubPageIndex - 1) ?: "",
-                                                    chapterTitle = chapter.title,
+                                                    chapterTitle = currentChapter?.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
                                                     fontSize = fontSize,

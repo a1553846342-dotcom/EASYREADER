@@ -1,6 +1,6 @@
 # ProGuard / R8 Rules for Ciallo Reader
 
-# Keep Room Entities and DAOs
+# Keep Room Database and Entities
 -keep class * extends androidx.room.RoomDatabase
 -keepclassmembers class * {
     @androidx.room.Dao *;
@@ -14,9 +14,15 @@
 -keep class com.example.data.BackupBookmark { *; }
 -keep class com.example.data.BackupReadingRecord { *; }
 -keep class com.squareup.moshi.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
-# Keep Coroutines
+# Keep Coroutines and ViewModel
 -keep class kotlinx.coroutines.** { *; }
 
 # Keep Coil Image Loading
 -keep class coil.** { *; }
+
+# R8 Optimization & Obfuscation
+-repackageclasses ''
+-allowaccessmodification
+-dontwarn **

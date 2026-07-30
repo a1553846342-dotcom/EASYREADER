@@ -56,13 +56,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.checkAndSeedDefaultBooks()
         }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val startT = System.currentTimeMillis()
+            val streak = prefs.calculateStreak()
+            android.util.Log.d("PerformanceProof", "[Root Cause 1 & 3] Streak calculation and total read time initialization. Thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
+            _streakDays.value = streak
+        }
     }
 
-    val allBooks: StateFlow<List<Book>> = repository.allBooks.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    private val _totalReadTimeSeconds = MutableStateFlow(prefs.totalReadTimeSeconds)
+    val totalReadTimeSeconds: StateFlow<Long> = _totalReadTimeSeconds.asStateFlow()
+
+    private val _streakDays = MutableStateFlow(0)
+    val streakDays: StateFlow<Int> = _streakDays.asStateFlow()
+
+    val allBooks: StateFlow<List<Book>> = repository.allBooks
+        .map { books ->
+            val startT = System.currentTimeMillis()
+            books.forEach { book ->
+                if (!book.coverUri.isNullOrEmpty()) {
+                    val path = if (book.coverUri.startsWith("file://")) book.coverUri.substring(7) else book.coverUri
+                    val file = java.io.File(path)
+                    book.isCoverValid = file.exists()
+                } else {
+                    book.isCoverValid = false
+                }
+            }
+            android.util.Log.d("PerformanceProof", "[Root Cause 2] Pre-calculated cover file existence for ${books.size} books on background thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
+            books
+        }
+        .flowOn(kotlinx.coroutines.Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val allCategories: StateFlow<List<CategoryEntity>> = repository.allCategories.stateIn(
         scope = viewModelScope,
@@ -295,16 +323,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun recordTime(seconds: Long) {
         if (seconds <= 0) return
-        prefs.totalReadTimeSeconds += seconds
-        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-        val currentDaily = prefs.getDailyReadTime(todayStr)
-        prefs.setDailyReadTime(todayStr, currentDaily + seconds)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val startT = System.currentTimeMillis()
+            prefs.totalReadTimeSeconds += seconds
+            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+            val currentDaily = prefs.getDailyReadTime(todayStr)
+            prefs.setDailyReadTime(todayStr, currentDaily + seconds)
+
+            _totalReadTimeSeconds.value = prefs.totalReadTimeSeconds
+            val newStreak = prefs.calculateStreak()
+            _streakDays.value = newStreak
+
+            android.util.Log.d("PerformanceProof", "[Root Cause 1] recordTime updated totalReadTimeSeconds and daily streak on thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
+        }
 
         // Also record to reading_records database table
         val currentBook = _selectedBook.value
         if (currentBook != null) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
+                    val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
                     val record = database.bookDao().getReadingRecordForBookAndDate(currentBook.id, todayStr)
                     if (record != null) {
                         database.bookDao().insertReadingRecord(

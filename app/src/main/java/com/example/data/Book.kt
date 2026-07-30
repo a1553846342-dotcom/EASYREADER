@@ -27,6 +27,9 @@ data class Book(
 ) {
     val isComic: Boolean
         get() = contentType == "COMIC"
+
+    @androidx.room.Ignore
+    var isCoverValid: Boolean = false
 }
 
 @Entity(tableName = "chapters")
