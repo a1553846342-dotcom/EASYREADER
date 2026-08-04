@@ -135,4 +135,20 @@ class PreferencesManager(context: Context) {
     var colorSecondaryIndex: Int
         get() = prefs.getInt("color_secondary_index", 2)
         set(value) = prefs.edit().putInt("color_secondary_index", value).apply()
+
+    var hasSeenOnboarding: Boolean
+        get() = prefs.getBoolean("has_seen_onboarding", false)
+        set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()
+
+    var hasSeenWelcome: Boolean
+        get() = prefs.getBoolean("has_seen_welcome", false)
+        set(value) = prefs.edit().putBoolean("has_seen_welcome", value).apply()
+
+    var hasConfiguredSource: Boolean
+        get() = prefs.getBoolean("has_configured_source", false)
+        set(value) = prefs.edit().putBoolean("has_configured_source", value).apply()
+
+    var hasImportedLocalBook: Boolean
+        get() = prefs.getBoolean("has_imported_local_book", false)
+        set(value) = prefs.edit().putBoolean("has_imported_local_book", value).apply()
 }

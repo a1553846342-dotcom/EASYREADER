@@ -94,12 +94,14 @@ interface BookDao {
 }
 
 @Database(
-    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class],
-    version = 4,
+    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class, com.example.download.DownloadTaskEntity::class],
+    version = 5,
     exportSchema = false
 )
+@TypeConverters(com.example.download.DownloadTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
+    abstract fun downloadTaskDao(): com.example.download.DownloadTaskDao
 
     companion object {
         @Volatile

@@ -1,0 +1,258 @@
+package com.example.ui.source
+
+import android.widget.Toast
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.source.BookSource
+import com.example.source.LoginCredential
+import com.example.source.SourceResult
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ZLibraryLoginDialog(
+    source: BookSource,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit,
+    hazeState: HazeState? = null
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var loginModeTab by remember { mutableStateOf(0) } // 0: 账号密码, 1: Cookie
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var cookieString by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        var appear by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { appear = true }
+
+        val panelScale by animateFloatAsState(
+            targetValue = if (appear) 1f else 0.85f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            ),
+            label = "loginPanelSpring"
+        )
+        val panelAlpha by animateFloatAsState(
+            targetValue = if (appear) 1f else 0f,
+            animationSpec = tween(220),
+            label = "loginPanelFade"
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            val cardShape = RoundedCornerShape(28.dp)
+            var baseModifier = Modifier
+                .fillMaxWidth(0.9f)
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
+                .graphicsLayer {
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    alpha = panelAlpha
+                }
+                .shadow(32.dp, cardShape, spotColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))
+                .clip(cardShape)
+
+            if (hazeState != null) {
+                baseModifier = baseModifier.hazeChild(state = hazeState, style = HazeStyle(backgroundColor = MaterialTheme.colorScheme.surface, tint = null))
+            }
+
+            Box(
+                modifier = baseModifier
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
+                        cardShape
+                    )
+                    .padding(24.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("登录 Z-Library", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    TabRow(
+                        selectedTabIndex = loginModeTab,
+                        containerColor = Color.Transparent,
+                        divider = {}
+                    ) {
+                        Tab(
+                            selected = loginModeTab == 0,
+                            onClick = { loginModeTab = 0 },
+                            text = { Text("账号密码", fontSize = 14.sp, fontWeight = if (loginModeTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                        )
+                        Tab(
+                            selected = loginModeTab == 1,
+                            onClick = { loginModeTab = 1 },
+                            text = { Text("粘贴 Cookie", fontSize = 14.sp, fontWeight = if (loginModeTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    val textFieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        focusedLabelColor = MaterialTheme.colorScheme.secondary,
+                        cursorColor = MaterialTheme.colorScheme.secondary,
+                        focusedLeadingIconColor = MaterialTheme.colorScheme.secondary
+                    )
+
+                    if (loginModeTab == 0) {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            label = { Text("邮箱 / 账号") },
+                            leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = textFieldColors
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("密码") },
+                            leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = textFieldColors
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = cookieString,
+                            onValueChange = { cookieString = it },
+                            label = { Text("Cookie (包含 remix_userkey)") },
+                            placeholder = { Text("remix_userid=...; remix_userkey=...") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(130.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = textFieldColors
+                        )
+                    }
+
+                    if (isLoading) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.secondary,
+                            trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        enabled = !isLoading,
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                val credential = if (loginModeTab == 0) {
+                                    LoginCredential(
+                                        username = username,
+                                        password = password
+                                    )
+                                } else {
+                                    LoginCredential(
+                                        cookie = cookieString
+                                    )
+                                }
+                                when (val result = source.login(credential)) {
+                                    is SourceResult.Success -> {
+                                        Toast.makeText(context, "登录成功", Toast.LENGTH_SHORT).show()
+                                        onSuccess()
+                                        onDismiss()
+                                    }
+                                    is SourceResult.Error -> {
+                                        Toast.makeText(context, result.exception.message ?: "登录失败", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                                isLoading = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Text("确认登录", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}

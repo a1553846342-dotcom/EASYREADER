@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -50,6 +51,7 @@ enum class ComicReadingMode {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@androidx.compose.animation.ExperimentalSharedTransitionApi
 fun ComicReaderScreen(
     book: Book?,
     chapters: List<Chapter>,
@@ -57,6 +59,8 @@ fun ComicReaderScreen(
     onUpdateProgress: (bookId: Int, pageIndex: Int, scrollOffset: Int, isFinished: Boolean) -> Unit,
     onRecordTime: (seconds: Long) -> Unit
 ) {
+    val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
+    val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
     if (book == null || chapters.isEmpty()) {
         Box(
             modifier = Modifier
@@ -145,6 +149,29 @@ fun ComicReaderScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
+        if (book != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
+            with(sharedTransitionScope) {
+                val imageRequest = if (!book.coverUri.isNullOrEmpty() && book.isCoverValid) {
+                    if (book.coverUri!!.startsWith("content://")) android.net.Uri.parse(book.coverUri)
+                    else java.io.File(book.coverUri!!)
+                } else null
+                if (imageRequest != null) {
+                    coil.compose.AsyncImage(
+                        model = imageRequest,
+                        contentDescription = "Shared Cover",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .sharedElement(
+                                state = rememberSharedContentState(key = "book_cover_${book.id}"),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f) }
+                            )
+                            .alpha(0.05f),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            }
+        }
         // Main Content: Horizontal Pager or Vertical Webtoon List
         when (readingMode) {
             ComicReadingMode.HORIZONTAL -> {

@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +43,7 @@ import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.help.LibraryHelpBottomSheet
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +54,7 @@ fun SettingsTabScreen(
     categories: List<CategoryEntity>,
     onAddCategory: (String) -> Unit,
     onBack: (() -> Unit)? = null,
+    onOpenSourceManager: (() -> Unit)? = null,
     autoNightModeVal: Boolean = prefs.autoNightMode,
     onAutoNightModeChange: (Boolean) -> Unit = { prefs.autoNightMode = it },
     blueLightFilterVal: Boolean = prefs.blueLightFilter,
@@ -79,6 +82,7 @@ fun SettingsTabScreen(
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
+    var showHelpBottomSheet by remember { mutableStateOf(false) }
 
     val posterLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -687,7 +691,56 @@ fun SettingsTabScreen(
                         }
                     }
                 }
+
+                // Section 6: Library Help & Manual
+                item {
+                    Text("帮助手册", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                }
+
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickableWithFeedback { showHelpBottomSheet = true }
+                            .testTag("library_help_entry_card"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.HelpCenter,
+                                    contentDescription = "书库帮助中心",
+                                    tint = MintPrimary
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("书库使用手册", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text("书源说明、下载管理与常见问题", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowRight,
+                                contentDescription = "打开帮助",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
             }
+        }
+
+        if (showHelpBottomSheet) {
+            LibraryHelpBottomSheet(
+                onDismissRequest = { showHelpBottomSheet = false },
+                onOpenSourceManager = { onOpenSourceManager?.invoke() }
+            )
         }
     }
 

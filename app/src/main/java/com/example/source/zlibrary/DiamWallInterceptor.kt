@@ -1,0 +1,166 @@
+package com.example.source.zlibrary
+
+import android.util.Log
+import okhttp3.Interceptor
+import okhttp3.Response
+import okhttp3.Cookie
+import okhttp3.HttpUrl
+import java.security.MessageDigest
+import java.net.URLEncoder
+
+class DiamWallInterceptor(private val cookieJar: okhttp3.CookieJar) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        var request = chain.request()
+        var response = chain.proceed(request)
+        var followUpCount = 0
+        val seenUrls = mutableSetOf<String>()
+        
+        while (followUpCount < 8) {
+            val code = response.code
+            Log.d("DiamWall", "Response code: $code for ${request.url}\n" + response.peekBody(1024).string())
+
+            // Loop guard: DiamWall can redirect back to the same URL (307 + cookie dance).
+            // Without this, the request loop hits OkHttp's follow-up limit and throws
+            // "Too many follow-up requests" instead of returning a useful response.
+            if (!seenUrls.add(request.url.toString())) {
+                Log.w("DiamWall", "Redirect/challenge loop detected for ${request.url}; stopping")
+                break
+            }
+            
+            // 1. Handle DiamWall 517 / 403 / 503 PoW Verification
+            if (code == 517 || code == 403 || code == 503 || code == 513) {
+                val bodyString = response.peekBody(1024 * 1024).string()
+                
+                // Parse DWID JS Cookie
+                val dwidMatch = Regex("""document\.cookie="dwid=([^;]+);""").find(bodyString)
+                if (dwidMatch != null) {
+                    val dwid = dwidMatch.groupValues[1]
+                    val cookie = Cookie.Builder()
+                        .name("dwid")
+                        .value(dwid)
+                        .domain(request.url.host)
+                        .path("/")
+                        .build()
+                    cookieJar.saveFromResponse(request.url, listOf(cookie))
+                    Log.d("DiamWall", "Extracted dwid cookie: $dwid")
+                }
+                // DiamWall also sets _dwa=0 on the challenge page
+                val dwaMatch = Regex("""document\.cookie="_dwa=([^;]+);""").find(bodyString)
+                if (dwaMatch != null) {
+                    val dwa = dwaMatch.groupValues[1]
+                    val cookie = Cookie.Builder()
+                        .name("_dwa")
+                        .value(dwa)
+                        .domain(request.url.host)
+                        .path("/")
+                        .build()
+                    cookieJar.saveFromResponse(request.url, listOf(cookie))
+                    Log.d("DiamWall", "Extracted _dwa cookie: $dwa")
+                }
+                
+                // Parse PoW
+                var powHtml = bodyString
+                
+                // If it contains an iframe, fetch the iframe content
+                val iframeMatch = Regex("""<iframe[^>]*src="([^"]+\.well-known/diamwall/load/html/[^"]*)"[^>]*>""").find(bodyString)
+                if (iframeMatch != null) {
+                    val iframeUrlStr = iframeMatch.groupValues[1]
+                    val iframeUrl = request.url.resolve(iframeUrlStr)
+                    if (iframeUrl != null) {
+                        android.util.Log.d("DiamWall", "Found iframe, fetching: $iframeUrl")
+                        val iframeRequest = okhttp3.Request.Builder()
+                            .url(iframeUrl)
+                            .header("Referer", request.url.toString())
+                            .build()
+                        val iframeResponse = chain.proceed(iframeRequest)
+                        powHtml = iframeResponse.peekBody(1024 * 1024).string()
+                        Log.d("DiamWall", "Iframe HTML: $powHtml")
+                        iframeResponse.close()
+                    }
+                }
+
+                // New DiamWall v2 uses an interactive CAPTCHA (cpt.lib) which cannot be solved
+                // by a plain HTTP client. Detect it and stop retrying immediately.
+                val isCaptchaChallenge = powHtml.contains("solve this captcha", ignoreCase = true) ||
+                        powHtml.contains("Verifying your browser", ignoreCase = true) ||
+                        powHtml.contains("chl/v2/captcha") ||
+                        powHtml.contains("cpt.lib")
+                if (isCaptchaChallenge) {
+                    Log.w("DiamWall", "Captcha-based DiamWall challenge detected; HTTP client cannot auto-solve. Use WebView verification.")
+                    break
+                }
+                
+                if (powHtml.contains("Checking your browser") || powHtml.contains("DiamWall", ignoreCase = true) || powHtml.contains("TOKEN")) {
+                    val tokenMatch = Regex("""var TOKEN="([^"]+)"""").find(powHtml)
+                    val diffMatch = Regex("""var DIFF=(\d+)""").find(powHtml)
+                    
+                    if (tokenMatch != null && diffMatch != null) {
+                        val token = tokenMatch.groupValues[1]
+                        val diff = diffMatch.groupValues[1].toInt()
+                        val prefix = "0".repeat(diff)
+                        Log.d("DiamWall", "Solving PoW for token $token with diff $diff")
+                        
+                        var nonce = 0
+                        val md = MessageDigest.getInstance("SHA-256")
+                        while (true) {
+                            val input = "$token:$nonce".toByteArray()
+                            val hashBytes = md.digest(input)
+                            val hashHex = hashBytes.joinToString("") { "%02x".format(it) }
+                            if (hashHex.startsWith(prefix)) {
+                                break
+                            }
+                            nonce++
+                        }
+                        
+                        val originalUrl = request.url.encodedPath + (request.url.encodedQuery?.let { "?$it" } ?: "")
+                        val verifyUrl = request.url.newBuilder()
+                            .encodedPath("/__ab/verify")
+                            .query("t=${URLEncoder.encode(token, "UTF-8")}&n=$nonce&r=${URLEncoder.encode(originalUrl, "UTF-8")}")
+                            .build()
+                            
+                        request = request.newBuilder().url(verifyUrl).build()
+                        response.close()
+                        response = chain.proceed(request)
+                        followUpCount++
+                        continue
+                    }
+                }
+            }
+            
+            // 2. Handle HTTP Redirects (since followRedirects is false)
+            if (response.isRedirect) {
+                val location = response.header("Location")
+                if (location != null) {
+                    val newUrl = request.url.resolve(location)
+                    if (newUrl != null) {
+                        // Check for dwid cookie in redirect response body
+                        val bodyString = response.peekBody(1024 * 1024).string()
+                        val dwidMatch = Regex("""document\.cookie="dwid=([^;]+);""").find(bodyString)
+                        if (dwidMatch != null) {
+                            val dwid = dwidMatch.groupValues[1]
+                            val cookie = Cookie.Builder()
+                                .name("dwid")
+                                .value(dwid)
+                                .domain(request.url.host)
+                                .path("/")
+                                .build()
+                            cookieJar.saveFromResponse(request.url, listOf(cookie))
+                            Log.d("DiamWall", "Extracted dwid cookie from redirect: $dwid")
+                        }
+                        
+                        request = request.newBuilder().url(newUrl).build()
+                        response.close()
+                        response = chain.proceed(request)
+                        followUpCount++
+                        continue
+                    }
+                }
+            }
+            
+            // If no redirect or PoW handled, break
+            break
+        }
+        
+        return response
+    }
+}

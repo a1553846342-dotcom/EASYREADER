@@ -16,6 +16,17 @@
 -keep class com.squareup.moshi.** { *; }
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
+# Keep Kotlinx Serialization & Serializable Models
+-keepclassmembers class * {
+    @kotlinx.serialization.Serializable *;
+}
+-keepclassmembers class * {
+    *** Companion;
+}
+-keep class kotlinx.serialization.** { *; }
+-keep class com.example.source.** { *; }
+-keep class com.example.download.** { *; }
+
 # Keep Coroutines and ViewModel
 -keep class kotlinx.coroutines.** { *; }
 

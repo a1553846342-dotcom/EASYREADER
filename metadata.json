@@ -1,6 +1,0 @@
-{
-  "name": "CIallo阅读",
-  "description": "纯本地、不联网的极致沉浸小说阅读器，支持仿真3D卷页、横屏双页、自定义开屏与精美沉浸主题",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

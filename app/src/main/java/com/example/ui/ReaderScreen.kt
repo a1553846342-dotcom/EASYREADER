@@ -27,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -76,6 +77,7 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@androidx.compose.animation.ExperimentalSharedTransitionApi
 fun ReaderScreen(
     book: Book?,
     bookTitle: String,
@@ -96,6 +98,8 @@ fun ReaderScreen(
     onRecordTime: (Long) -> Unit
 ) {
     val context = LocalContext.current
+    val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
+    val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
     val scope = rememberCoroutineScope()
 
     var showTocSheet by remember { mutableStateOf(false) }
@@ -191,11 +195,42 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(currentChapterIndex, scrollState.value, currentCharOffset, isScrollMode) {
+    // 翻页/模式切换：立即保存进度
+    LaunchedEffect(currentChapterIndex, isScrollMode) {
         if (book != null && chapters.isNotEmpty()) {
             val offsetToSave = if (isScrollMode) scrollState.value else currentCharOffset
             val isFinished = currentChapterIndex == chapters.size - 1 && (if (isScrollMode) scrollState.value > 100 else true)
             onUpdateProgress(book.id, currentChapterIndex, offsetToSave, isFinished)
+        }
+    }
+
+    // 滚动模式：1.5 秒防抖保存，避免滚动时每帧写数据库导致掉帧
+    LaunchedEffect(scrollState.value) {
+        if (isScrollMode && book != null && chapters.isNotEmpty()) {
+            delay(1500)
+            val offsetToSave = scrollState.value
+            val isFinished = currentChapterIndex == chapters.size - 1 && offsetToSave > 100
+            onUpdateProgress(book.id, currentChapterIndex, offsetToSave, isFinished)
+        }
+    }
+
+    // 翻页模式：字符偏移变化时保存（离散翻页，非连续滚动）
+    LaunchedEffect(currentCharOffset) {
+        if (!isScrollMode && book != null && chapters.isNotEmpty()) {
+            val offsetToSave = currentCharOffset
+            val isFinished = currentChapterIndex == chapters.size - 1
+            onUpdateProgress(book.id, currentChapterIndex, offsetToSave, isFinished)
+        }
+    }
+
+    // 退出阅读页时兜底保存一次最新进度
+    DisposableEffect(Unit) {
+        onDispose {
+            if (book != null && chapters.isNotEmpty()) {
+                val offsetToSave = if (isScrollMode) scrollState.value else currentCharOffset
+                val isFinished = currentChapterIndex == chapters.size - 1 && (if (isScrollMode) scrollState.value > 100 else true)
+                onUpdateProgress(book.id, currentChapterIndex, offsetToSave, isFinished)
+            }
         }
     }
 
@@ -232,6 +267,29 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
+        if (book != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
+            with(sharedTransitionScope) {
+                val imageRequest = if (!book.coverUri.isNullOrEmpty() && book.isCoverValid) {
+                    if (book.coverUri!!.startsWith("content://")) android.net.Uri.parse(book.coverUri)
+                    else java.io.File(book.coverUri!!)
+                } else null
+                if (imageRequest != null) {
+                    coil.compose.AsyncImage(
+                        model = imageRequest,
+                        contentDescription = "Shared Cover",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .sharedElement(
+                                state = rememberSharedContentState(key = "book_cover_${book.id}"),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f) }
+                            )
+                            .alpha(0.05f),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            }
+        }
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             var pageContainerSize by remember { mutableStateOf<IntSize?>(null) }
             val density = LocalDensity.current
@@ -857,7 +915,7 @@ fun ReaderScreen(
                                                         modifier = Modifier.size(18.dp)
                                                     )
                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(if (isTtsPlaying) "朗读中..." else "🎧 听书模式", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                    Text(if (isTtsPlaying) "朗读中..." else "听书模式", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
@@ -1201,8 +1259,8 @@ fun ReaderScreen(
         modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = R.drawable.anime_mascot_chibi,
+            Image(
+                painter = painterResource(id = R.drawable.roxy_happy),
                 contentDescription = "Anime Mascot Easter Egg",
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

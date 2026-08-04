@@ -13,6 +13,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val prefs = PreferencesManager(application)
     val backupManager = BackupManager(application, prefs)
     val ttsManager = TtsManager(application)
+    val downloadManager = com.example.download.DownloadManager(application)
     val repository = BookRepository(application, database.bookDao())
 
     private val _autoNightMode = MutableStateFlow(prefs.autoNightMode)
@@ -28,6 +29,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val colorPrimaryIndex: StateFlow<Int> = _colorPrimaryIndex.asStateFlow()
 
     private val _colorSecondaryIndex = MutableStateFlow(prefs.colorSecondaryIndex)
+
+    /** 封面有效性缓存：避免每次书架数据变更都重新 file.exists() 全部书籍。 */
+    private val coverValidCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     val colorSecondaryIndex: StateFlow<Int> = _colorSecondaryIndex.asStateFlow()
 
     fun updateAutoNightMode(enabled: Boolean) {
@@ -57,9 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.checkAndSeedDefaultBooks()
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val startT = System.currentTimeMillis()
             val streak = prefs.calculateStreak()
-            android.util.Log.d("PerformanceProof", "[Root Cause 1 & 3] Streak calculation and total read time initialization. Thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
             _streakDays.value = streak
         }
     }
@@ -72,17 +74,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val allBooks: StateFlow<List<Book>> = repository.allBooks
         .map { books ->
-            val startT = System.currentTimeMillis()
             books.forEach { book ->
                 if (!book.coverUri.isNullOrEmpty()) {
-                    val path = if (book.coverUri.startsWith("file://")) book.coverUri.substring(7) else book.coverUri
-                    val file = java.io.File(path)
-                    book.isCoverValid = file.exists()
+                    val key = book.coverUri
+                    book.isCoverValid = coverValidCache.getOrPut(key) {
+                        val path = if (key.startsWith("file://")) key.substring(7) else key
+                        java.io.File(path).exists()
+                    }
                 } else {
                     book.isCoverValid = false
                 }
             }
-            android.util.Log.d("PerformanceProof", "[Root Cause 2] Pre-calculated cover file existence for ${books.size} books on background thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
             books
         }
         .flowOn(kotlinx.coroutines.Dispatchers.IO)
@@ -324,7 +326,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun recordTime(seconds: Long) {
         if (seconds <= 0) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val startT = System.currentTimeMillis()
             prefs.totalReadTimeSeconds += seconds
             val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
             val currentDaily = prefs.getDailyReadTime(todayStr)
@@ -333,8 +334,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _totalReadTimeSeconds.value = prefs.totalReadTimeSeconds
             val newStreak = prefs.calculateStreak()
             _streakDays.value = newStreak
-
-            android.util.Log.d("PerformanceProof", "[Root Cause 1] recordTime updated totalReadTimeSeconds and daily streak on thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
         }
 
         // Also record to reading_records database table

@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -28,14 +31,27 @@ import com.example.ui.*
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MyApplicationTheme
 
+@OptIn(ExperimentalSharedTransitionApi::class)
+val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
+val LocalNavAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
+
+@OptIn(ExperimentalSharedTransitionApi::class)
 class MainActivity : ComponentActivity() {
     private var mainViewModel: MainViewModel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.library.ZLibraryNodeManager.restoreSelection(applicationContext)
         enableEdgeToEdge()
         setContent {
             val viewModel: MainViewModel = viewModel()
+            val libraryViewModel: com.example.library.LibraryViewModel = viewModel()
+            val sourceViewModel = remember(libraryViewModel) {
+                com.example.source.SourceViewModel(
+                    application = application,
+                    sourceManager = libraryViewModel.sourceManager
+                )
+            }
             mainViewModel = viewModel
 
             val autoNightMode by viewModel.autoNightMode.collectAsState()
@@ -43,8 +59,6 @@ class MainActivity : ComponentActivity() {
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
             val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
             val colorSecondaryIndex by viewModel.colorSecondaryIndex.collectAsState()
-            val totalReadTimeSeconds by viewModel.totalReadTimeSeconds.collectAsState()
-            val streakDays by viewModel.streakDays.collectAsState()
 
             MyApplicationTheme(
                 darkTheme = autoNightMode,
@@ -121,9 +135,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    var selectedTab by remember { mutableIntStateOf(0) }
+                    var selectedTab by rememberSaveable { mutableIntStateOf(1) }
 
-                    NavHost(
+                    SharedTransitionLayout { CompositionLocalProvider(LocalSharedTransitionScope provides this) { NavHost(
                         navController = navController,
                         startDestination = "splash",
                         enterTransition = { fadeIn(tween(250)) },
@@ -135,19 +149,66 @@ class MainActivity : ComponentActivity() {
                             SplashScreen(
                                 prefs = viewModel.prefs,
                                 onSplashFinished = {
-                                    navController.navigate("home") {
+                                    val nextDest = if (viewModel.prefs.hasSeenOnboarding) "home" else "onboarding"
+                                    navController.navigate(nextDest) {
                                         popUpTo("splash") { inclusive = true }
                                     }
                                 }
                             )
                         }
 
-                        composable("home") {
+                        composable("onboarding") {
+                            com.example.ui.OnboardingScreen(
+                                onFinished = {
+                                    viewModel.prefs.hasSeenOnboarding = true
+                                    navController.navigate("home") {
+                                        popUpTo("onboarding") { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        composable("home") { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val books by viewModel.allBooks.collectAsState()
                             val categories by viewModel.allCategories.collectAsState()
                             val readingRecords by viewModel.allReadingRecords.collectAsState()
 
+                            val libraryErrorMessage by libraryViewModel.errorMessage.collectAsState()
+                            val mainImportMessage by viewModel.importStatusMessage.collectAsState()
+                            val snackbarHostState = remember { SnackbarHostState() }
+
+                            LaunchedEffect(libraryErrorMessage) {
+                                libraryErrorMessage?.let {
+                                    snackbarHostState.showSnackbar(
+                                        message = it,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            }
+
+                            LaunchedEffect(mainImportMessage) {
+                                mainImportMessage?.let {
+                                    if (it.contains("失败") || it.contains("出错")) {
+                                        snackbarHostState.showSnackbar(
+                                            message = it,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                }
+                            }
+
                             Scaffold(
+                                snackbarHost = {
+                                    SnackbarHost(
+                                        hostState = snackbarHostState,
+                                        modifier = Modifier.padding(bottom = 60.dp)
+                                    ) { data ->
+                                        com.example.ui.components.AppErrorSnackbar(
+                                            message = data.visuals.message,
+                                            onDismissClick = { data.dismiss() }
+                                        )
+                                    }
+                                },
                                 bottomBar = {
                                     NavigationBar(
                                         containerColor = MaterialTheme.colorScheme.surface
@@ -155,8 +216,8 @@ class MainActivity : ComponentActivity() {
                                         NavigationBarItem(
                                             selected = selectedTab == 0,
                                             onClick = { selectedTab = 0 },
-                                            icon = { Icon(Icons.Filled.Book, contentDescription = "书架") },
-                                            label = { Text("书架") },
+                                            icon = { Icon(Icons.Filled.Search, contentDescription = "书库") },
+                                            label = { Text("书库") },
                                             colors = NavigationBarItemDefaults.colors(
                                                 selectedIconColor = MintPrimary,
                                                 selectedTextColor = MintPrimary,
@@ -166,8 +227,8 @@ class MainActivity : ComponentActivity() {
                                         NavigationBarItem(
                                             selected = selectedTab == 1,
                                             onClick = { selectedTab = 1 },
-                                            icon = { Icon(Icons.Filled.BarChart, contentDescription = "统计") },
-                                            label = { Text("统计") },
+                                            icon = { Icon(Icons.Filled.Book, contentDescription = "书架") },
+                                            label = { Text("书架") },
                                             colors = NavigationBarItemDefaults.colors(
                                                 selectedIconColor = MintPrimary,
                                                 selectedTextColor = MintPrimary,
@@ -177,6 +238,17 @@ class MainActivity : ComponentActivity() {
                                         NavigationBarItem(
                                             selected = selectedTab == 2,
                                             onClick = { selectedTab = 2 },
+                                            icon = { Icon(Icons.Filled.BarChart, contentDescription = "统计") },
+                                            label = { Text("统计") },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MintPrimary,
+                                                selectedTextColor = MintPrimary,
+                                                indicatorColor = MintPrimary.copy(alpha = 0.15f)
+                                            )
+                                        )
+                                        NavigationBarItem(
+                                            selected = selectedTab == 3,
+                                            onClick = { selectedTab = 3 },
                                             icon = { Icon(Icons.Filled.Settings, contentDescription = "设置") },
                                             label = { Text("设置") },
                                             colors = NavigationBarItemDefaults.colors(
@@ -185,6 +257,7 @@ class MainActivity : ComponentActivity() {
                                                 indicatorColor = MintPrimary.copy(alpha = 0.15f)
                                             )
                                         )
+
                                     }
                                 }
                             ) { innerPadding ->
@@ -203,7 +276,20 @@ class MainActivity : ComponentActivity() {
                                         label = "TabSwitch"
                                     ) { tab ->
                                         when (tab) {
-                                            0 -> HomeScreen(
+                                                0 -> com.example.library.LibraryScreen(
+                                                    viewModel = libraryViewModel,
+                                                    onBookImported = { 
+                                                        selectedTab = 1 
+                                                    },
+                                                    onOpenSourceManagement = {
+                                                        navController.navigate("source_management")
+                                                    },
+                                                onImportLocalBook = {
+                                                    selectedCategoryForImport = "全部"
+                                                    fileLauncher.launch("*/*")
+                                                }
+                                            )
+                                            1 -> HomeScreen(
                                                 books = books,
                                                 categories = categories,
                                                 onBookClick = { book ->
@@ -231,7 +317,7 @@ class MainActivity : ComponentActivity() {
                                                     selectedTab = 1
                                                 },
                                                 totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
-                                                streakDays = streakDays,
+                                                streakDaysFlow = viewModel.streakDays,
                                                 onDeleteBook = { book ->
                                                     viewModel.deleteBook(book)
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.DeleteBook)
@@ -241,17 +327,21 @@ class MainActivity : ComponentActivity() {
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.MoveBook)
                                                 },
                                             )
-                                            1 -> StatisticsScreen(
+                                            2 -> StatisticsScreen(
                                                 books = books,
-                                                totalReadTimeSeconds = totalReadTimeSeconds,
-                                                readingRecords = readingRecords
+                                                totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
+                                                readingRecords = readingRecords,
+                                                onGoToShelf = { selectedTab = 1 }
                                             )
-                                            2 -> SettingsTabScreen(
+                                            3 -> SettingsTabScreen(
                                                 prefs = viewModel.prefs,
                                                 backupManager = viewModel.backupManager,
                                                 categories = categories,
                                                 onAddCategory = { name ->
                                                     viewModel.addCategory(name)
+                                                },
+                                                onOpenSourceManager = {
+                                                    navController.navigate("source_management")
                                                 },
                                                 autoNightModeVal = autoNightMode,
                                                 onAutoNightModeChange = { viewModel.updateAutoNightMode(it) },
@@ -268,10 +358,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-
+ }
                         composable("settings") {
                             val categories by viewModel.allCategories.collectAsState()
                             SettingsTabScreen(
+                                onOpenSourceManager = {
+                                    navController.navigate("source_management")
+                                },
                                 prefs = viewModel.prefs,
                                 backupManager = viewModel.backupManager,
                                 categories = categories,
@@ -293,7 +386,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        composable("reader") {
+                        composable("reader") { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val selectedBook by viewModel.selectedBook.collectAsState()
                             val chapters by viewModel.chapters.collectAsState()
                             val bookmarks by viewModel.bookmarks.collectAsState()
@@ -336,8 +429,8 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
-
-                        composable("comic_reader") {
+ }
+                        composable("comic_reader") { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val selectedBook by viewModel.selectedBook.collectAsState()
                             val chapters by viewModel.chapters.collectAsState()
 
@@ -352,11 +445,21 @@ class MainActivity : ComponentActivity() {
                                     viewModel.recordTime(seconds)
                                 }
                             )
+                        } }
+
+                        composable("source_management") {
+                            com.example.ui.source.SourceManagementScreen(
+                                viewModel = sourceViewModel,
+                                onBack = { navController.popBackStack() }
+                            )
                         }
+
                     }
-                    com.example.ui.mascot.MascotOverlay()
                 }
             }
+            com.example.ui.mascot.MascotOverlay()
         }
     }
+}
+}
 }

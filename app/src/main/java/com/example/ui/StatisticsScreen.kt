@@ -9,6 +9,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,9 +31,11 @@ import com.example.ui.theme.MintSecondary
 @Composable
 fun StatisticsScreen(
     books: List<Book>,
-    totalReadTimeSeconds: Long,
-    readingRecords: List<ReadingRecord> = emptyList()
+    totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
+    readingRecords: List<ReadingRecord> = emptyList(),
+    onGoToShelf: () -> Unit = {}
 ) {
+    val totalReadTimeSeconds by totalReadTimeSecondsFlow.collectAsState()
     val totalHours = totalReadTimeSeconds / 3600
     val totalMins = (totalReadTimeSeconds % 3600) / 60
     val finishedCount = books.count { it.isFinished }
@@ -157,7 +161,8 @@ fun StatisticsScreen(
                     }
                 }
 
-                val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds, todayIdx) {
+                // 图表只关心“分钟”粒度，避免阅读计时每秒变化都重算图表
+                val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds / 60, todayIdx) {
                     val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
                     if (hasAnyRecords) {
                         weekDates.map { date ->
@@ -171,7 +176,7 @@ fun StatisticsScreen(
                     }
                 }
 
-                val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds, todayIdx) {
+                val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds / 60, todayIdx) {
                     val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
                     if (hasAnyRecords) {
                         weekDates.map { date ->
@@ -186,11 +191,22 @@ fun StatisticsScreen(
                     }
                 }
 
-                WeeklyReadingChart(
-                    minutesPerDay = minutesList,
-                    bookTitlesPerDay = booksList,
-                    todayIndex = todayIdx
-                )
+                if (totalReadTimeSeconds == 0L) {
+                    com.example.ui.components.MascotEmptyState(
+                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.idleDrawable,
+                        title = "「暂无阅读统计记录」",
+                        description = "您最近还没有在本软件中阅读过小说哦。Roxy 已经乖乖为您备好了专属书签，快去读一章，开启您的阅读旅程并点亮统计图表吧！",
+                        actionLabel = "立即前往书架阅读",
+                        onActionClick = onGoToShelf,
+                        testTagPrefix = "stats_empty_state"
+                    )
+                } else {
+                    WeeklyReadingChart(
+                        minutesPerDay = minutesList,
+                        bookTitlesPerDay = booksList,
+                        todayIndex = todayIdx
+                    )
+                }
             }
         }
     }

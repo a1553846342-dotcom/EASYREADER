@@ -32,12 +32,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -62,6 +64,7 @@ import com.example.ui.theme.clickableWithFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
+@androidx.compose.animation.ExperimentalSharedTransitionApi
 fun HomeScreen(
     books: List<Book>,
     categories: List<CategoryEntity>,
@@ -72,22 +75,20 @@ fun HomeScreen(
     onNavigateToShelf: () -> Unit,
     onNavigateToStats: () -> Unit,
     totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
-    streakDays: Int = 0,
+    streakDaysFlow: kotlinx.coroutines.flow.StateFlow<Int>,
     onDeleteBook: (Book) -> Unit,
     onMoveBook: (Book, String) -> Unit
 ) {
-    SideEffect {
-        android.util.Log.d("PerformanceProof", "[Root Cause 3 Check] HomeScreen top-level Composable recomposed. Thread: ${Thread.currentThread().name}")
-    }
+    val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
+    val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
+    val streakDays by streakDaysFlow.collectAsState()
 
     val currentlyReading = remember(books) {
-        val startT = System.currentTimeMillis()
         val result = if (books.isEmpty()) {
             Book(id = -1, title = "Empty", filePath = "")
         } else {
             books.maxByOrNull { it.lastReadTime } ?: books.first()
         }
-        android.util.Log.d("PerformanceProof", "[Root Cause 4] Computed currentlyReading. Books size: ${books.size}, Thread: ${Thread.currentThread().name}, Duration: ${System.currentTimeMillis() - startT}ms")
         result
     }
 
@@ -99,17 +100,19 @@ fun HomeScreen(
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
 
-    // Unified animation driver for book breathing
-    val globalBreathingTransition = rememberInfiniteTransition(label = "global_breathing")
-    val globalBreathingProgressState = globalBreathingTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "progress"
-    )
+    // 书架呼吸动画：30fps 自定义驱动（4 秒周期），视觉与 60fps 一致但绘制开销减半；
+    // 无书时不启动，避免动画时钟空转。
+    val hasBreathingBooks = books.isNotEmpty()
+    val breathingProgress = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(hasBreathingBooks) {
+        if (!hasBreathingBooks) return@LaunchedEffect
+        val twoPi = (2.0 * Math.PI).toFloat()
+        val step = twoPi / 120f // 4000ms / 33ms ≈ 121 步
+        while (true) {
+            delay(33)
+            breathingProgress.floatValue = (breathingProgress.floatValue + step) % twoPi
+        }
+    }
 
     // Filter books by category and search query
     val filteredBooks = remember(books, selectedCategory, searchQuery) {
@@ -390,57 +393,22 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    GlassCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(16.dp, RoundedCornerShape(24.dp))
+                    com.example.ui.components.MascotEmptyState(
+                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
+                        title = "「书架空空如也」",
+                        description = "您的书架还没有任何书哦！Roxy 觉得有点寂寞。您可以点击下方按钮导入本地电子书，或者直接去在线书库挑选精彩的小说！",
+                        actionLabel = "立即前往在线书库",
+                        onActionClick = onNavigateToShelf,
+                        testTagPrefix = "books_empty_state"
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    TextButton(
+                        onClick = { onImportClick("全部") },
+                        modifier = Modifier.testTag("empty_bookshelf_import_button")
                     ) {
-                        AsyncImage(
-                            model = R.drawable.empty_bookshelf_cat,
-                            contentDescription = "Empty Bookshelf Decor",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .clip(RoundedCornerShape(16.dp)),
-                            contentScale = ContentScale.Inside
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Text(
-                            text = "「书架暂无书籍」",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                            fontFamily = FontFamily.Serif
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "导入本地 TXT 格式电子书开始阅读",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        AppButton(
-                            onClick = { onImportClick("全部") },
-                            containerColor = MintPrimary,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .height(48.dp)
-                                .padding(horizontal = 24.dp)
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("导入新书", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                        }
+                        Text("或者 导入本地 TXT / EPUB / Comic 文件", color = MintPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
@@ -739,18 +707,14 @@ fun HomeScreen(
 
                     if (filteredBooks.isEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }, key = "empty_state") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(150.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "在此分类下没有找到书籍哦",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 13.sp
-                                )
-                            }
+                            com.example.ui.components.MascotEmptyState(
+                                mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
+                                title = "「分类下没有图书」",
+                                description = "在分类『$selectedCategory』下还没有任何图书哦。您可以点击下方按钮导入新书到该分类！",
+                                actionLabel = "在此分类下导入新书",
+                                onActionClick = { onImportClick(selectedCategory) },
+                                testTagPrefix = "category_empty_state"
+                            )
                         }
                     } else {
                         items(items = filteredBooks, key = { it.id }) { book ->
@@ -766,11 +730,6 @@ fun HomeScreen(
                                 }
                             }
                             val hasValidCover = coverData != null
-
-                            // Proof logging for list scrolling without on-the-fly exists() check
-                            SideEffect {
-                                android.util.Log.d("PerformanceProof", "[Root Cause 2 Check] Rendered book: ${book.title}, cover valid: ${book.isCoverValid}. Thread: ${Thread.currentThread().name}")
-                            }
 
                             val context = androidx.compose.ui.platform.LocalContext.current
                             val imageRequest = remember(book.coverUri, coverData) {
@@ -829,10 +788,10 @@ fun HomeScreen(
 
                                 Column(
                                     modifier = Modifier
-                                        .offset(y = translationZAnim.dp)
                                         .graphicsLayer {
                                             val phase = (book.id.hashCode() % 1000) / 1000f * 2f * Math.PI.toFloat()
-                                            translationY = (kotlin.math.sin(globalBreathingProgressState.value + phase) * 3.dp.toPx()).toFloat()
+                                            translationY = translationZAnim.dp.toPx() +
+                                                (kotlin.math.sin(breathingProgress.floatValue + phase) * 3.dp.toPx()).toFloat()
                                             scaleX = scaleAnim
                                             scaleY = scaleAnim
                                         }
@@ -870,17 +829,27 @@ fun HomeScreen(
                                         MintSecondary.copy(alpha = 0.3f)
                                     )
                                 }
+                                
+                                var boxModifier = Modifier
+                                    .aspectRatio(0.72f)
+                                    .fillMaxWidth()
+                                if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                                    with(sharedTransitionScope) {
+                                        boxModifier = boxModifier.sharedElement(
+                                            state = rememberSharedContentState(key = "book_cover_${book.id}"),
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            boundsTransform = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f) }
+                                        )
+                                    }
+                                }
+                                boxModifier = boxModifier
+                                    .shadow(4.dp, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(colors = coverGradColors))
+                                    .border(1.dp, Color.Black.copy(alpha = 0.05f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
 
                                 Box(
-                                    modifier = Modifier
-                                        .aspectRatio(0.72f)
-                                        .fillMaxWidth()
-                                        .shadow(4.dp, RoundedCornerShape(10.dp))
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(
-                                            Brush.verticalGradient(colors = coverGradColors)
-                                        )
-                                        .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(10.dp)),
+                                    modifier = boxModifier,
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (hasValidCover && imageRequest != null) {
@@ -1038,11 +1007,6 @@ fun HomeScreen(
 private fun TodayReadTimeText(totalReadTimeFlow: kotlinx.coroutines.flow.StateFlow<Long>) {
     val totalSeconds by totalReadTimeFlow.collectAsState()
     val minutes = (totalSeconds / 60).coerceAtLeast(1)
-
-    // Log recomposition of this tiny component to prove Root Cause 3 is solved
-    SideEffect {
-        android.util.Log.d("PerformanceProof", "[Root Cause 3 Check] TodayReadTimeText (timer UI) recomposed. Value: $totalSeconds seconds. Thread: ${Thread.currentThread().name}")
-    }
 
     Text(
         text = "今日已阅读 $minutes 分钟",

@@ -57,31 +57,23 @@ fun SplashScreen(
     val customPoster = prefs.customSplashPosterUri
     val isPureMode = prefs.splashPureMode
 
-    // List of reliable splash drawable resources
-    val splashDrawables = remember {
-        listOf(
-            R.drawable.splash_1,
-            R.drawable.splash_2,
-            R.drawable.splash_3,
-            R.drawable.cozy_room_banner
-        )
-    }
+    // 默认海报改为程序化绘制的三套主题（不依赖已损坏的 drawable 图片）
+    val defaultPosterStyle = remember { (0..2).random() }
 
-    val defaultRandomSplash = remember { splashDrawables.random() }
+    // 自定义海报：等解码真正完成后再判断成功/失败，避免“还没解码完就被当成失败”
+    var customBitmap by remember(customPoster) { mutableStateOf<ImageBitmap?>(null) }
+    var customDecodeFinished by remember(customPoster) { mutableStateOf(false) }
 
-    var currentImageModel by remember(customPoster, defaultRandomSplash) {
-        mutableStateOf<Any>(if (!customPoster.isNullOrEmpty()) customPoster else defaultRandomSplash)
-    }
-
-    // Direct synchronous-like async bitmap loader avoiding Coil resource issues
-    val loadedBitmap = rememberLoadedSplashBitmap(currentImageModel)
-
-    // Fallback if custom poster fails to decode
-    LaunchedEffect(loadedBitmap, currentImageModel) {
-        if (loadedBitmap == null && currentImageModel != defaultRandomSplash) {
-            Log.w(TAG, "Custom splash model $currentImageModel failed to load, switching to default random splash.")
-            currentImageModel = defaultRandomSplash
+    LaunchedEffect(customPoster) {
+        if (!customPoster.isNullOrEmpty()) {
+            customBitmap = withContext(Dispatchers.IO) {
+                decodeSplashBitmap(context, customPoster)
+            }
+            if (customBitmap == null) {
+                Log.w(TAG, "Custom splash poster failed to decode, falling back to default.")
+            }
         }
+        customDecodeFinished = true
     }
 
     var isFinishedCalled by remember { mutableStateOf(false) }
@@ -93,10 +85,6 @@ fun SplashScreen(
                 onSplashFinished()
             }
         }
-    }
-
-    LaunchedEffect(currentImageModel) {
-        Log.d(TAG, "SplashScreen initialized. Selected poster model: $currentImageModel")
     }
 
     LaunchedEffect(Unit) {
@@ -142,9 +130,9 @@ fun SplashScreen(
                     this.alpha = alpha.value
                 }
         ) {
-            if (loadedBitmap != null) {
+            if (customBitmap != null) {
                 Image(
-                    bitmap = loadedBitmap,
+                    bitmap = customBitmap!!,
                     contentDescription = "开屏海报",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -154,9 +142,12 @@ fun SplashScreen(
                             scaleY = scale.value
                         }
                 )
+            } else if (customPoster.isNullOrEmpty() || customDecodeFinished) {
+                // 默认海报：程序化绘制的主题海报
+                ProceduralArtisticPoster(randomQuote = randomQuote, styleIndex = defaultPosterStyle)
             } else {
-                // Procedural Artistic Fallback Poster (Cozy Night Ambient)
-                ProceduralArtisticPoster(randomQuote = randomQuote)
+                // 自定义海报解码中：先保持纯色背景，避免闪一下默认图
+                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F141C)))
             }
 
             if (!isPureMode) {
@@ -205,55 +196,56 @@ fun SplashScreen(
     }
 }
 
-@Composable
-private fun rememberLoadedSplashBitmap(model: Any?): ImageBitmap? {
-    val context = LocalContext.current
-    val bitmapState = produceState<ImageBitmap?>(initialValue = null, key1 = model) {
-        value = withContext(Dispatchers.IO) {
-            try {
-                val options = BitmapFactory.Options().apply {
-                    inSampleSize = 2 // Downsample 2x for fast decoding and low memory
-                    inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+private fun decodeSplashBitmap(context: android.content.Context, model: String): ImageBitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = 2 // Downsample 2x for fast decoding and low memory
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+        when {
+            model.startsWith("content://") -> {
+                context.contentResolver.openInputStream(Uri.parse(model))?.use { input ->
+                    BitmapFactory.decodeStream(input, null, options)?.asImageBitmap()
                 }
-                when (model) {
-                    is Int -> {
-                        val bmp = BitmapFactory.decodeResource(context.resources, model, options)
-                        bmp?.asImageBitmap()
-                    }
-                    is String -> {
-                        if (model.startsWith("content://") || model.startsWith("file://")) {
-                            context.contentResolver.openInputStream(Uri.parse(model))?.use { input ->
-                                BitmapFactory.decodeStream(input, null, options)?.asImageBitmap()
-                            }
-                        } else {
-                            val file = File(model)
-                            if (file.exists()) {
-                                BitmapFactory.decodeFile(file.absolutePath, options)?.asImageBitmap()
-                            } else null
-                        }
-                    }
-                    else -> null
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to decode splash bitmap for model $model", e)
-                null
+            }
+            model.startsWith("file://") -> {
+                val path = Uri.parse(model).path
+                if (path != null) {
+                    val file = File(path)
+                    if (file.exists()) {
+                        BitmapFactory.decodeFile(file.absolutePath, options)?.asImageBitmap()
+                    } else null
+                } else null
+            }
+            else -> {
+                val file = File(model)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(file.absolutePath, options)?.asImageBitmap()
+                } else null
             }
         }
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to decode splash bitmap: $model", e)
+        null
     }
-    return bitmapState.value
 }
 
 @Composable
-private fun ProceduralArtisticPoster(randomQuote: String) {
+private fun ProceduralArtisticPoster(randomQuote: String, styleIndex: Int) {
+    val palette: List<Color> = when (styleIndex) {
+        1 -> listOf(Color(0xFF2A1E14), Color(0xFF4A2C1A), Color(0xFF14100C), Color(0x33FFB74D))
+        2 -> listOf(Color(0xFF101C2E), Color(0xFF1B2F52), Color(0xFF0A1020), Color(0x337FA8FF))
+        else -> listOf(Color(0xFF141923), Color(0xFF1E2838), Color(0xFF0D1118), Color(0x337FD8C8))
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF141923),
-                        Color(0xFF1E2838),
-                        Color(0xFF0D1118)
+                        palette[0],
+                        palette[1],
+                        palette[2]
                     )
                 )
             ),
@@ -264,7 +256,7 @@ private fun ProceduralArtisticPoster(randomQuote: String) {
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0x337FD8C8),
+                        palette[3],
                         Color.Transparent
                     ),
                     center = center,
@@ -303,5 +295,3 @@ private fun ProceduralArtisticPoster(randomQuote: String) {
         }
     }
 }
-
-

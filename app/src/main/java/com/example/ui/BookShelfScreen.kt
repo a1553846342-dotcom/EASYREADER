@@ -379,11 +379,6 @@ fun BookCardItem(
                     }
                 }
 
-                // Proof logging for list scrolling without on-the-fly exists() check
-                SideEffect {
-                    android.util.Log.d("PerformanceProof", "[Root Cause 2 Check] Rendered BookShelf book: ${book.title}, cover valid: ${book.isCoverValid}. Thread: ${Thread.currentThread().name}")
-                }
-
                 if (hasValidCover) {
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val imageRequest = remember(book.coverUri, coverData) {
