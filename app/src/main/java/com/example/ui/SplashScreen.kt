@@ -169,7 +169,7 @@ fun SplashScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "CIallo阅读",
+    text = "Ciallo阅读",
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -286,7 +286,7 @@ private fun ProceduralArtisticPoster(randomQuote: String, styleIndex: Int) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "CIallo阅读",
+    text = "Ciallo阅读",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White

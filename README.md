@@ -1,4 +1,4 @@
-# EASYREADER · CIallo阅读
+# EASYREADER · Ciallo阅读
 
 > 一个基于 Kotlin + Jetpack Compose 的现代 Android 电子书阅读器。
 > 支持 TXT / EPUB / 漫画阅读、多源在线书库搜索、断点续传下载与书架管理。

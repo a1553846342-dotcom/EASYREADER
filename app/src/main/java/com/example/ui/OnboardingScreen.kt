@@ -43,7 +43,7 @@ fun OnboardingScreen(
     val pages = remember {
         listOf(
             OnboardingPage(
-                title = "欢迎来到 CIallo阅读",
+    title = "欢迎来到 Ciallo阅读",
                 description = "这是一款专为阅读爱好者打造的沉浸式小说与网络文学阅读器。高颜值、极速、无广告，带给您最纯粹的阅读享受。",
                 imageRes = MascotSpriteSheet.happyDrawable,
                 badgeText = "全新体验"

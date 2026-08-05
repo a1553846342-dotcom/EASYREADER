@@ -356,7 +356,7 @@ fun SettingsTabScreen(
                                                     .background(com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text("CIallo 阅览室", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+            Text("Ciallo 阅览室", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),

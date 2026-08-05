@@ -1,4 +1,4 @@
-# ProGuard / R8 Rules for Ciallo Reader
+# ProGuard / R8 Rules for Ciallo阅读
 
 # Keep Room Database and Entities
 -keep class * extends androidx.room.RoomDatabase
