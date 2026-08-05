@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
@@ -210,6 +211,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 bottomBar = {
+                                    // 标准 Material 不透明底栏，恢复与其他界面的正常观感
                                     NavigationBar(
                                         containerColor = MaterialTheme.colorScheme.surface
                                     ) {
@@ -261,7 +263,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             ) { innerPadding ->
-                                Box(modifier = Modifier.padding(innerPadding)) {
+                                // 内容区向下延伸到屏幕底部（底栏后方），滚动时直接没入底栏，
+                                // 底栏上方不再存在任何固定不动的空白带。
+                                Box(modifier = Modifier.padding(top = innerPadding.calculateTopPadding())) {
                                     AnimatedContent(
                                         targetState = selectedTab,
                                         transitionSpec = {
@@ -386,7 +390,23 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        composable("reader") { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                        composable(
+                            "reader",
+                            enterTransition = {
+                                EnterTransition.None
+                            },
+                            exitTransition = { fadeOut(tween(220)) },
+                            popEnterTransition = {
+                                fadeIn(tween(240))
+                            },
+                            popExitTransition = {
+                                fadeOut(tween(220)) +
+                                    scaleOut(
+                                        targetScale = 0.96f,
+                                        animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                    )
+                            }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val selectedBook by viewModel.selectedBook.collectAsState()
                             val chapters by viewModel.chapters.collectAsState()
                             val bookmarks by viewModel.bookmarks.collectAsState()
@@ -430,7 +450,31 @@ class MainActivity : ComponentActivity() {
                             )
                         }
  }
-                        composable("comic_reader") { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                        composable(
+                            "comic_reader",
+                            enterTransition = {
+                                fadeIn(tween(320)) +
+                                    scaleIn(
+                                        initialScale = 0.96f,
+                                        animationSpec = tween(320, easing = FastOutSlowInEasing)
+                                    )
+                            },
+                            exitTransition = { fadeOut(tween(220)) },
+                            popEnterTransition = {
+                                fadeIn(tween(300)) +
+                                    scaleIn(
+                                        initialScale = 0.98f,
+                                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                                    )
+                            },
+                            popExitTransition = {
+                                fadeOut(tween(220)) +
+                                    scaleOut(
+                                        targetScale = 0.96f,
+                                        animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                    )
+                            }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val selectedBook by viewModel.selectedBook.collectAsState()
                             val chapters by viewModel.chapters.collectAsState()
 

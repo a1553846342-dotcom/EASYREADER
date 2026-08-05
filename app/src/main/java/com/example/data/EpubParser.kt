@@ -110,6 +110,29 @@ object EpubParser {
                 }
             }
 
+            // 拆分超大章节：与本地文本导入一致，避免打开大书时整章加载导致卡顿/闪退
+            val splitChapters = mutableListOf<Chapter>()
+            var splitOrder = 0
+            for (ch in chapters) {
+                if (ch.content.length <= MAX_CHAPTER_LENGTH) {
+                    splitChapters.add(ch.copy(chapterOrder = splitOrder++))
+                } else {
+                    val parts = ch.content.chunked(MAX_CHAPTER_LENGTH)
+                    parts.forEachIndexed { index, part ->
+                        splitChapters.add(
+                            Chapter(
+                                bookId = ch.bookId,
+                                chapterOrder = splitOrder++,
+                                title = if (index == 0) ch.title else "${ch.title} (续${index + 1})",
+                                content = part
+                            )
+                        )
+                    }
+                }
+            }
+            chapters.clear()
+            chapters.addAll(splitChapters)
+
             if (chapters.isEmpty()) {
                 tempDir.deleteRecursively()
                 bookDao.deleteBook(initialBook.copy(id = bookId))

@@ -4,12 +4,18 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.regex.Pattern
 
 class BookRepository(private val context: Context, private val bookDao: BookDao) {
+
+    private val unsupportedBinaryExtensions = listOf(
+        ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".djvu", ".fb2",
+        ".docx", ".doc", ".rtf", ".chm"
+    )
 
     val allBooks: Flow<List<Book>> = bookDao.getAllBooks()
     val allCategories: Flow<List<CategoryEntity>> = bookDao.getAllCategories()
@@ -78,6 +84,9 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
             }
             if (ComicParser.isComicFile(fileName)) {
                 return@withContext ComicParser.importComic(context, uri, fileName, bookDao)
+            }
+            if (unsupportedBinaryExtensions.any { fileName.lowercase().endsWith(it) }) {
+                return@withContext importUnsupportedFormat(uri, fileName)
             }
 
             val charset = detectCharset(context, uri)
@@ -217,6 +226,77 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         } catch (t: Throwable) {
             android.util.Log.e("BookImport", "[BookRepository] Streaming import failed", t)
             Result.failure(Exception(t.localizedMessage ?: "文件流式导入出现错误"))
+        }
+    }
+
+    /** PDF/MOBI 等暂不支持阅读的格式：只登记书架，不按文本解析（避免大文件被读成超大垃圾章节导致打开卡顿）。 */
+    private suspend fun importUnsupportedFormat(uri: Uri, fileName: String): Result<Book> =
+        withContext(Dispatchers.IO) {
+            try {
+                val cleanTitle = fileName.substringBeforeLast('.').ifBlank { fileName }
+                val book = Book(
+                    title = cleanTitle,
+                    filePath = uri.toString(),
+                    totalChapters = 1
+                )
+                val bookId = bookDao.insertBook(book).toInt()
+                bookDao.insertChapters(
+                    listOf(
+                        Chapter(
+                            bookId = bookId,
+                            chapterOrder = 0,
+                            title = UNSUPPORTED_CHAPTER_TITLE,
+                            content = ""
+                        )
+                    )
+                )
+                Result.success(book.copy(id = bookId, totalChapters = 1))
+            } catch (t: Throwable) {
+                android.util.Log.e("BookImport", "[BookRepository] Unsupported format import failed", t)
+                Result.failure(Exception(t.localizedMessage ?: "导入失败"))
+            }
+        }
+
+    /**
+     * 存量数据修复：把已入库的超大章节（如之前下载的单章大书）拆成小章节，
+     * 与本地导入书一致，打开阅读器不再卡顿/闪退。
+     */
+    suspend fun splitOversizedChaptersInLibrary() = withContext(Dispatchers.IO) {
+        try {
+            val books = bookDao.getAllBooks().first()
+            for (book in books) {
+                val chapters = bookDao.getChaptersListForBook(book.id)
+                if (chapters.isEmpty() || chapters.none { it.content.length > MAX_CHAPTER_LENGTH }) {
+                    continue
+                }
+
+                val replacement = mutableListOf<Chapter>()
+                var order = 0
+                for (ch in chapters) {
+                    if (ch.content.length <= MAX_CHAPTER_LENGTH) {
+                        replacement.add(ch.copy(chapterOrder = order++))
+                    } else {
+                        val parts = ch.content.chunked(MAX_CHAPTER_LENGTH)
+                        parts.forEachIndexed { index, part ->
+                            replacement.add(
+                                Chapter(
+                                    bookId = ch.bookId,
+                                    chapterOrder = order++,
+                                    title = if (index == 0) ch.title else "${ch.title} (续${index + 1})",
+                                    content = part
+                                )
+                            )
+                        }
+                    }
+                }
+
+                bookDao.deleteChaptersForBook(book.id)
+                bookDao.insertChapters(replacement)
+                bookDao.updateBook(book.copy(totalChapters = replacement.size))
+                android.util.Log.i("BookImport", "Split oversized chapters for '${book.title}': ${chapters.size} -> ${replacement.size}")
+            }
+        } catch (t: Throwable) {
+            android.util.Log.e("BookImport", "splitOversizedChaptersInLibrary failed", t)
         }
     }
 

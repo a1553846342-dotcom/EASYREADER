@@ -61,6 +61,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.checkAndSeedDefaultBooks()
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // 存量超大章节自动拆分（与本地导入书一致，修复旧下载书的打开卡顿/闪退）
+            repository.splitOversizedChaptersInLibrary()
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val streak = prefs.calculateStreak()
             _streakDays.value = streak
         }
@@ -128,29 +132,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val importStatusMessage: StateFlow<String?> = _importStatusMessage
 
     private var cachedMetadataList = emptyList<Chapter>()
+    private var chapterMapping: LogicalChapterBook? = null
     private var lastLoadedBookId: Int? = null
     private var lastLoadedChapterIndex: Int? = null
 
-    private fun loadActiveChaptersContent(bookId: Int, currentIdx: Int) {
+    private fun loadActiveChaptersContent(bookId: Int, currentLogicalIdx: Int) {
         viewModelScope.launch {
             try {
-                if (cachedMetadataList.isEmpty()) {
+                val mapping = chapterMapping
+                if (cachedMetadataList.isEmpty() || mapping == null) {
                     _chapters.value = emptyList()
                     return@launch
                 }
-                
-                val targetOrders = listOf(currentIdx - 1, currentIdx, currentIdx + 1)
+
+                val targetLogical = listOf(currentLogicalIdx - 1, currentLogicalIdx, currentLogicalIdx + 1)
                     .filter { it >= 0 && it < cachedMetadataList.size }
-                
-                val activeChapters = repository.getChaptersByOrders(bookId, targetOrders)
-                val activeMap = activeChapters.associateBy { it.chapterOrder }
-                
-                val merged = cachedMetadataList.map { chapter ->
-                    activeMap[chapter.chapterOrder] ?: chapter
+
+                val targetOrders = targetLogical
+                    .flatMap { mapping.logicalToPhysicalOrders[it].asIterable() }
+                    .distinct()
+
+                val activeParts = repository.getChaptersByOrders(bookId, targetOrders).associateBy { it.chapterOrder }
+
+                val merged = cachedMetadataList.mapIndexed { logicalIdx, chapter ->
+                    if (logicalIdx !in targetLogical) {
+                        chapter
+                    } else {
+                        val parts = mapping.logicalToPhysicalOrders[logicalIdx]
+                            .map { activeParts[it] }
+                            .filterNotNull()
+                        if (parts.isEmpty()) {
+                            chapter
+                        } else {
+                            chapter.copy(content = parts.joinToString(separator = "") { it.content })
+                        }
+                    }
                 }
-                
+
                 _chapters.value = merged
-                android.util.Log.d("BookImport", "[MainViewModel] Lazy loaded content for chapters: ${activeChapters.map { it.chapterOrder }}")
+                android.util.Log.d("BookImport", "[MainViewModel] Lazy loaded content for logical chapters: $targetLogical, physical: $targetOrders")
             } catch (t: Throwable) {
                 android.util.Log.e("BookImport", "[MainViewModel] Error lazy loading active chapters content", t)
             }
@@ -164,29 +184,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 android.util.Log.d("BookImport", "[MainViewModel] Selecting book: ${book.title}, isComic: ${book.isComic}")
                 if (book.isComic) {
                     // For comics, load all chapters directly since their content is just image file paths (very small)
+                    chapterMapping = null
+                    collectAnnotations(book.id)
                     repository.getChaptersForBook(book.id).collect {
                         _chapters.value = it
                     }
                 } else {
                     // For novels, use lazy loading
                     val metadata = repository.getChaptersMetadataList(book.id)
-                    cachedMetadataList = metadata
+                    val logical = ChapterMerger.buildLogicalChapters(metadata)
+                    cachedMetadataList = logical.chapters
+                    chapterMapping = logical
                     lastLoadedBookId = book.id
-                    lastLoadedChapterIndex = book.currentChapterIndex
-                    loadActiveChaptersContent(book.id, book.currentChapterIndex)
+
+                    val physicalStart = book.currentChapterIndex.coerceAtLeast(0)
+                    val logicalStart = logical.logicalIndexOf(physicalStart)
+                    val logicalOffset = logical.logicalOffsetOf(physicalStart, book.scrollOffset)
+                    lastLoadedChapterIndex = logicalStart
+                    _selectedBook.value = book.copy(
+                        currentChapterIndex = logicalStart,
+                        scrollOffset = logicalOffset
+                    )
+                    collectAnnotations(book.id)
+                    loadActiveChaptersContent(book.id, logicalStart)
                 }
             } catch (t: Throwable) {
                 android.util.Log.e("BookImport", "[MainViewModel] Error selecting book ${book.title}", t)
             }
         }
+    }
+
+    private fun collectAnnotations(bookId: Int) {
         viewModelScope.launch {
-            repository.getBookmarksForBook(book.id).collect {
-                _bookmarks.value = it
+            repository.getBookmarksForBook(bookId).collect { list ->
+                val mapping = chapterMapping
+                _bookmarks.value = if (mapping == null) {
+                    list
+                } else {
+                    list.map { bm ->
+                        val li = mapping.logicalIndexOf(bm.chapterIndex)
+                        val off = mapping.logicalOffsetOf(bm.chapterIndex, bm.scrollOffset)
+                        if (li == bm.chapterIndex && off == bm.scrollOffset) {
+                            val cleanTitle = ChapterMerger.cleanSplitTitle(bm.title)
+                            if (cleanTitle == bm.title) bm else bm.copy(title = cleanTitle)
+                        } else {
+                            bm.copy(chapterIndex = li, scrollOffset = off, title = ChapterMerger.cleanSplitTitle(bm.title))
+                        }
+                    }
+                }
             }
         }
         viewModelScope.launch {
-            repository.getHighlightsForBook(book.id).collect {
-                _highlights.value = it
+            repository.getHighlightsForBook(bookId).collect { list ->
+                val mapping = chapterMapping
+                _highlights.value = if (mapping == null) {
+                    list
+                } else {
+                    list.map { h ->
+                        val li = mapping.logicalIndexOf(h.chapterIndex)
+                        if (li == h.chapterIndex) h else h.copy(chapterIndex = li)
+                    }
+                }
             }
         }
     }
@@ -230,8 +288,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateProgress(bookId: Int, chapterIndex: Int, scrollOffset: Int, isFinished: Boolean) {
         viewModelScope.launch {
-            repository.updateBookProgress(bookId, chapterIndex, scrollOffset, isFinished)
-            
+            // Reader uses logical (merged) chapter indexes; persist the first physical part so
+            // restoring the book maps back to exactly the same position.
+            val physicalIndex = chapterMapping?.physicalIndexFor(chapterIndex) ?: chapterIndex
+            repository.updateBookProgress(bookId, physicalIndex, scrollOffset, isFinished)
+
             // For lazy loaded novels, load contents of new active window if index changed
             if (lastLoadedBookId == bookId && lastLoadedChapterIndex != chapterIndex) {
                 lastLoadedChapterIndex = chapterIndex
@@ -259,10 +320,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val existing = _bookmarks.value.find { (it.bookId == bookId || it.bookId == 0) && it.chapterIndex == chapterIndex }
             if (existing == null) {
+                val physicalIndex = chapterMapping?.physicalIndexFor(chapterIndex) ?: chapterIndex
                 repository.addBookmark(
                     Bookmark(
                         bookId = bookId,
-                        chapterIndex = chapterIndex,
+                        chapterIndex = physicalIndex,
                         scrollOffset = scrollOffset,
                         title = title,
                         snippet = snippet
@@ -278,10 +340,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (existing != null) {
                 repository.deleteBookmark(existing.id)
             } else {
+                val physicalIndex = chapterMapping?.physicalIndexFor(chapterIndex) ?: chapterIndex
                 repository.addBookmark(
                     Bookmark(
                         bookId = bookId,
-                        chapterIndex = chapterIndex,
+                        chapterIndex = physicalIndex,
                         scrollOffset = scrollOffset,
                         title = title,
                         snippet = snippet
@@ -299,10 +362,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addHighlight(bookId: Int, chapterIndex: Int, selectedText: String, note: String, colorHex: String) {
         viewModelScope.launch {
+            val physicalIndex = chapterMapping?.physicalIndexFor(chapterIndex) ?: chapterIndex
             repository.addHighlight(
                 Highlight(
                     bookId = bookId,
-                    chapterIndex = chapterIndex,
+                    chapterIndex = physicalIndex,
                     selectedText = selectedText,
                     note = note,
                     colorHex = colorHex
@@ -379,13 +443,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Search directly in DB to avoid loading the whole book into memory
                 val matchedChapters = database.bookDao().searchChapters(bookId, query)
                 val results = mutableListOf<SearchResultItem>()
+                val mapping = chapterMapping
                 matchedChapters.forEach { chapter ->
                     val pos = chapter.content.indexOf(query, ignoreCase = true)
                     if (pos >= 0) {
                         val start = (pos - 15).coerceAtLeast(0)
                         val end = (pos + query.length + 25).coerceAtMost(chapter.content.length)
                         val snippet = "..." + chapter.content.substring(start, end) + "..."
-                        results.add(SearchResultItem(chapter.chapterOrder, chapter.title, snippet))
+                        val logicalIndex = mapping?.logicalIndexOf(chapter.chapterOrder) ?: chapter.chapterOrder
+                        val logicalTitle = mapping?.chapters?.getOrNull(logicalIndex)?.title ?: chapter.title
+                        results.add(SearchResultItem(logicalIndex, logicalTitle, snippet))
                     }
                 }
                 _searchResults.value = results

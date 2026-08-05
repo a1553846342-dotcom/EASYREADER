@@ -1,88 +1,93 @@
 package com.example.source.impl
 
 import android.content.Context
-import com.example.source.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import com.example.source.AuthenticationState
+import com.example.source.BookSource
+import com.example.source.DownloadInfo
+import com.example.source.LoginCredential
+import com.example.source.SearchBook
+import com.example.source.SourceCapabilities
+import com.example.source.SourceResult
 
-class MockBookSource(private val context: Context) : BookSource {
-    override val id: String = "mock-source"
-    override val name: String = "测试书源 (Mock)"
-    override val capabilities: SourceCapabilities = SourceCapabilities(environmentOnly = true)
+/**
+ * Environment-only mock source used by integration tests and local demos.
+ * Never shown in the production UI because [SourceCapabilities.environmentOnly] is true.
+ */
+class MockBookSource(context: Context) : BookSource {
+    override val id: String = "mock"
+    override val name: String = "Mock 测试书源"
+    override val capabilities: SourceCapabilities = SourceCapabilities(
+        supportSearch = true,
+        supportDownload = true,
+        supportDebug = true,
+        environmentOnly = true
+    )
 
-    private var isLoggedInState: Boolean = false
+    private val sampleBooks = listOf(
+        SearchBook(
+            id = "mock/pride-and-prejudice",
+            sourceId = id,
+            title = "Pride and Prejudice",
+            author = "Jane Austen",
+            cover = null,
+            format = "epub",
+            downloadUrl = "https://example.com/mock/pride-and-prejudice.epub"
+        ),
+        SearchBook(
+            id = "mock/three-body",
+            sourceId = id,
+            title = "三体 (The Three-Body Problem)",
+            author = "刘慈欣",
+            cover = null,
+            format = "epub",
+            downloadUrl = "https://example.com/mock/three-body.epub"
+        )
+    )
 
     override suspend fun search(keyword: String): SourceResult<List<SearchBook>> {
-        return withContext(Dispatchers.IO) {
-            delay(500)
-            val list = listOf(
-                SearchBook(
-                    id = "pg11",
-                    sourceId = id,
-                    title = "Alice's Adventures in Wonderland",
-                    author = "Lewis Carroll",
-                    cover = "https://www.gutenberg.org/cache/epub/11/pg11.cover.medium.jpg",
-                    description = "A classic tale.",
-                    format = "epub",
-                    downloadUrl = "https://www.gutenberg.org/cache/epub/11/pg11-images.epub"
-                ),
-                SearchBook(
-                    id = "pg1342",
-                    sourceId = id,
-                    title = "Pride and Prejudice",
-                    author = "Jane Austen",
-                    cover = "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg",
-                    description = "A classic romance novel.",
-                    format = "epub",
-                    downloadUrl = "https://www.gutenberg.org/cache/epub/1342/pg1342-images.epub"
-                )
-            ).filter { it.title.contains(keyword, ignoreCase = true) || it.author.contains(keyword, ignoreCase = true) || keyword.isBlank() }
-            SourceResult.Success(list)
+        val filtered = if (keyword.isBlank()) {
+            sampleBooks
+        } else {
+            sampleBooks.filter {
+                it.title.contains(keyword, ignoreCase = true) ||
+                    it.author.contains(keyword, ignoreCase = true)
+            }
         }
+        return SourceResult.Success(filtered)
     }
 
     override suspend fun getDetail(bookId: String): SourceResult<SearchBook> {
-        return withContext(Dispatchers.IO) {
-            delay(300)
-            SourceResult.Success(
-                SearchBook(
-                    id = bookId,
-                    sourceId = id,
-                    title = "Mock Detail ($bookId)",
-                    author = "Mock Author",
-                    cover = null,
-                    description = "Mock description for $bookId.",
-                    format = "epub",
-                    downloadUrl = "https://www.gutenberg.org/cache/epub/11/pg11-images.epub"
-                )
-            )
+        val book = sampleBooks.firstOrNull { it.id == bookId }
+        return if (book != null) {
+            SourceResult.Success(book)
+        } else {
+            SourceResult.Error(com.example.source.SourceException.BookNotFound)
         }
     }
 
     override suspend fun getDownloadInfo(bookId: String): SourceResult<DownloadInfo> {
-        return withContext(Dispatchers.IO) {
-            delay(200)
-            SourceResult.Success(
-                DownloadInfo(
-                    url = "https://www.gutenberg.org/cache/epub/11/pg11-images.epub",
-                    fileName = "$bookId.epub",
-                    format = "epub"
-                )
+        val detail = getDetail(bookId).getOrNull() ?: return SourceResult.Error(
+            com.example.source.SourceException.BookNotFound
+        )
+        return SourceResult.Success(
+            DownloadInfo(
+                url = detail.downloadUrl ?: "https://example.com/mock/${detail.id}.epub",
+                fileName = detail.title,
+                format = detail.format,
+                referer = "https://example.com/"
             )
-        }
+        )
     }
 
-    override suspend fun login(credential: LoginCredential): SourceResult<Boolean> {
-        isLoggedInState = true
-        return SourceResult.Success(true)
-    }
+    override suspend fun login(credential: LoginCredential): SourceResult<Boolean> =
+        SourceResult.Success(true)
 
     override suspend fun logout() {
-        isLoggedInState = false
+        // No-op for mock source
     }
 
-    override suspend fun isLoggedIn(): Boolean {
-        return isLoggedInState
-    }
+    override suspend fun isLoggedIn(): Boolean = true
+
+    override suspend fun getAuthenticationState(): AuthenticationState =
+        AuthenticationState.NotRequired
 }

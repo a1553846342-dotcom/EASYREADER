@@ -4,6 +4,12 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/** 不支持阅读的格式（PDF/MOBI 等）入库时使用的占位章节标题。 */
+const val UNSUPPORTED_CHAPTER_TITLE = "暂不支持阅读"
+
+/** 章节最大长度：超过则入库时拆分为多个小章节，保证打开阅读器不卡顿/不闪退。 */
+const val MAX_CHAPTER_LENGTH = 30_000
+
 enum class ContentType {
     NOVEL,
     COMIC

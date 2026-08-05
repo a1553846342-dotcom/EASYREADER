@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
@@ -405,7 +406,7 @@ private fun Simulate3DCurlLayout(
             val foldLineDirectionDeg = Math.toDegrees(foldLineAngleRad).toFloat()
 
             // Curl radius as a function of distance |V|
-            val curlRadius = 25f + 0.12f * distanceV
+            val curlRadius = (32f + 0.16f * distanceV) * (0.65f + 0.35f * (1f - progress))
             val arcOffset = (curlRadius * 0.6f * (1f - progress)).coerceIn(4f, 40f)
 
             val creaseX = midpointM.x
@@ -477,104 +478,64 @@ private fun Simulate3DCurlLayout(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Drop shadow cast onto next page (aligned with diagonal foldTop to foldBottom)
-                val shadowWidth = (curlRadius * 1.8f * (1f - progress)).coerceIn(0f, 100f)
+                // Drop shadow cast onto next page (aligned with the fold line)
+                val shadowWidth = (curlRadius * 2.4f * (1f - progress)).coerceIn(0f, 140f)
                 if (shadowWidth > 0f) {
-                    val shadowPath = Path().apply {
-                        moveTo(foldTop.x, 0f)
-                        lineTo(foldBottom.x, heightPx)
-                        lineTo(foldBottom.x + shadowWidth, heightPx)
-                        lineTo(foldTop.x + shadowWidth, 0f)
-                        close()
-                    }
-                    val shadowBrush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.35f * (1f - progress)),
-                            Color.Black.copy(alpha = 0.12f * (1f - progress)),
-                            Color.Transparent
-                        ),
-                        startX = creaseX,
-                        endX = creaseX + shadowWidth
+                    val normal = curlNormal(foldTop, foldBottom, +1)
+                    val midFold = midPoint(foldTop, foldBottom)
+                    val shadowPath = shadowStripPath(foldTop, foldBottom, normal, shadowWidth)
+                    drawPath(
+                        path = shadowPath,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.26f * (1f - progress)),
+                                Color.Black.copy(alpha = 0.09f * (1f - progress)),
+                                Color.Transparent
+                            ),
+                            start = midFold,
+                            end = midFold + normal * shadowWidth
+                        )
                     )
-                    drawPath(path = shadowPath, brush = shadowBrush)
                 }
 
-                // Inner crease shadow on current page (aligned with diagonal foldTop to foldBottom)
+                // Inner crease shadow on current page (aligned with the fold line)
                 val innerShadowWidth = (curlRadius * 1.0f).coerceIn(15f, 60f)
                 if (creaseX > innerShadowWidth) {
-                    val innerShadowPath = Path().apply {
-                        moveTo(foldTop.x - innerShadowWidth, 0f)
-                        lineTo(foldBottom.x - innerShadowWidth, heightPx)
-                        lineTo(foldBottom.x, heightPx)
-                        lineTo(foldTop.x, 0f)
-                        close()
-                    }
-                    val innerShadowBrush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.25f * (1f - progress))
-                        ),
-                        startX = creaseX - innerShadowWidth,
-                        endX = creaseX
-                    )
-                    drawPath(path = innerShadowPath, brush = innerShadowBrush)
-                }
-
-                // Turned Flap Backside Path (Paper Backside)
-                if (flapWidth > 1f) {
-                    val flapPath = Path().apply {
-                        moveTo(foldTop.x, 0f)
-                        cubicTo(
-                            creaseX - arcOffset, heightPx * 0.35f,
-                            creaseX - arcOffset, heightPx * 0.65f,
-                            foldBottom.x, heightPx
+                    val normal = curlNormal(foldTop, foldBottom, +1)
+                    val midFold = midPoint(foldTop, foldBottom)
+                    val innerPath = shadowStripPath(foldTop, foldBottom, normal, -innerShadowWidth)
+                    drawPath(
+                        path = innerPath,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.15f * (1f - progress))
+                            ),
+                            start = midFold - normal * innerShadowWidth,
+                            end = midFold
                         )
-                        lineTo(touchBottom.x, heightPx)
-                        cubicTo(
-                            touchX - arcOffset * 0.5f, heightPx * 0.65f,
-                            touchX - arcOffset * 0.5f, heightPx * 0.35f,
-                            touchTop.x, 0f
-                        )
-                        close()
-                    }
-
-                    // Draw solid matte paper background (fully opaque #F5F0E6, alpha = 1)
-                    drawPath(path = flapPath, color = Color(0xFFF5F0E6))
-
-                    // Draw a subtle soft shadow gradient along the fold line (alpha 0.15 -> 0, no high-gloss specular)
-                    val flapShadowBrush = Brush.linearGradient(
-                        0.0f to Color.Black.copy(alpha = 0.15f), // Shaded crease fold
-                        0.5f to Color.Black.copy(alpha = 0.05f),
-                        1.0f to Color.Transparent,               // Outer edge (no shadow)
-                        start = midpointM,
-                        end = touchP
-                    )
-                    drawPath(path = flapPath, brush = flapShadowBrush)
-
-                    // Draw laid paper vertical ribs (extremely subtle matte texture)
-                    drawContext.canvas.save()
-                    drawContext.canvas.clipPath(flapPath)
-                    var x = creaseX.coerceAtMost(touchX)
-                    val endX = creaseX.coerceAtLeast(touchX)
-                    while (x < endX) {
-                        drawLine(
-                            color = Color(0xFF5C4E3B).copy(alpha = 0.03f),
-                            start = Offset(x, 0f),
-                            end = Offset(x, heightPx),
-                            strokeWidth = 1f
-                        )
-                        x += 6f
-                    }
-                    drawContext.canvas.restore()
-
-                    // Subtle paper edge shadow instead of stark white line
-                    drawLine(
-                        color = Color.Black.copy(alpha = 0.12f),
-                        start = foldTop,
-                        end = foldBottom,
-                        strokeWidth = 1.5f
                     )
                 }
+            }
+
+            // Turned Flap Backside: paper + mirrored page content + cylinder shading
+            if (flapWidth > 1f) {
+                CurlFlapBackside(
+                    foldTop = foldTop,
+                    foldBottom = foldBottom,
+                    touchTop = touchTop,
+                    touchBottom = touchBottom,
+                    creaseX = creaseX,
+                    touchX = touchX,
+                    arcOffset = arcOffset,
+                    flapWidth = flapWidth,
+                    progress = progress,
+                    widthPx = widthPx,
+                    heightPx = heightPx,
+                    isCorner = isTopCorner || isBottomCorner,
+                    bulgeSign = -1,
+                    content = currentContent
+                )
             }
         } else {
             // Previous Page (Flipping Backward)
@@ -602,7 +563,7 @@ private fun Simulate3DCurlLayout(
             val foldLineAngleRad = kotlin.math.atan2(vectorV.y.toDouble(), vectorV.x.toDouble()) + (Math.PI / 2.0)
             val foldLineDirectionDeg = Math.toDegrees(foldLineAngleRad).toFloat()
 
-            val curlRadius = 25f + 0.12f * distanceV
+            val curlRadius = (32f + 0.16f * distanceV) * (0.65f + 0.35f * (1f - progress))
             val arcOffset = (curlRadius * 0.6f * (1f - progress)).coerceIn(4f, 40f)
 
             val creaseX = midpointM.x
@@ -653,84 +614,230 @@ private fun Simulate3DCurlLayout(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Drop shadow cast onto the current page (on the right of touchX)
-                val shadowWidth = (curlRadius * 1.8f * (1f - progress)).coerceIn(0f, 100f)
+                // Drop shadow cast onto the current page (on the right of the moving edge)
+                val shadowWidth = (curlRadius * 2.4f * (1f - progress)).coerceIn(0f, 140f)
                 if (shadowWidth > 0f) {
-                    val shadowPath = Path().apply {
-                        moveTo(touchTop.x, 0f)
-                        lineTo(touchBottom.x, heightPx)
-                        lineTo(touchBottom.x + shadowWidth, heightPx)
-                        lineTo(touchTop.x + shadowWidth, 0f)
-                        close()
-                    }
-                    val shadowBrush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.35f * (1f - progress)),
-                            Color.Black.copy(alpha = 0.12f * (1f - progress)),
-                            Color.Transparent
-                        ),
-                        startX = touchX,
-                        endX = touchX + shadowWidth
-                    )
-                    drawPath(path = shadowPath, brush = shadowBrush)
-                }
-
-                if (flapWidth > 1f) {
-                    val flapPath = Path().apply {
-                        moveTo(foldTop.x, 0f)
-                        cubicTo(
-                            creaseX + arcOffset, heightPx * 0.35f,
-                            creaseX + arcOffset, heightPx * 0.65f,
-                            foldBottom.x, heightPx
+                    val normal = curlNormal(touchTop, touchBottom, +1)
+                    val midTouch = midPoint(touchTop, touchBottom)
+                    val shadowPath = shadowStripPath(touchTop, touchBottom, normal, shadowWidth)
+                    drawPath(
+                        path = shadowPath,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.26f * (1f - progress)),
+                                Color.Black.copy(alpha = 0.09f * (1f - progress)),
+                                Color.Transparent
+                            ),
+                            start = midTouch,
+                            end = midTouch + normal * shadowWidth
                         )
-                        lineTo(touchBottom.x, heightPx)
-                        cubicTo(
-                            touchX + arcOffset * 0.5f, heightPx * 0.65f,
-                            touchX + arcOffset * 0.5f, heightPx * 0.35f,
-                            touchTop.x, 0f
-                        )
-                        close()
-                    }
-
-                    // Draw solid matte paper background (fully opaque #F5F0E6, alpha = 1)
-                    drawPath(path = flapPath, color = Color(0xFFF5F0E6))
-
-                    // Draw a subtle soft shadow gradient along the fold line (alpha 0.15 -> 0, no high-gloss specular)
-                    val flapShadowBrush = Brush.linearGradient(
-                        0.0f to Color.Black.copy(alpha = 0.15f), // Shaded crease fold
-                        0.5f to Color.Black.copy(alpha = 0.05f),
-                        1.0f to Color.Transparent,               // Outer edge (no shadow)
-                        start = midpointM,
-                        end = touchP
-                    )
-                    drawPath(path = flapPath, brush = flapShadowBrush)
-
-                    // Draw laid paper vertical ribs (extremely subtle matte texture)
-                    drawContext.canvas.save()
-                    drawContext.canvas.clipPath(flapPath)
-                    var x = creaseX.coerceAtMost(touchX)
-                    val endX = creaseX.coerceAtLeast(touchX)
-                    while (x < endX) {
-                        drawLine(
-                            color = Color(0xFF5C4E3B).copy(alpha = 0.03f),
-                            start = Offset(x, 0f),
-                            end = Offset(x, heightPx),
-                            strokeWidth = 1f
-                        )
-                        x += 6f
-                    }
-                    drawContext.canvas.restore()
-
-                    // Subtle paper edge shadow instead of stark white line
-                    drawLine(
-                        color = Color.Black.copy(alpha = 0.12f),
-                        start = foldTop,
-                        end = foldBottom,
-                        strokeWidth = 1.5f
                     )
                 }
             }
+
+            // Turned Flap Backside: paper + mirrored page content + cylinder shading
+            if (flapWidth > 1f) {
+                CurlFlapBackside(
+                    foldTop = foldTop,
+                    foldBottom = foldBottom,
+                    touchTop = touchTop,
+                    touchBottom = touchBottom,
+                    creaseX = creaseX,
+                    touchX = touchX,
+                    arcOffset = arcOffset,
+                    flapWidth = flapWidth,
+                    progress = progress,
+                    widthPx = widthPx,
+                    heightPx = heightPx,
+                    isCorner = isTopCorner || isBottomCorner,
+                    bulgeSign = +1,
+                    content = prevContent
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun CurlFlapBackside(
+    foldTop: Offset,
+    foldBottom: Offset,
+    touchTop: Offset,
+    touchBottom: Offset,
+    creaseX: Float,
+    touchX: Float,
+    arcOffset: Float,
+    flapWidth: Float,
+    progress: Float,
+    widthPx: Float,
+    heightPx: Float,
+    isCorner: Boolean,
+    bulgeSign: Int,
+    content: @Composable () -> Unit
+) {
+    val flapPath = buildFlapPath(
+        foldTop = foldTop,
+        foldBottom = foldBottom,
+        touchTop = touchTop,
+        touchBottom = touchBottom,
+        creaseX = creaseX,
+        touchX = touchX,
+        arcOffset = arcOffset,
+        heightPx = heightPx,
+        bulgeSign = bulgeSign
+    )
+    val flapShape = object : Shape {
+        override fun createOutline(
+            size: Size,
+            layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+            density: androidx.compose.ui.unit.Density
+        ): Outline = Outline.Generic(flapPath)
+    }
+    val mirrorPivot = TransformOrigin(
+        (foldBottom.x / widthPx).coerceIn(0f, 1f),
+        (foldBottom.y / heightPx).coerceIn(0f, 1f)
+    )
+    val mirrorDeg = mirrorAngleDeg(foldTop, foldBottom)
+    val fade = 1f - progress
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(flapShape)
+    ) {
+        // Opaque matte paper base
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(Color(0xFFF5F0E6))
+        }
+
+        // Backside shows the page content mirrored across the fold (real paper feel)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = 0.42f
+                    transformOrigin = mirrorPivot
+                    scaleX = -1f
+                }
+                .graphicsLayer {
+                    transformOrigin = mirrorPivot
+                    rotationZ = mirrorDeg
+                }
+        ) {
+            content()
+        }
+
+        // Paper tint + cylinder shading + moving-edge thickness
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(Color(0xFFF5F0E6).copy(alpha = 0.16f))
+
+            val shadeStart = midPoint(foldTop, foldBottom)
+            val shadeEnd = midPoint(touchTop, touchBottom)
+            drawPath(
+                path = flapPath,
+                brush = Brush.linearGradient(
+                    colorStops = arrayOf(
+                        0.0f to Color.Black.copy(alpha = 0.17f * fade),
+                        0.18f to Color.Black.copy(alpha = 0.07f * fade),
+                        0.40f to Color.White.copy(alpha = 0.09f * fade),
+                        0.58f to Color.White.copy(alpha = 0.04f * fade),
+                        0.82f to Color.Black.copy(alpha = 0.03f * fade),
+                        1.0f to Color.Transparent
+                    ),
+                    start = shadeStart,
+                    end = shadeEnd
+                )
+            )
+
+            // Soft ambient occlusion near the fold corner
+            if (isCorner) {
+                val radius = (flapWidth * 1.25f).coerceAtLeast(8f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.10f * fade),
+                            Color.Transparent
+                        ),
+                        center = shadeStart,
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = shadeStart
+                )
+            }
+
+            // Paper thickness along the moving edge
+            val touchMidX = touchX + bulgeSign * arcOffset * 0.5f
+            val touchEdgePath = Path().apply {
+                moveTo(touchTop.x, 0f)
+                cubicTo(touchMidX, heightPx * 0.35f, touchMidX, heightPx * 0.65f, touchBottom.x, heightPx)
+                close()
+            }
+            drawPath(
+                path = touchEdgePath,
+                color = Color(0xFFFDF8EC).copy(alpha = 0.92f),
+                style = Stroke(width = 2.4f)
+            )
+            drawPath(
+                path = touchEdgePath,
+                color = Color(0xFFB9AB90).copy(alpha = 0.16f),
+                style = Stroke(width = 0.9f)
+            )
+        }
+    }
+}
+
+private fun midPoint(a: Offset, b: Offset): Offset =
+    Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+
+private fun curlNormal(fromTop: Offset, fromBottom: Offset, sign: Int): Offset {
+    val dx = fromBottom.x - fromTop.x
+    val dy = fromBottom.y - fromTop.y
+    val len = kotlin.math.hypot(dx, dy).coerceAtLeast(0.001f)
+    var n = Offset(-dy / len, dx / len)
+    if ((sign > 0) != (n.x > 0f)) n = Offset(-n.x, -n.y)
+    return n
+}
+
+private fun shadowStripPath(
+    fromTop: Offset,
+    fromBottom: Offset,
+    normal: Offset,
+    width: Float
+): Path = Path().apply {
+    moveTo(fromTop.x, fromTop.y)
+    lineTo(fromBottom.x, fromBottom.y)
+    lineTo(fromBottom.x + normal.x * width, fromBottom.y + normal.y * width)
+    lineTo(fromTop.x + normal.x * width, fromTop.y + normal.y * width)
+    close()
+}
+
+private fun mirrorAngleDeg(foldTop: Offset, foldBottom: Offset): Float {
+    val dx = foldTop.x - foldBottom.x
+    val dy = foldTop.y - foldBottom.y
+    val angle = Math.PI - 2.0 * kotlin.math.atan2(dy.toDouble(), dx.toDouble())
+    return Math.toDegrees(angle).toFloat()
+}
+
+private fun buildFlapPath(
+    foldTop: Offset,
+    foldBottom: Offset,
+    touchTop: Offset,
+    touchBottom: Offset,
+    creaseX: Float,
+    touchX: Float,
+    arcOffset: Float,
+    heightPx: Float,
+    bulgeSign: Int
+): Path {
+    val foldMidX = creaseX + bulgeSign * arcOffset
+    val touchMidX = touchX + bulgeSign * arcOffset * 0.5f
+    return Path().apply {
+        moveTo(foldTop.x, 0f)
+        cubicTo(foldMidX, heightPx * 0.35f, foldMidX, heightPx * 0.65f, foldBottom.x, heightPx)
+        lineTo(touchBottom.x, heightPx)
+        cubicTo(touchMidX, heightPx * 0.65f, touchMidX, heightPx * 0.35f, touchTop.x, 0f)
+        close()
     }
 }
 

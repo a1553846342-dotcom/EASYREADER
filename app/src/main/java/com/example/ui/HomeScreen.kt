@@ -316,7 +316,7 @@ fun HomeScreen(
                             shape = RoundedCornerShape(24.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .height(56.dp)
                                 .padding(end = 8.dp),
                             trailingIcon = {
                                 IconButton(onClick = {
@@ -838,7 +838,9 @@ fun HomeScreen(
                                         boxModifier = boxModifier.sharedElement(
                                             state = rememberSharedContentState(key = "book_cover_${book.id}"),
                                             animatedVisibilityScope = animatedVisibilityScope,
-                                            boundsTransform = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f) }
+                                            boundsTransform = { _, _ ->
+                                                tween(420, easing = FastOutSlowInEasing)
+                                            }
                                         )
                                     }
                                 }

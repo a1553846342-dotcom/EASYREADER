@@ -28,6 +28,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -52,11 +53,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,7 +71,9 @@ import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -101,6 +103,7 @@ fun ReaderScreen(
     val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
     val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
     val scope = rememberCoroutineScope()
+    val transitionSlidePx = with(LocalDensity.current) { 20.dp.toPx() }
 
     var showTocSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -251,21 +254,58 @@ fun ReaderScreen(
         else -> FontFamily.Default
     }
 
-    val formattedContent = remember(currentChapter, firstLineIndent) {
-        val text = currentChapter?.content ?: ""
-        if (firstLineIndent) {
-            text.split("\n").joinToString("\n") { line ->
-                if (line.isNotBlank() && !line.startsWith("\u3000\u3000")) "\u3000\u3000$line" else line
-            }
-        } else {
-            text
-        }
+    // 小章节同步准备（秒开无闪烁）；超大章节后台准备，避免主线程被几 MB 文本卡住
+    val smallChapter = (currentChapter?.content?.length ?: 0) <= LARGE_CHAPTER_THRESHOLD
+    var formattedContent by remember(currentChapter, firstLineIndent) {
+        mutableStateOf(
+            if (smallChapter) formatForReader(currentChapter?.content ?: "", firstLineIndent) else ""
+        )
     }
+    var scrollChunks by remember(currentChapter, firstLineIndent) {
+        val formatted = if (smallChapter) formatForReader(currentChapter?.content ?: "", firstLineIndent) else ""
+        mutableStateOf(if (smallChapter) chunkForScroll(formatted) else emptyList())
+    }
+    var contentReady by remember(currentChapter, firstLineIndent) { mutableStateOf(smallChapter) }
+    LaunchedEffect(currentChapter, firstLineIndent) {
+        if (smallChapter) return@LaunchedEffect
+        contentReady = false
+        val (formatted, chunks) = withContext(Dispatchers.Default) {
+            val text = currentChapter?.content ?: ""
+            val formatted = formatForReader(text, firstLineIndent)
+            formatted to chunkForScroll(formatted)
+        }
+        formattedContent = formatted
+        scrollChunks = chunks
+        contentReady = true
+    }
+
+    // 共享封面转场：封面先随共享元素缩放进场，随后正文从右侧轻轻滑入叠在封面上，
+    // 封面再缓慢淡成水印，避免“加载完正文瞬间盖掉封面”的生硬感。
+    var transitionStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(140)
+        transitionStarted = true
+    }
+    val contentAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (transitionStarted) 1f else 0f,
+        animationSpec = tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "readerContentAlpha"
+    )
+    val coverAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (transitionStarted) 0.06f else 1f,
+        animationSpec = tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "readerCoverAlpha"
+    )
+    val bgAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (transitionStarted) 1f else 0f,
+        animationSpec = tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "readerBgAlpha"
+    )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bgColor.copy(alpha = bgAlpha))
     ) {
         if (book != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
             with(sharedTransitionScope) {
@@ -282,15 +322,32 @@ fun ReaderScreen(
                             .sharedElement(
                                 state = rememberSharedContentState(key = "book_cover_${book.id}"),
                                 animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 300f) }
+                                boundsTransform = { _, _ ->
+                                    tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                                }
                             )
-                            .alpha(0.05f),
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart = 4.dp,
+                                    bottomStart = 4.dp,
+                                    topEnd = 12.dp,
+                                    bottomEnd = 12.dp
+                                )
+                            )
+                            .alpha(coverAlpha),
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
             }
         }
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = contentAlpha
+                    translationX = (1f - contentAlpha) * transitionSlidePx
+                }
+        ) {
             var pageContainerSize by remember { mutableStateOf<IntSize?>(null) }
             val density = LocalDensity.current
             val navBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
@@ -299,7 +356,7 @@ fun ReaderScreen(
             val fallbackWidthPx = with(density) { (maxWidth - marginHorizontal.dp * 2).toPx().toInt() }.coerceAtLeast(100)
             val headerFooterPaddingPx = with(density) {
                 var pad = 24.dp.toPx().toInt()
-                if (prefs.showOverlayHeaderFooter && !showBars) {
+                if (prefs.showOverlayHeaderFooter) {
                     pad += 48.dp.toPx().toInt()
                 }
                 pad
@@ -320,16 +377,20 @@ fun ReaderScreen(
                 fontSize = fontSize.sp,
                 lineHeight = lineHeight.sp,
                 fontFamily = selectedFontFamily,
-                color = textColor.copy(alpha = 0.92f)
+                color = textColor.copy(alpha = 0.92f),
+                platformStyle = PlatformTextStyle(includeFontPadding = false)
             )
 
-            val pagesList = rememberPaginatedPages(
+            val fontSizePx = with(density) { bodyTextStyle.fontSize.toPx() }.coerceAtLeast(8f)
+            val lineHeightPx = with(density) { bodyTextStyle.lineHeight.toPx() }.coerceAtLeast(fontSizePx * 1.2f)
+
+            val pagesList = rememberChapterPages(
                 content = formattedContent,
-                style = bodyTextStyle,
+                titleText = currentChapter?.title,
                 widthPx = containerWidthPx,
                 heightPx = containerHeightPx,
-                titleText = currentChapter?.title,
-                showBars = showBars,
+                fontSizePx = fontSizePx,
+                lineHeightPx = lineHeightPx,
                 isScrollMode = isScrollMode
             )
 
@@ -344,13 +405,13 @@ fun ReaderScreen(
                     text
                 }
             }
-            val nextChapterPages = rememberPaginatedPages(
+            val nextChapterPages = rememberChapterPages(
                 content = nextChapterFormattedContent,
-                style = bodyTextStyle,
+                titleText = nextChapter?.title,
                 widthPx = containerWidthPx,
                 heightPx = containerHeightPx,
-                titleText = nextChapter?.title,
-                showBars = showBars,
+                fontSizePx = fontSizePx,
+                lineHeightPx = lineHeightPx,
                 isScrollMode = isScrollMode
             )
 
@@ -365,13 +426,13 @@ fun ReaderScreen(
                     text
                 }
             }
-            val prevChapterPages = rememberPaginatedPages(
+            val prevChapterPages = rememberChapterPages(
                 content = prevChapterFormattedContent,
-                style = bodyTextStyle,
+                titleText = prevChapter?.title,
                 widthPx = containerWidthPx,
                 heightPx = containerHeightPx,
-                titleText = prevChapter?.title,
-                showBars = showBars,
+                fontSizePx = fontSizePx,
+                lineHeightPx = lineHeightPx,
                 isScrollMode = isScrollMode
             )
 
@@ -440,9 +501,20 @@ fun ReaderScreen(
                 }
             }
 
-            if (chapters.isEmpty()) {
+            if (chapters.isEmpty() || !contentReady || (!isScrollMode && pagesList.isEmpty())) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MintPrimary)
+                }
+            } else if (currentChapter?.title == UNSUPPORTED_CHAPTER_TITLE &&
+                currentChapter?.content?.isBlank() == true
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "该文件格式暂不支持阅读（PDF / MOBI / DOCX 等）\n请导入 EPUB、TXT 或漫画格式",
+                        color = textColor.copy(alpha = 0.75f),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(32.dp)
+                    )
                 }
             } else {
                 currentChapter?.let { chapter ->
@@ -498,15 +570,22 @@ fun ReaderScreen(
                                                 )
 
                                                 SelectionContainer {
-                                                    Text(
-                                                        text = formattedContent,
-                                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                                            fontSize = fontSize.sp,
-                                                            lineHeight = lineHeight.sp,
-                                                            fontFamily = selectedFontFamily,
-                                                            color = textColor.copy(alpha = 0.92f)
-                                                        )
-                                                    )
+                                                    Column {
+                                                        // 大章节按段切块渲染，避免单个巨型 Text 排版导致 ANR；
+                                                        // 仍为同一滚动容器，像素滚动位置与原文选择行为保持不变。
+                                                        scrollChunks.forEach { chunk ->
+                                                            Text(
+                                                                text = chunk,
+                                                                style = MaterialTheme.typography.bodyLarge.copy(
+                                                                    fontSize = fontSize.sp,
+                                                                    lineHeight = lineHeight.sp,
+                                                                    fontFamily = selectedFontFamily,
+                                                                    color = textColor.copy(alpha = 0.92f),
+                                                                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                                                )
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         } else {
@@ -1332,92 +1411,39 @@ private fun BookmarkHangingRibbon(
     }
 }
 
-@Composable
-fun rememberPaginatedPages(
-    content: String,
-    style: TextStyle,
-    widthPx: Int,
-    heightPx: Int,
-    titleText: String?,
-    showBars: Boolean,
-    isScrollMode: Boolean
-): List<String> {
-    if (isScrollMode || content.isEmpty()) {
-        return listOf(content)
-    }
-    val textMeasurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val titleStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
 
-    return remember(content, style, widthPx, heightPx, titleText, showBars) {
-        if (content.isEmpty() || widthPx <= 20 || heightPx <= 20) return@remember listOf(content)
-
-        val pages = mutableListOf<String>()
-        var startOffset = 0
-        var isFirstPage = true
-
-        val titleTopPaddingPx = with(density) { (if (!showBars) 8.dp else 0.dp).toPx().toInt() }
-        val titleBottomPaddingPx = with(density) { 12.dp.toPx().toInt() }
-
-        var page0AvailableHeight = heightPx
-        if (!titleText.isNullOrEmpty()) {
-            val titleLayout = textMeasurer.measure(
-                text = titleText,
-                style = titleStyle,
-                constraints = Constraints(maxWidth = widthPx)
-            )
-            val totalTitleHeightPx = titleLayout.size.height + titleTopPaddingPx + titleBottomPaddingPx
-            page0AvailableHeight = (heightPx - totalTitleHeightPx).coerceAtLeast(heightPx / 3)
+/** 首行缩进格式化（与旧逻辑一致）。 */
+private fun formatForReader(text: String, firstLineIndent: Boolean): String {
+    return if (firstLineIndent) {
+        text.split("\n").joinToString("\n") { line ->
+            if (line.isNotBlank() && !line.startsWith("\u3000\u3000")) "\u3000\u3000$line" else line
         }
-
-        while (startOffset < content.length) {
-            val remainingText = content.substring(startOffset)
-            val targetHeight = if (isFirstPage) page0AvailableHeight else heightPx
-
-            val layoutResult = textMeasurer.measure(
-                text = remainingText,
-                style = style,
-                constraints = Constraints(maxWidth = widthPx, maxHeight = Constraints.Infinity)
-            )
-
-            val totalLines = layoutResult.lineCount
-            if (totalLines == 0) break
-
-            var fitLine = -1
-            for (line in 0 until totalLines) {
-                val lineBottom = layoutResult.getLineBottom(line)
-                if (lineBottom <= targetHeight + 1.5f) {
-                    fitLine = line
-                } else {
-                    break
-                }
-            }
-
-            if (fitLine < 0) {
-                val pageEnd = layoutResult.getLineEnd(0, visibleEnd = false).coerceAtLeast(1)
-                val take = pageEnd.coerceAtMost(remainingText.length)
-                pages.add(remainingText.substring(0, take))
-                startOffset += take
-            } else if (fitLine == totalLines - 1) {
-                pages.add(remainingText)
-                break
-            } else {
-                var pageEnd = layoutResult.getLineEnd(fitLine, visibleEnd = false)
-                if (pageEnd <= 0) pageEnd = 1
-                val take = pageEnd.coerceAtMost(remainingText.length)
-                pages.add(remainingText.substring(0, take))
-                startOffset += take
-            }
-            isFirstPage = false
-        }
-
-        android.util.Log.d(
-            "PageSplitter",
-            "Paginated into ${pages.size} pages. Measured container: width=$widthPx px, normalHeight=$heightPx px, page0Height=$page0AvailableHeight px. ShowBars=$showBars"
-        )
-
-        if (pages.isEmpty()) listOf(content) else pages
+    } else {
+        text
     }
+}
+
+private const val LARGE_CHAPTER_THRESHOLD = 200_000
+
+/** 把超大章节切成不超过 maxChars 的文本块（优先在换行处切），保持滚动位置语义不变。 */
+private fun chunkForScroll(content: String, maxChars: Int = 40000): List<String> {
+    if (content.length <= maxChars) return listOf(content)
+    val chunks = mutableListOf<String>()
+    var start = 0
+    while (start < content.length) {
+        val end = minOf(content.length, start + maxChars)
+        if (end < content.length) {
+            val newline = content.lastIndexOf('\n', end)
+            if (newline > start + maxChars / 2) {
+                chunks.add(content.substring(start, newline))
+                start = newline + 1
+                continue
+            }
+        }
+        chunks.add(content.substring(start, end))
+        start = end
+    }
+    return chunks
 }
 
 @Composable
@@ -1445,7 +1471,7 @@ private fun RenderSinglePage(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = textColor,
-                modifier = Modifier.padding(bottom = 12.dp, top = if (!showBars) 8.dp else 0.dp)
+                modifier = Modifier.padding(bottom = 12.dp, top = 8.dp)
             )
         }
 
@@ -1456,9 +1482,12 @@ private fun RenderSinglePage(
                     fontSize = fontSize.sp,
                     lineHeight = lineHeight.sp,
                     fontFamily = selectedFontFamily,
-                    color = textColor.copy(alpha = 0.92f)
+                    color = textColor.copy(alpha = 0.92f),
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
             )
         }
     }
