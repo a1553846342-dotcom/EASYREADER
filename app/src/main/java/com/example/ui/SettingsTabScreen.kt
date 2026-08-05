@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -55,6 +56,7 @@ fun SettingsTabScreen(
     onAddCategory: (String) -> Unit,
     onBack: (() -> Unit)? = null,
     onOpenSourceManager: (() -> Unit)? = null,
+    extraBottomPadding: Dp = 0.dp,
     autoNightModeVal: Boolean = prefs.autoNightMode,
     onAutoNightModeChange: (Boolean) -> Unit = { prefs.autoNightMode = it },
     blueLightFilterVal: Boolean = prefs.blueLightFilter,
@@ -138,7 +140,7 @@ fun SettingsTabScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
@@ -780,4 +782,3 @@ fun SettingsTabScreen(
         )
     }
 }
-

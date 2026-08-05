@@ -337,13 +337,14 @@ class MainActivity : ComponentActivity() {
                                                 readingRecords = readingRecords,
                                                 onGoToShelf = { selectedTab = 1 }
                                             )
-                                            3 -> SettingsTabScreen(
-                                                prefs = viewModel.prefs,
-                                                backupManager = viewModel.backupManager,
-                                                categories = categories,
-                                                onAddCategory = { name ->
-                                                    viewModel.addCategory(name)
-                                                },
+                                                3 -> SettingsTabScreen(
+                                                    prefs = viewModel.prefs,
+                                                    backupManager = viewModel.backupManager,
+                                                    categories = categories,
+                                                    extraBottomPadding = innerPadding.calculateBottomPadding(),
+                                                    onAddCategory = { name ->
+                                                        viewModel.addCategory(name)
+                                                    },
                                                 onOpenSourceManager = {
                                                     navController.navigate("source_management")
                                                 },
