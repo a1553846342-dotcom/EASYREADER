@@ -16,10 +16,18 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 21
-    versionName = "0.21"
+    versionCode = 60
+    versionName = "0.30"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // 极致瘦身：当前目标设备均为 arm64（华为/主流手机）；保留其它 ABI 会多出约 16MB 原生库
+    ndk {
+      abiFilters += listOf("arm64-v8a")
+    }
+
+    // 仅保留中英文资源，去掉无用的 locale 资源
+    resConfigs("zh-rCN", "en")
   }
 
   signingConfigs {
@@ -104,6 +112,9 @@ dependencies {
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
+  implementation(libs.quickjs.kt)
+  implementation(libs.cronet.api)
+  implementation(libs.cronet.embedded)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

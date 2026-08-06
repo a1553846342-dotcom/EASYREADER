@@ -151,4 +151,37 @@ class PreferencesManager(context: Context) {
     var hasImportedLocalBook: Boolean
         get() = prefs.getBoolean("has_imported_local_book", false)
         set(value) = prefs.edit().putBoolean("has_imported_local_book", value).apply()
+
+    var hasImportedCommunityComics: Boolean
+        get() = prefs.getBoolean("has_imported_community_comics_v1", false)
+        set(value) = prefs.edit().putBoolean("has_imported_community_comics_v1", value).apply()
+
+    var showAdultSources: Boolean
+        get() = prefs.getBoolean("show_adult_sources", false)
+        set(value) = prefs.edit().putBoolean("show_adult_sources", value).apply()
+
+    var jsSourceRepoUrl: String
+        get() = prefs.getString(
+            "js_source_repo_url",
+            "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/index.json"
+        ) ?: "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/index.json"
+        set(value) = prefs.edit().putString("js_source_repo_url", value).apply()
+
+    var searchHistory: List<String>
+        get() {
+            val raw = prefs.getString("search_history_v1", "[]") ?: "[]"
+            return runCatching {
+                val arr = org.json.JSONArray(raw)
+                (0 until arr.length()).map { arr.optString(it) }
+            }.getOrDefault(emptyList())
+        }
+        set(value) {
+            val arr = org.json.JSONArray()
+            value.take(20).forEach { arr.put(it) }
+            prefs.edit().putString("search_history_v1", arr.toString()).apply()
+        }
+
+    var jsSourceHealthChecked: Boolean
+        get() = prefs.getBoolean("js_source_health_checked_v3", false)
+        set(value) = prefs.edit().putBoolean("js_source_health_checked_v3", value).apply()
 }

@@ -1,5 +1,7 @@
 package com.example.ui.source
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -31,6 +33,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.source.BookSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
+import com.example.library.ZLibraryNodeConfig
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.hazeChild
@@ -46,6 +49,7 @@ fun ZLibraryLoginDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isJsSource = source.id.startsWith("js_")
     var loginModeTab by remember { mutableStateOf(0) } // 0: 账号密码, 1: Cookie
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -131,7 +135,12 @@ fun ZLibraryLoginDialog(
                             Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text("登录 Z-Library", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            text = if (isJsSource) "登录 ${source.name}" else "登录 Z-Library",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         Spacer(modifier = Modifier.weight(1f))
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -140,21 +149,23 @@ fun ZLibraryLoginDialog(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    TabRow(
-                        selectedTabIndex = loginModeTab,
-                        containerColor = Color.Transparent,
-                        divider = {}
-                    ) {
-                        Tab(
-                            selected = loginModeTab == 0,
-                            onClick = { loginModeTab = 0 },
-                            text = { Text("账号密码", fontSize = 14.sp, fontWeight = if (loginModeTab == 0) FontWeight.Bold else FontWeight.Normal) }
-                        )
-                        Tab(
-                            selected = loginModeTab == 1,
-                            onClick = { loginModeTab = 1 },
-                            text = { Text("粘贴 Cookie", fontSize = 14.sp, fontWeight = if (loginModeTab == 1) FontWeight.Bold else FontWeight.Normal) }
-                        )
+                    if (!isJsSource) {
+                        TabRow(
+                            selectedTabIndex = loginModeTab,
+                            containerColor = Color.Transparent,
+                            divider = {}
+                        ) {
+                            Tab(
+                                selected = loginModeTab == 0,
+                                onClick = { loginModeTab = 0 },
+                                text = { Text("账号密码", fontSize = 14.sp, fontWeight = if (loginModeTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                            )
+                            Tab(
+                                selected = loginModeTab == 1,
+                                onClick = { loginModeTab = 1 },
+                                text = { Text("粘贴 Cookie", fontSize = 14.sp, fontWeight = if (loginModeTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
@@ -250,6 +261,31 @@ fun ZLibraryLoginDialog(
                             .height(52.dp)
                     ) {
                         Text("确认登录", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (!isJsSource) {
+                        TextButton(
+                            onClick = {
+                                val url = "https://${ZLibraryNodeConfig.domain}/registration"
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "无法打开注册页面", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                        ) {
+                            Text(
+                                text = "没有账号？去注册",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
                     }
                 }
             }

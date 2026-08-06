@@ -11,6 +11,7 @@ data class SearchBook(
     val cover: String? = null,
     val description: String? = null,
     val format: String = "epub",
+    val language: String? = null,
     val size: Long? = null,
     val downloadUrl: String? = null
 )

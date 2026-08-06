@@ -1,9 +1,12 @@
 package com.example.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
@@ -21,19 +24,26 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.platform.testTag
 import com.example.ui.components.AppIconButton
+import com.example.ui.components.ChasingDots
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import dev.chrisbanes.haze.HazeState
@@ -42,14 +52,18 @@ import dev.chrisbanes.haze.haze
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
@@ -58,10 +72,12 @@ import coil.ImageLoader
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
 import android.webkit.CookieManager
 import com.example.download.DownloadState
 import com.example.source.SearchBook
 import com.example.source.BookSource
+import com.example.source.ComicSource
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.MintPrimary
@@ -74,9 +90,12 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookImported: () -> Unit,
     onOpenSourceManagement: () -> Unit = {},
-    onImportLocalBook: () -> Unit = {}
+    onImportLocalBook: () -> Unit = {},
+    onOpenComic: (SearchBook) -> Unit = {},
+    extraBottomPadding: Dp = 0.dp
 ) {
     val currentSource by viewModel.currentSource.collectAsState()
+    val aggregateMode by viewModel.aggregateMode.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val availableSources by viewModel.availableSources.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -85,8 +104,20 @@ fun LibraryScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val downloadStatesState = viewModel.downloadStates.collectAsState()
     val downloadStates by downloadStatesState
-    // 封面 ImageLoader 提升为整屏单例，避免每张卡片各建一个 OkHttpClient/Coil
-    val imageLoader = rememberZLibraryImageLoader(context)
+    val comicDownloading by viewModel.comicDownloading.collectAsState()
+    val comicDownloadProgress by viewModel.comicDownloadProgress.collectAsState()
+    val comicPaused by viewModel.comicPaused.collectAsState()
+    val comicBook by viewModel.comicBook.collectAsState()
+    val comicChapters by viewModel.comicChapters.collectAsState()
+    val searchHistory by viewModel.searchHistory.collectAsState()
+    // 封面加载器：ZLibrary 走专用 DoH/会话 Cookie 加载器，其余（MangaDex/JS 源/聚合）走通用加载器
+    val imageLoader = remember(aggregateMode, currentSource?.id) {
+        if (aggregateMode || currentSource?.id != "zlibrary") {
+            GenericCoverLoader.get(context)
+        } else {
+            ZLibraryCoverLoader.get(context)
+        }
+    }
 
     // Z-Library 走隐藏 WebView 会话（原生书库），其余书源走 OkHttp。
     val isZlibSource = currentSource?.id == "zlibrary"
@@ -130,8 +161,8 @@ fun LibraryScreen(
     }
 
     // 进入书库自动检测登录状态；未登录时弹出软件内登录窗口
-    LaunchedEffect(isZlibSource) {
-        if (isZlibSource && !loginChecked) {
+    LaunchedEffect(isZlibSource, aggregateMode) {
+        if (isZlibSource && !aggregateMode && !loginChecked) {
             loginChecked = true
             kotlinx.coroutines.delay(1200)
             // 登录检测只读 Cookie，无需提前创建隐藏 WebView（首次搜索/登录时再创建）
@@ -161,10 +192,18 @@ fun LibraryScreen(
             showDownloadPanel = true
         }
     }
+    LaunchedEffect(comicDownloading) {
+        if (comicDownloading.isNotEmpty()) {
+            showDownloadPanel = true
+        }
+    }
 
     val performSearch: (String) -> Unit = { keyword ->
         if (keyword.isNotBlank()) {
-            if (isZlibSource) {
+            viewModel.recordSearch(keyword)
+            if (aggregateMode) {
+                viewModel.aggregateSearch(keyword)
+            } else if (isZlibSource) {
                 nativeBooks = emptyList()
                 nativeStatus = ""
                 nativeSearching = true
@@ -186,7 +225,21 @@ fun LibraryScreen(
 
     var loginDialogSource by remember { mutableStateOf<BookSource?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchFieldFocused by remember { mutableStateOf(false) }
     var sourceDropdownExpanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val listState = rememberLazyListState()
+
+    // 页面滚动时同步收起搜索历史面板
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling && searchFieldFocused) {
+                    searchFieldFocused = false
+                    focusManager.clearFocus()
+                }
+            }
+    }
 
     loginDialogSource?.let { src ->
         ZLibraryLoginDialog(hazeState = hazeState,
@@ -228,7 +281,21 @@ fun LibraryScreen(
             hasOnlineSource = visibleSources.isNotEmpty()
         )
     } else {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            // 点击搜索框外任意区域：收起历史面板并释放焦点
+                            if (searchFieldFocused) {
+                                searchFieldFocused = false
+                                focusManager.clearFocus()
+                            }
+                        }
+                    )
+                }
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -251,11 +318,20 @@ fun LibraryScreen(
                     Text("书库", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     Spacer(modifier = Modifier.weight(1f))
                     val latestSt = activeDownloadBook?.let { downloadStates[it.id] }
+                    val comicActive = comicDownloading.isNotEmpty()
                     IconButton(onClick = { showDownloadPanel = !showDownloadPanel }) {
-                        Box {
-                            if (latestSt is DownloadState.Downloading) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (latestSt is DownloadState.Downloading || comicActive) {
                                 CircularProgressIndicator(
-                                    progress = { latestSt.progress.coerceIn(0f, 1f) },
+                                    progress = {
+                                        if (latestSt is DownloadState.Downloading) {
+                                            latestSt.progress.coerceIn(0f, 1f)
+                                        } else {
+                                            val task = comicDownloading.firstOrNull()
+                                            (if (task != null) comicDownloadProgress[task] else null)
+                                                ?.coerceIn(0f, 1f) ?: 0f
+                                        }
+                                    },
                                     modifier = Modifier.size(30.dp),
                                     strokeWidth = 2.5.dp,
                                     color = MaterialTheme.colorScheme.secondary
@@ -264,7 +340,7 @@ fun LibraryScreen(
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "下载任务",
-                                tint = if (latestSt is DownloadState.Downloading) MaterialTheme.colorScheme.secondary
+                                tint = if (latestSt is DownloadState.Downloading || comicActive) MaterialTheme.colorScheme.secondary
                                 else MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -294,7 +370,12 @@ fun LibraryScreen(
                             FilterChip(
                                 selected = true,
                                 onClick = { sourceDropdownExpanded = true },
-                                label = { Text(currentSource?.name ?: "无可用书源") },
+                                label = {
+                                    Text(
+                                        if (aggregateMode) "聚合漫画（全部）"
+                                        else currentSource?.name ?: "无可用书源"
+                                    )
+                                },
                                 trailingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.ArrowDropDown,
@@ -307,6 +388,17 @@ fun LibraryScreen(
                                 expanded = sourceDropdownExpanded,
                                 onDismissRequest = { sourceDropdownExpanded = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("聚合漫画（全部）") },
+                                    onClick = {
+                                        viewModel.setAggregateMode(true)
+                                        sourceDropdownExpanded = false
+                                    },
+                                    trailingIcon = if (aggregateMode) {
+                                        { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
+                                    } else null
+                                )
+                                HorizontalDivider()
                                 visibleSources.forEach { source ->
                                     DropdownMenuItem(
                                         text = { Text(source.name) },
@@ -314,7 +406,7 @@ fun LibraryScreen(
                                             viewModel.selectSource(source.id)
                                             sourceDropdownExpanded = false
                                         },
-                                        trailingIcon = if (currentSource?.id == source.id) {
+                                        trailingIcon = if (!aggregateMode && currentSource?.id == source.id) {
                                             { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
                                         } else null
                                     )
@@ -346,7 +438,9 @@ fun LibraryScreen(
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                             onSearch = { performSearch(searchQuery) }
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { searchFieldFocused = it.isFocused },
                         shape = RoundedCornerShape(16.dp),
                         singleLine = true
                     )
@@ -380,7 +474,158 @@ fun LibraryScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 
-                if (isZlibSource) {
+                // 搜索历史：点击搜索框获得焦点、输入为空且历史非空时，以“窗帘”动画展开/收起
+                AnimatedVisibility(
+                    visible = searchFieldFocused && searchQuery.isBlank() && searchHistory.isNotEmpty(),
+                    enter = expandVertically(
+                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                    ) + fadeIn(
+                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                    ),
+                    exit = shrinkVertically(
+                        animationSpec = tween(280, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                    ) + fadeOut(
+                        animationSpec = tween(240, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                    )
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "搜索历史",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { viewModel.clearSearchHistory() }) {
+                                    Text(
+                                        text = "清空",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                            searchHistory.take(10).forEach { q ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            searchQuery = q
+                                            performSearch(q)
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = q,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "›",
+                                        fontSize = 16.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
+                    val agg = uiState as LibraryUiState.AggregateResults
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        agg.groups.forEach { group ->
+                            item(key = "agg_group_header_${group.sourceId}") {
+                                AggregateSourceHeader(
+                                    name = group.sourceName,
+                                    loading = group.loading,
+                                    resultCount = group.books.size,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            if (group.loading) {
+                                item(key = "agg_group_loading_${group.sourceId}") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 18.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            ChasingDots(size = 30.dp, color = MintPrimary)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "正在搜索…",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (group.books.isNotEmpty()) {
+                                items(group.books, key = { "${group.sourceId}_${it.id}" }) { book ->
+                                    val st by remember(book.id) {
+                                        derivedStateOf {
+                                            downloadStatesState.value[book.id] ?: DownloadState.Idle
+                                        }
+                                    }
+                                    LibraryBookCard(
+                                        book = book,
+                                        downloadState = st,
+                                        imageLoader = imageLoader,
+                                        coverHeaders = rememberCoverHeaders(book, availableSources),
+                                        comicMode = true,
+                                        onStartDownload = { onOpenComic(book) },
+                                        onPauseDownload = { viewModel.pauseDownload(book.id) },
+                                        onResumeDownload = { viewModel.resumeDownload(book.id) },
+                                        onCancelDownload = { viewModel.cancelDownload(book.id) }
+                                    )
+                                }
+                            } else {
+                                item(key = "agg_group_error_${group.sourceId}") {
+                                    AggregateSourceError(
+                                        error = group.error,
+                                        modifier = Modifier.padding(vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+                        if (!agg.running && agg.groups.none { it.books.isNotEmpty() }) {
+                            item(key = "agg_empty") {
+                                com.example.ui.components.MascotEmptyState(
+                                    mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
+                                    title = "未找到结果",
+                                    description = "所有漫画源都没有匹配“$searchQuery”的内容",
+                                    actionLabel = "管理与导入书源",
+                                    onActionClick = onOpenSourceManagement,
+                                    testTagPrefix = "aggregate_empty_state"
+                                )
+                            }
+                        }
+                    }
+                } else if (isZlibSource) {
                     when {
                         nativeSearching -> {
                             Box(
@@ -389,15 +634,19 @@ fun LibraryScreen(
                                     .weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.secondary)
+                                ChasingDots(
+                                    size = 52.dp,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
                             }
                         }
                         nativeBooks.isNotEmpty() -> {
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f),
-                                contentPadding = PaddingValues(16.dp),
+                                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 items(nativeBooks, key = { it.id }) { book ->
@@ -410,6 +659,7 @@ fun LibraryScreen(
                                         book = book,
                                         downloadState = st,
                                         imageLoader = imageLoader,
+                                        coverHeaders = rememberCoverHeaders(book, availableSources),
                                         onStartDownload = {
                                             activeDownloadBook = book
                                             showDownloadPanel = true
@@ -466,7 +716,10 @@ fun LibraryScreen(
                             .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.secondary)
+                        ChasingDots(
+                            size = 52.dp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
                 } else if (uiState is LibraryUiState.Error) {
                     val error = (uiState as LibraryUiState.Error).error
@@ -521,10 +774,11 @@ fun LibraryScreen(
                     }
                 } else {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(searchResults, key = { it.id }) { book ->
@@ -537,8 +791,12 @@ fun LibraryScreen(
                                 book = book,
                                 downloadState = st,
                                 imageLoader = imageLoader,
+                                coverHeaders = rememberCoverHeaders(book, availableSources),
+                                comicMode = currentSource?.capabilities?.supportComic == true,
                                 onStartDownload = {
-                                    if (currentSource?.capabilities?.downloadRequiresLogin == true && !isCurrentSourceLoggedIn) {
+                                    if (currentSource?.capabilities?.supportComic == true) {
+                                        onOpenComic(book)
+                                    } else if (currentSource?.capabilities?.downloadRequiresLogin == true && !isCurrentSourceLoggedIn) {
                                         loginDialogSource = currentSource
                                     } else {
                                         activeDownloadBook = book
@@ -599,6 +857,15 @@ fun LibraryScreen(
                 )
                 val book = activeDownloadBook
                 val st = book?.let { downloadStates[it.id] } ?: DownloadState.Idle
+                val comicTask = comicDownloading.firstOrNull()
+                val comicProgress = comicTask?.let { comicDownloadProgress[it] } ?: 0f
+                val comicPausedTask = comicTask?.let { comicPaused.contains(it) } ?: false
+                val comicTitle = comicTask?.let { task ->
+                    comicChapters.firstOrNull { it.id == task }?.title ?: "漫画章节"
+                } ?: ""
+                val comicChapter = comicTask?.let { task ->
+                    comicChapters.firstOrNull { it.id == task }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.92f)
@@ -609,19 +876,139 @@ fun LibraryScreen(
                         }
                         .clickable(enabled = false) {} // Prevent clicks from passing through
                 ) {
-                    DownloadGlassCard(
-                        book = book,
-                        state = st,
-                        hazeState = hazeState,
-                        onDismiss = { showDownloadPanel = false },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (comicTask != null) {
+                        ComicDownloadGlassCard(
+                            title = comicTitle,
+                            progress = comicProgress,
+                            paused = comicPausedTask,
+                            onPause = { viewModel.pauseComicChapter(comicTask) },
+                            onResume = {
+                                comicChapter?.let { chapter ->
+                                    comicBook?.let { book ->
+                                        viewModel.downloadComicChapter(book, chapter)
+                                    }
+                                }
+                            },
+                            onCancel = { viewModel.cancelComicChapter(comicTask) },
+                            onDismiss = { showDownloadPanel = false }
+                        )
+                    } else {
+                        DownloadGlassCard(
+                            book = book,
+                            state = st,
+                            hazeState = hazeState,
+                            onDismiss = { showDownloadPanel = false },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
     }
 }
+}
 
+@Composable
+private fun ComicDownloadGlassCard(
+    title: String,
+    progress: Float,
+    paused: Boolean,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "漫画下载",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "关闭",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = if (paused) "已暂停：$title" else title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+                color = MintPrimary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!paused) {
+                    Text(
+                        text = "${(progress.coerceIn(0f, 1f) * 100).toInt()}%",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MintPrimary
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (paused) {
+                        AppIconButton(onClick = onResume, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "继续下载",
+                                tint = MintPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        AppIconButton(onClick = onPause, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = "暂停下载",
+                                tint = MintPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    AppIconButton(onClick = onCancel, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "取消下载",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -776,10 +1163,27 @@ fun LibraryWelcomeScreen(
 }
 
 @Composable
+private fun rememberCoverHeaders(
+    book: SearchBook,
+    sources: List<BookSource>
+): Map<String, String> {
+    val cover = book.cover
+    var headers by remember(cover, book.sourceId) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(cover, book.sourceId) {
+        if (cover.isNullOrBlank()) return@LaunchedEffect
+        val source = sources.firstOrNull { it.id == book.sourceId } as? ComicSource
+        headers = source?.getCoverHeaders(cover) ?: emptyMap()
+    }
+    return headers
+}
+
+@Composable
 fun LibraryBookCard(
     book: SearchBook,
     downloadState: DownloadState,
     imageLoader: ImageLoader,
+    coverHeaders: Map<String, String> = emptyMap(),
+    comicMode: Boolean = false,
     onStartDownload: () -> Unit,
     onPauseDownload: () -> Unit,
     onResumeDownload: () -> Unit,
@@ -806,8 +1210,16 @@ fun LibraryBookCard(
                 if (book.cover.isNullOrBlank()) {
                     BookCoverPlaceholder(book)
                 } else {
+                    val coverModel: Any = if (coverHeaders.isEmpty()) {
+                        book.cover
+                    } else {
+                        ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(book.cover)
+                            .apply { coverHeaders.forEach { (k, v) -> addHeader(k, v) } }
+                            .build()
+                    }
                     SubcomposeAsyncImage(
-                        model = book.cover,
+                        model = coverModel,
                         imageLoader = imageLoader,
                         contentDescription = book.title,
                         contentScale = ContentScale.Crop,
@@ -850,7 +1262,7 @@ fun LibraryBookCard(
                     )
                 } else {
                     Text(
-                        text = "格式：${book.displayFormat()}",
+                        text = "格式：${book.displayFormat()}${book.language?.let { " · $it" } ?: ""}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MintPrimary
@@ -875,9 +1287,13 @@ fun LibraryBookCard(
                                 modifier = Modifier.height(32.dp).testTag("download_button_idle")
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Icon(
+                                        if (comicMode) Icons.Filled.MenuBook else Icons.Default.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("下载", fontSize = 12.sp)
+                                    Text(if (comicMode) "阅读" else "下载", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -1074,4 +1490,93 @@ private fun SearchBook.displayFormat(): String {
             ?: ""
     }
     return raw.uppercase().ifBlank { "EPUB" }
+}
+
+@Composable
+private fun AggregateSourceHeader(
+    name: String,
+    loading: Boolean,
+    resultCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(26.dp)
+            )
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(
+                        MintPrimary.copy(alpha = 0.16f),
+                        MintSecondary.copy(alpha = 0.32f),
+                        MintPrimary.copy(alpha = 0.16f)
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (loading) {
+                ChasingDots(size = 18.dp, color = MintPrimary)
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!loading && resultCount > 0) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "· $resultCount",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MintPrimary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AggregateSourceError(
+    error: String?,
+    modifier: Modifier = Modifier
+) {
+    val timedOut = error?.contains("timeout", ignoreCase = true) == true ||
+        error?.contains("timed out", ignoreCase = true) == true ||
+        error?.contains("超时") == true
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (timedOut) Icons.Default.Info else Icons.Default.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (timedOut) "链接超时" else "无结果",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

@@ -288,11 +288,16 @@ class MainActivity : ComponentActivity() {
                                                     onOpenSourceManagement = {
                                                         navController.navigate("source_management")
                                                     },
-                                                onImportLocalBook = {
-                                                    selectedCategoryForImport = "全部"
-                                                    fileLauncher.launch("*/*")
-                                                }
-                                            )
+                                                    onImportLocalBook = {
+                                                        selectedCategoryForImport = "全部"
+                                                        fileLauncher.launch("*/*")
+                                                    },
+                                                    onOpenComic = { book ->
+                                                        libraryViewModel.openComic(book)
+                                                        navController.navigate("comic_chapters")
+                                                    },
+                                                    extraBottomPadding = innerPadding.calculateBottomPadding()
+                                                )
                                             1 -> HomeScreen(
                                                 books = books,
                                                 categories = categories,
@@ -342,6 +347,7 @@ class MainActivity : ComponentActivity() {
                                                     backupManager = viewModel.backupManager,
                                                     categories = categories,
                                                     extraBottomPadding = innerPadding.calculateBottomPadding(),
+                                                    onAdultSourcesChange = { sourceViewModel.setAdultSourcesEnabled(it) },
                                                     onAddCategory = { name ->
                                                         viewModel.addCategory(name)
                                                     },
@@ -373,6 +379,7 @@ class MainActivity : ComponentActivity() {
                                 prefs = viewModel.prefs,
                                 backupManager = viewModel.backupManager,
                                 categories = categories,
+                                onAdultSourcesChange = { sourceViewModel.setAdultSourcesEnabled(it) },
                                 onAddCategory = { name ->
                                     viewModel.addCategory(name)
                                 },
@@ -489,6 +496,93 @@ class MainActivity : ComponentActivity() {
                                 onRecordTime = { seconds ->
                                     viewModel.recordTime(seconds)
                                 }
+                            )
+                        } }
+
+                        composable(
+                            "comic_chapters",
+                            enterTransition = {
+                                fadeIn(tween(280)) + slideInHorizontally { it / 4 }
+                            },
+                            exitTransition = { fadeOut(tween(200)) },
+                            popEnterTransition = { fadeIn(tween(260)) },
+                            popExitTransition = { fadeOut(tween(200)) }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                            val comicBook by libraryViewModel.comicBook.collectAsState()
+                            val comicChapters by libraryViewModel.comicChapters.collectAsState()
+                            val comicChaptersLoading by libraryViewModel.comicChaptersLoading.collectAsState()
+                            val comicChaptersError by libraryViewModel.comicChaptersError.collectAsState()
+                            val comicDownloading by libraryViewModel.comicDownloading.collectAsState()
+                            val comicDownloadProgress by libraryViewModel.comicDownloadProgress.collectAsState()
+                            val comicPaused by libraryViewModel.comicPaused.collectAsState()
+                            val comicMessage by libraryViewModel.comicMessage.collectAsState()
+                            val comicContext = androidx.compose.ui.platform.LocalContext.current
+
+                            LaunchedEffect(comicMessage) {
+                                comicMessage?.let {
+                                    android.widget.Toast.makeText(comicContext, it, android.widget.Toast.LENGTH_LONG).show()
+                                    libraryViewModel.clearComicMessage()
+                                }
+                            }
+
+                            ComicChaptersScreen(
+                                book = comicBook,
+                                chapters = comicChapters,
+                                loading = comicChaptersLoading,
+                                error = comicChaptersError,
+                                downloadingChapters = comicDownloading,
+                                downloadProgress = comicDownloadProgress,
+                                pausedChapters = comicPaused,
+                                onBack = { navController.popBackStack() },
+                                onRetry = { comicBook?.let { libraryViewModel.openComic(it) } },
+                                onChapterClick = { chapter ->
+                                    libraryViewModel.loadChapterImages(chapter)
+                                    navController.navigate("comic_reader_online")
+                                },
+                                onDownloadChapter = { chapter ->
+                                    comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
+                                },
+                                onPauseDownload = { chapter ->
+                                    libraryViewModel.pauseComicChapter(chapter.id)
+                                },
+                                onResumeDownload = { chapter ->
+                                    comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
+                                },
+                                onCancelDownload = { chapter ->
+                                    libraryViewModel.cancelComicChapter(chapter.id)
+                                }
+                            )
+                        } }
+
+                        composable(
+                            "comic_reader_online",
+                            enterTransition = {
+                                fadeIn(tween(300)) +
+                                    scaleIn(
+                                        initialScale = 0.96f,
+                                        animationSpec = tween(300)
+                                    )
+                            },
+                            exitTransition = { fadeOut(tween(220)) },
+                            popEnterTransition = { fadeIn(tween(280)) },
+                            popExitTransition = { fadeOut(tween(220)) }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                            val comicBook by libraryViewModel.comicBook.collectAsState()
+                            val activeChapter by libraryViewModel.activeComicChapter.collectAsState()
+                            val images by libraryViewModel.comicChapterImages.collectAsState()
+                            val imageHeaders by libraryViewModel.comicChapterHeaders.collectAsState()
+                            val loading by libraryViewModel.comicChapterLoading.collectAsState()
+                            val error by libraryViewModel.comicChapterError.collectAsState()
+
+                            OnlineComicReaderScreen(
+                                title = activeChapter?.title ?: comicBook?.title ?: "在线漫画",
+                                imageUrls = images,
+                                loading = loading,
+                                error = error,
+                                referer = if (comicBook?.sourceId == "mangadex") "https://mangadex.live/" else null,
+                                imageHeaders = imageHeaders,
+                                onBack = { navController.popBackStack() },
+                                onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
                             )
                         } }
 

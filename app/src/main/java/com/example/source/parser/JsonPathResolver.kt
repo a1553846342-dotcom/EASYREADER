@@ -53,6 +53,30 @@ object JsonPathResolver {
         return str.toLongOrNull()
     }
 
+    /**
+     * 从 JSON 字符串中按路径解析出一组字符串（用于漫画图片列表 / 章节 URL 等）。
+     * 支持形如 $.data.images、data.images[*]、$..images 的路径。
+     */
+    fun resolveStringArray(jsonStr: String, path: String): List<String> {
+        if (jsonStr.isBlank() || path.isBlank()) return emptyList()
+        val root = parseRoot(jsonStr) ?: return emptyList()
+        val targets = resolveAll(listOf(root), parseSegments(path))
+        val result = mutableListOf<String>()
+        for (target in targets) {
+            when (target) {
+                is JSONArray -> {
+                    for (i in 0 until target.length()) {
+                        val v = target.opt(i)
+                        if (v != null && v != JSONObject.NULL) result.add(v.toString())
+                    }
+                }
+                is JSONObject -> result.add(target.toString())
+                else -> result.add(target.toString())
+            }
+        }
+        return result.distinct()
+    }
+
     private fun String?.isNull_or_blank(): Boolean {
         return this == null || this.trim().isEmpty()
     }
@@ -67,8 +91,27 @@ object JsonPathResolver {
     }
 
     private fun parseSegments(path: String): List<String> {
-        if (path.isBlank() || path == "$") return emptyList()
-        return path.split(".").filter { it.isNotBlank() }
+        var p = path.trim()
+        if (p.isBlank() || p == "$") return emptyList()
+        if (p.startsWith("@json:")) p = p.removePrefix("@json:").trim()
+        if (p.startsWith("$.")) p = p.removePrefix("$.")
+        else if (p.startsWith("$")) p = p.removePrefix("$")
+        // 递归下降：$..books -> **.books
+        p = p.replace("..", "**.")
+        // 通配下标：books[*] -> books[]
+        p = p.replace("[*]", "[]")
+        val segments = p.split(".").filter { it.isNotBlank() }
+        return mergeRecursiveMarkers(segments)
+    }
+
+    private fun mergeRecursiveMarkers(segments: List<String>): List<String> {
+        // "**." 拆分后可能产生 ["**", "**"] 等，合并为单个 "**" 防止重复递归
+        val merged = mutableListOf<String>()
+        for (seg in segments) {
+            if (seg == "**" && merged.lastOrNull() == "**") continue
+            merged.add(seg)
+        }
+        return merged
     }
 
     private fun resolveAll(inputs: List<Any>, segments: List<String>): List<Any> {
@@ -82,6 +125,33 @@ object JsonPathResolver {
 
     private fun resolveSegmentAll(inputs: List<Any>, segment: String): List<Any> {
         val out = mutableListOf<Any>()
+
+        // 递归下降：返回所有嵌套值（对象、数组、标量）
+        if (segment == "**") {
+            fun collect(value: Any) {
+                when (value) {
+                    is JSONObject -> {
+                        out.add(value)
+                        val keys = value.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            val v = value.opt(key)
+                            if (v != null && v != JSONObject.NULL) collect(v)
+                        }
+                    }
+                    is JSONArray -> {
+                        out.add(value)
+                        for (i in 0 until value.length()) {
+                            val v = value.opt(i)
+                            if (v != null && v != JSONObject.NULL) collect(v)
+                        }
+                    }
+                    else -> out.add(value)
+                }
+            }
+            for (item in inputs) collect(item)
+            return out
+        }
 
         // 裸通配符："[]" —— 展开当前所有 JSONArray 的元素
         if (segment == "[]") {

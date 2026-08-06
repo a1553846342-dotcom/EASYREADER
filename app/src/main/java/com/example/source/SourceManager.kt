@@ -19,6 +19,9 @@ class SourceManager(private val storage: SourceStorage? = null) {
     private val _allSources = MutableStateFlow<List<BookSource>>(emptyList())
     val allSources: StateFlow<List<BookSource>> = _allSources.asStateFlow()
 
+    private val _enabledStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val enabledStates: StateFlow<Map<String, Boolean>> = _enabledStates.asStateFlow()
+
     private val _availableSources = MutableStateFlow<List<BookSource>>(emptyList())
     val availableSources: StateFlow<List<BookSource>> = _availableSources.asStateFlow()
 
@@ -43,6 +46,7 @@ class SourceManager(private val storage: SourceStorage? = null) {
         storage?.let { store ->
             val savedStates = store.getSourceStates()
             enabledStatesMap.putAll(savedStates)
+            _enabledStates.value = enabledStatesMap.toMap()
 
             // Load user-imported custom sources
             val customJsons = store.getCustomSourceJsons()
@@ -72,6 +76,7 @@ class SourceManager(private val storage: SourceStorage? = null) {
             sourcesMap[source.id] = source
             if (!enabledStatesMap.containsKey(source.id)) {
                 enabledStatesMap[source.id] = defaultEnabled
+                _enabledStates.value = enabledStatesMap.toMap()
             }
             if (rawJson != null) {
                 customJsonsMap[source.id] = rawJson
@@ -100,6 +105,7 @@ class SourceManager(private val storage: SourceStorage? = null) {
         mutex.withLock {
             sourcesMap.remove(sourceId)
             enabledStatesMap.remove(sourceId)
+            _enabledStates.value = enabledStatesMap.toMap()
             customJsonsMap.remove(sourceId)
             storage?.removeCustomSourceJson(sourceId)
             if (_activeSource.value?.id == sourceId) {
@@ -130,6 +136,7 @@ class SourceManager(private val storage: SourceStorage? = null) {
     suspend fun setSourceEnabled(sourceId: String, enabled: Boolean) {
         mutex.withLock {
             enabledStatesMap[sourceId] = enabled
+            _enabledStates.value = enabledStatesMap.toMap()
             storage?.saveSourceState(sourceId, enabled)
             updateFlowsInternal()
             if (!enabled && _activeSource.value?.id == sourceId) {

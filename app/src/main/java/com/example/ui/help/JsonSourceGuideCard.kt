@@ -32,7 +32,7 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "JSON 书源是一种不需要修改 APP 代码即可扩展图书检索站点的配置文件。您只需遵循标准字段结构描述搜索、详情及下载规则即可：",
+                text = "JSON 书源是一种不需要修改 APP 代码即可扩展站点检索的配置文件，兼容「开源阅读 Legado」社区规则。您只需用选择器描述搜索、目录和图片规则：",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 18.sp
@@ -42,7 +42,7 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
 
             // JSON Code block
             Text(
-                text = "示例 JSON 结构模板：",
+                text = "漫画/图集站 JSON 模板（可直接复制修改）：",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface
@@ -57,18 +57,26 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
             ) {
                 Text(
                     text = """{
-  "id": "gutenberg_example",
-  "name": "古登堡书源",
-  "baseUrl": "https://gutenberg.org",
-  "search": {
+  "id": "example_comic",
+  "name": "示例漫画源",
+  "baseUrl": "https://example.com",
+  "htmlSearch": {
     "url": "/search?q={keyword}",
-    "listPath": "books[]",
-    "title": "title",
-    "author": "author",
-    "cover": "cover_url"
+    "listSelector": "@css:ul.list li.item",
+    "title": "@css:a.book-name@text",
+    "author": "@css:span.author@text",
+    "cover": "@css:img.cover@data-src",
+    "detailUrl": "@css:a.book-name@href"
   },
-  "download": {
-    "urlField": "download_url"
+  "htmlChapters": {
+    "url": "{id}",
+    "listSelector": "@css:ul.chapters li",
+    "name": "@css:a@text",
+    "href": "@css:a@href"
+  },
+  "htmlContent": {
+    "url": "{chapterUrl}",
+    "imageSelector": "@css:div.reader img@data-src"
   }
 }""",
                     fontFamily = FontFamily.Monospace,
@@ -96,9 +104,10 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
                 "id" to "唯一英文字符标识，保证书源独立性",
                 "name" to "在书源列表中显示的友好名称",
                 "baseUrl" to "站点主站域名，用于拼合相对路径",
-                "search.url" to "搜索接口地址，支持使用 {keyword} 占位符",
-                "search.listPath" to "从 JSON 或 HTML 结果中提取列表的路径规则",
-                "download.urlField" to "直链或跳转下载字段名称，让 DownloadManager 捕捉"
+                "htmlSearch.url" to "搜索地址，{keyword} 替换关键词，{page} 替换页码",
+                "htmlSearch.listSelector" to "结果列表项规则（支持 Legado 语法与 @css:）",
+                "htmlChapters.url" to "目录页地址，{id} 为搜索结果详情链接",
+                "htmlContent.imageSelector" to "章节图片规则，支持 @src / @data-src / JSONPath"
             )
 
             fields.forEach { (field, desc) ->

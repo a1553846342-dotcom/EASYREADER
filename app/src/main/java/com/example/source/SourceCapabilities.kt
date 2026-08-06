@@ -7,8 +7,8 @@ data class SourceCapabilities(
     val downloadRequiresLogin: Boolean = false,
     val supportDebug: Boolean = false,
     val supportImport: Boolean = false,
+    val supportComic: Boolean = false,
     val environmentOnly: Boolean = false
 ) {
     val requiresLogin: Boolean get() = downloadRequiresLogin
 }
-

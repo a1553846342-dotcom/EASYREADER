@@ -33,6 +33,11 @@
 # Keep Coil Image Loading
 -keep class coil.** { *; }
 
+# QuickJS JS 引擎（Venera 源）
+-keep class com.dokar.quickjs.** { *; }
+-keep class com.example.source.js.** { *; }
+-keep class org.chromium.net.** { *; }
+
 # R8 Optimization & Obfuscation
 -repackageclasses ''
 -allowaccessmodification

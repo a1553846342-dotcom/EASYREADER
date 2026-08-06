@@ -65,7 +65,8 @@ fun SettingsTabScreen(
     onBlueLightAlphaChange: (Float) -> Unit = { prefs.blueLightAlpha = it },
     colorPrimaryIndexVal: Int = prefs.colorPrimaryIndex,
     colorSecondaryIndexVal: Int = prefs.colorSecondaryIndex,
-    onColorThemeChange: (Int, Int) -> Unit = { p, s -> prefs.colorPrimaryIndex = p; prefs.colorSecondaryIndex = s }
+    onColorThemeChange: (Int, Int) -> Unit = { p, s -> prefs.colorPrimaryIndex = p; prefs.colorSecondaryIndex = s },
+    onAdultSourcesChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -78,6 +79,10 @@ fun SettingsTabScreen(
     var orientationLock by remember { mutableStateOf(prefs.screenOrientationLock) }
     var colorPrimaryIndex by remember(colorPrimaryIndexVal) { mutableStateOf(colorPrimaryIndexVal) }
     var colorSecondaryIndex by remember(colorSecondaryIndexVal) { mutableStateOf(colorSecondaryIndexVal) }
+    var liveButtonTapCount by remember { mutableStateOf(0) }
+    var liveButtonLastTapMs by remember { mutableStateOf(0L) }
+    var showAdultSourceCard by remember { mutableStateOf(false) }
+    var showAdultSources by remember { mutableStateOf(prefs.showAdultSources) }
 
     var splashPosterUri by remember { mutableStateOf(prefs.customSplashPosterUri) }
     var splashPureMode by remember { mutableStateOf(prefs.splashPureMode) }
@@ -367,13 +372,67 @@ fun SettingsTabScreen(
                                     }
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Button(
-                                        onClick = {},
+                                        onClick = {
+                                            val now = System.currentTimeMillis()
+                                            liveButtonTapCount = if (now - liveButtonLastTapMs < 3000) {
+                                                liveButtonTapCount + 1
+                                            } else {
+                                                1
+                                            }
+                                            liveButtonLastTapMs = now
+                                            if (liveButtonTapCount >= 6) {
+                                                showAdultSourceCard = true
+                                                liveButtonTapCount = 0
+                                            }
+                                        },
                                         colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex]),
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth().height(36.dp)
                                     ) {
                                         Text("主色按钮实时联动效果", color = Color.White, fontSize = 12.sp)
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showAdultSourceCard) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.Lock, contentDescription = null, tint = MintPrimary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("高级内容", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("带你登大郎~~~", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    }
+                                    Switch(
+                                        checked = showAdultSources,
+                                        onCheckedChange = {
+                                            showAdultSources = it
+                                            prefs.showAdultSources = it
+                                            onAdultSourcesChange(it)
+                                            Toast.makeText(context, if (it) "正在更新成人源…" else "成人源已隐藏", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = MintPrimary,
+                                            checkedTrackColor = MintPrimary.copy(alpha = 0.3f)
+                                        )
+                                    )
                                 }
                             }
                         }

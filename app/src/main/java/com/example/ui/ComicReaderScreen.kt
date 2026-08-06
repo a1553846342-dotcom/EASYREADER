@@ -4,8 +4,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,12 +24,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +38,10 @@ import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
+import net.engawapg.lib.zoomable.ExperimentalZoomableApi
+import net.engawapg.lib.zoomable.rememberZoomState
+import net.engawapg.lib.zoomable.zoomable
+import net.engawapg.lib.zoomable.zoomableWithScroll
 import java.io.File
 
 enum class ComicReadingMode {
@@ -49,7 +49,7 @@ enum class ComicReadingMode {
     VERTICAL
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalZoomableApi::class)
 @Composable
 @androidx.compose.animation.ExperimentalSharedTransitionApi
 fun ComicReaderScreen(
@@ -194,28 +194,23 @@ fun ComicReaderScreen(
             ComicReadingMode.VERTICAL -> {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zoomableWithScroll(
+                            zoomState = rememberZoomState(),
+                            onTap = { isControlsVisible = !isControlsVisible }
+                        ),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     itemsIndexed(chapters, key = { _, ch -> ch.id }) { index, chapter ->
-                        Box(
+                        AsyncImage(
+                            model = File(chapter.content),
+                            contentDescription = "第 ${index + 1} 页",
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .pointerInput(Unit) {
-                                    detectTapGestures {
-                                        isControlsVisible = !isControlsVisible
-                                    }
-                                }
-                        ) {
-                            AsyncImage(
-                                model = File(chapter.content),
-                                contentDescription = "第 ${index + 1} 页",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentHeight(),
-                                contentScale = ContentScale.FillWidth
-                            )
-                        }
+                                .wrapContentHeight(),
+                            contentScale = ContentScale.FillWidth
+                        )
                     }
                 }
             }
@@ -365,52 +360,12 @@ fun ZoomableComicPage(
     onTapRight: () -> Unit,
     onTapCenter: () -> Unit
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
+    var pageWidth by remember { mutableIntStateOf(0) }
+    val zoomState = rememberZoomState()
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(scale) {
-                if (scale > 1.05f) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 4f)
-                        if (scale > 1f) {
-                            offset += pan
-                        } else {
-                            offset = Offset.Zero
-                        }
-                    }
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { tapOffset ->
-                        if (scale > 1.05f) {
-                            scale = 1f
-                            offset = Offset.Zero
-                        } else {
-                            val w = size.width.toFloat()
-                            val leftZone = w * 0.3f
-                            val rightZone = w * 0.7f
-                            when {
-                                tapOffset.x < leftZone -> onTapLeft()
-                                tapOffset.x > rightZone -> onTapRight()
-                                else -> onTapCenter()
-                            }
-                        }
-                    },
-                    onDoubleTap = {
-                        if (scale > 1.2f) {
-                            scale = 1f
-                            offset = Offset.Zero
-                        } else {
-                            scale = 2.2f
-                            offset = Offset.Zero
-                        }
-                    }
-                )
-            },
+            .onSizeChanged { pageWidth = it.width },
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
@@ -418,11 +373,16 @@ fun ZoomableComicPage(
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y
+                .zoomable(
+                    zoomState = zoomState,
+                    onTap = { tapOffset ->
+                        val w = pageWidth.toFloat()
+                        when {
+                            tapOffset.x < w * 0.3f -> onTapLeft()
+                            tapOffset.x > w * 0.7f -> onTapRight()
+                            else -> onTapCenter()
+                        }
+                    }
                 ),
             contentScale = ContentScale.Fit
         )

@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +42,7 @@ import com.example.library.ZLibraryNativeSession
 import com.example.library.ZLibraryNodeConfig
 import com.example.source.BookSource
 import com.example.source.SourceViewModel
+import com.example.source.importer.SourceImporter
 import com.example.source.zlibrary.ZLibrarySource
 import com.example.ui.theme.MintPrimary
 import dev.chrisbanes.haze.HazeState
@@ -54,12 +57,15 @@ fun SourceManagementScreen(
     val context = LocalContext.current
     val allSources by viewModel.allSources.collectAsState()
     val activeSource by viewModel.activeSource.collectAsState()
+    val enabledStates by viewModel.enabledStates.collectAsState()
     val importStatus by viewModel.importStatus.collectAsState()
 
     var showPasteDialog by remember { mutableStateOf(false) }
+    var showNetworkDialog by remember { mutableStateOf(false) }
     var loginSource by remember { mutableStateOf<BookSource?>(null) }
     var showNodeManagement by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
+    var networkUrl by remember { mutableStateOf("") }
 
     if (showNodeManagement) {
         ZLibraryNodeManagementScreen(onBack = { showNodeManagement = false })
@@ -191,6 +197,53 @@ fun SourceManagementScreen(
                 }
             // Builtin sources
             item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Link,
+                            contentDescription = null,
+                            tint = MintPrimary
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Venera 源仓库", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "内置 JS 引擎加载社区漫画源（拷贝漫画、漫画人、漫画柜、comick 等），可随时刷新更新",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = { viewModel.refreshJsSources() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("刷新", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            item {
                 Text(
                     text = "内置书源",
                     fontSize = 14.sp,
@@ -208,7 +261,7 @@ fun SourceManagementScreen(
                     SourceItemCard(
                         source = source,
                         isActive = activeSource?.id == source.id,
-                        isEnabled = viewModel.isSourceEnabled(source.id),
+                        isEnabled = enabledStates[source.id] ?: true,
                         isCustom = false,
                         onToggleEnable = { enabled ->
                             if (enabled) viewModel.enableSource(source.id)
@@ -255,7 +308,7 @@ fun SourceManagementScreen(
                     SourceItemCard(
                         source = source,
                         isActive = activeSource?.id == source.id,
-                        isEnabled = viewModel.isSourceEnabled(source.id),
+                        isEnabled = enabledStates[source.id] ?: true,
                         isCustom = true,
                         onToggleEnable = { enabled ->
                             if (enabled) viewModel.enableSource(source.id)
@@ -289,6 +342,27 @@ fun SourceManagementScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("粘贴 JSON", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // 网络导入：可直接导入 GitHub 社区书源合集
+            item {
+                AppButton(
+                    onClick = { showNetworkDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("网络导入（社区书源合集）", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -326,6 +400,64 @@ fun SourceManagementScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPasteDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showNetworkDialog) {
+        AlertDialog(
+            onDismissRequest = { showNetworkDialog = false },
+            title = { Text("网络导入书源") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "粘贴任意「阅读」书源合集 JSON 地址（shuyuan 文件），系统会自动转换并批量导入，不兼容的会跳过。",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = networkUrl,
+                        onValueChange = { networkUrl = it },
+                        placeholder = { Text("https://.../shuyuan") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                    Text("快速选择社区源：", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    SourceImporter.PRESET_SOURCE_URLS.forEach { (url, label) ->
+                        TextButton(
+                            onClick = { networkUrl = url },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                color = MintPrimary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (networkUrl.isNotBlank()) {
+                            viewModel.importSourceFromUrl(networkUrl.trim())
+                            networkUrl = ""
+                            showNetworkDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
+                ) {
+                    Text("开始导入")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNetworkDialog = false }) {
                     Text("取消")
                 }
             }
