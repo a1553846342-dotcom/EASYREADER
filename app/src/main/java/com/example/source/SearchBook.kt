@@ -12,6 +12,7 @@ data class SearchBook(
     val description: String? = null,
     val format: String = "epub",
     val language: String? = null,
+    val comicId: String? = null,
     val size: Long? = null,
     val downloadUrl: String? = null
 )

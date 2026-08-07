@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.example.source.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * 一个 Venera 兼容的 JS 漫画源。
@@ -36,6 +38,18 @@ class JsComicSource(
     private val createMutex = Mutex()
     private var engine: JsSourceEngine? = null
 
+    private data class ImageConfig(
+        val originalUrl: String,
+        val finalUrl: String,
+        val headers: Map<String, String>,
+        val modifyCode: String?,
+        val nl: String? = null
+    )
+
+    private val imageConfigCache = object : LinkedHashMap<String, ImageConfig>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageConfig>?): Boolean = size > 512
+    }
+
     private suspend fun getEngine(): JsSourceEngine {
         engine?.let { return it }
         return createMutex.withLock {
@@ -61,10 +75,29 @@ class JsComicSource(
         }
     }
 
+    /** 网络类错误（超时/断连/重置）自动重试一次，源站抽风时大幅提高成功率。 */
+    private suspend fun callJsWithRetry(jsCall: String): JSONObject? {
+        var result = callJs(jsCall)
+        val err = result?.optString("error", "") ?: ""
+        val retryable = err.contains("timeout", ignoreCase = true) ||
+            err.contains("timed out", ignoreCase = true) ||
+            err.contains("ERR_CONNECTION", ignoreCase = true) ||
+            err.contains("ERR_EMPTY_RESPONSE", ignoreCase = true) ||
+            err.contains("ERR_RESPONSE_HEADERS_TRUNCATED", ignoreCase = true) ||
+            err.contains("Connection reset", ignoreCase = true) ||
+            err.contains("SocketException", ignoreCase = true) ||
+            err.contains("connect", ignoreCase = true)
+        if (retryable) {
+            kotlinx.coroutines.delay(900)
+            result = callJs(jsCall)
+        }
+        return result
+    }
+
     override suspend fun search(keyword: String): SourceResult<List<SearchBook>> =
         withContext(Dispatchers.IO) {
             try {
-                val obj = callJs("src.search.load.call(src, ${q(keyword)}, [], 1)")
+                val obj = callJsWithRetry("src.search.load.call(src, ${q(keyword)}, [], 1)")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
                     return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
@@ -75,16 +108,19 @@ class JsComicSource(
                     val id = c.optString("id")
                     val title = c.optString("title")
                     if (id.isBlank() || title.isBlank()) return@mapNotNull null
+                    val rawAuthor = c.optStringOrJoin("subTitle")
+                        .ifBlank { c.optStringOrJoin("subtitle") }
+                        .ifBlank { c.optStringOrJoin("author") }
+                        .ifBlank { extractAuthorFromTags(c.optJSONArray("tags")) }
                     SearchBook(
                         id = id,
                         sourceId = this@JsComicSource.id,
                         title = title,
-                        author = c.optString("subTitle", "")
-                            .ifBlank { c.optString("subtitle", "") }
-                            .ifBlank { c.optString("author", "") }
-                            .ifBlank { "未知作者" },
+                        author = rawAuthor.ifBlank { "未知作者" },
                         cover = c.optString("cover", "").ifBlank { null },
                         description = c.optString("description", "").ifBlank { null },
+                        language = c.optString("language", "").ifBlank { null },
+                        comicId = extractComicId(c),
                         format = "漫画"
                     )
                 }
@@ -98,7 +134,7 @@ class JsComicSource(
     override suspend fun getChapters(bookId: String): SourceResult<List<ComicChapter>> =
         withContext(Dispatchers.IO) {
             try {
-                val obj = callJs("src.comic.loadInfo.call(src, ${q(bookId)})")
+                val obj = callJsWithRetry("src.comic.loadInfo.call(src, ${q(bookId)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
                     return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
@@ -145,19 +181,32 @@ class JsComicSource(
             val pair = splitChapterId(chapterId)
                 ?: return@withContext SourceResult.Error(SourceException.ParseError("无效章节 ID"))
             try {
-                val obj = callJs("src.comic.loadEp.call(src, ${q(pair.first)}, ${q(pair.second)})")
+                val obj = callJsWithRetry("src.comic.loadEp.call(src, ${q(pair.first)}, ${q(pair.second)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
                     return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
                 }
                 val images = obj.optJSONObject("data")?.optJSONArray("images") ?: JSONArray()
-                val urls = (0 until images.length()).mapNotNull { i ->
+                val rawUrls = (0 until images.length()).mapNotNull { i ->
                     images.optString(i).ifBlank { null }
                 }
-                if (urls.isEmpty()) {
+                if (rawUrls.isEmpty()) {
                     SourceResult.Error(SourceException.ParseError("该章节没有可读取的图片"))
+                } else if (sourceKey == "ehentai") {
+                    // e-hentai 返回的是“图片页 URL”，真正的图片在阅读/下载时懒加载，
+                    // 避免一次性逐页请求（大画廊会等几十秒）
+                    SourceResult.Success(rawUrls)
                 } else {
-                    SourceResult.Success(urls)
+                    // 应用 onImageLoad 返回的重写 URL（部分源会替换图片域名/签名）
+                    // 顺序解析：部分源（ehentai）需要把上一页的 nl 传给下一页才能取到真实图片 URL
+                    val resolved = mutableListOf<String>()
+                    var prevNl: String? = null
+                    rawUrls.forEach { rawUrl ->
+                        val config = resolveImageConfig(chapterId, rawUrl, prevNl)
+                        resolved.add(config.finalUrl)
+                        prevNl = config.nl
+                    }
+                    SourceResult.Success(resolved)
                 }
             } catch (e: Exception) {
                 Log.e("JsComic[$sourceKey]", "images failed", e)
@@ -169,25 +218,121 @@ class JsComicSource(
         chapterId: String,
         urls: List<String>
     ): Map<String, Map<String, String>> {
-        val pair = splitChapterId(chapterId) ?: return emptyMap()
         val result = HashMap<String, Map<String, String>>()
-        urls.forEach { url ->
-            try {
-                val obj = callJs(
-                    "(src.comic.onImageLoad ? src.comic.onImageLoad.call(src, ${q(url)}, ${q(pair.first)}, ${q(pair.second)}) : null)"
-                ) ?: return@forEach
-                if (!obj.optBoolean("ok")) return@forEach
-                val data = obj.optJSONObject("data") ?: return@forEach
-                val headers = data.optJSONObject("headers")
-                val merged = LinkedHashMap<String, String>()
-                headers?.keys()?.forEach { k -> merged[k] = headers.optString(k) }
-                data.optString("referer").ifBlank { null }?.let { merged.putIfAbsent("Referer", it) }
-                if (merged.isNotEmpty()) result[url] = merged
-            } catch (e: Exception) {
-                // 单个图片 header 失败不阻塞整体
+        if (sourceKey == "ehentai") {
+            urls.forEach { url ->
+                result[url] = mapOf("Referer" to "https://e-hentai.org/")
             }
+            return result
+        }
+        urls.forEach { url ->
+            val config = synchronized(imageConfigCache) {
+                imageConfigCache.values.firstOrNull { it.finalUrl == url }
+            }
+            val headers = config?.headers ?: resolveImageConfig(chapterId, url).headers
+            if (headers.isNotEmpty()) result[url] = headers
         }
         return result
+    }
+
+    override suspend fun resolveChapterImage(url: String): String? = withContext(Dispatchers.IO) {
+        if (sourceKey != "ehentai") return@withContext null
+        resolveEhentaiImage(url, 0)
+    }
+
+    private suspend fun resolveEhentaiImage(url: String, attempt: Int): String? {
+        val config = resolveImageConfig("$url\u0001", url)
+        val realUrl = config.finalUrl
+        if (realUrl == url) {
+            // 图片页解析失败（代理抽风/超时），清掉缓存重试拿新链接
+            if (attempt < 3) {
+                synchronized(imageConfigCache) { imageConfigCache.remove(url) }
+                delay(700L * (attempt + 1))
+                return resolveEhentaiImage(url, attempt + 1)
+            }
+            return null
+        }
+        if (!realUrl.contains("hath.network")) return realUrl
+        // H@H 图床对 OkHttp 握手不友好，改用 Cronet 下载并缓存到本地，阅读器直接加载本地文件
+        val cacheDir = File(context.cacheDir, "ehimg").apply { mkdirs() }
+        val cacheFile = File(cacheDir, "${realUrl.hashCode().toUInt().toString(16)}.img")
+        if (!cacheFile.exists() || cacheFile.length() == 0L) {
+            val headers = config.headers + mapOf("Referer" to "https://e-hentai.org/")
+            val bytes = getEngine().fetchImageBytes(realUrl, headers)
+            if (bytes != null && bytes.isNotEmpty()) {
+                runCatching { cacheFile.writeBytes(bytes) }
+            }
+            if ((cacheFile.length() == 0L || !cacheFile.exists()) && attempt < 3) {
+                // keystamp 可能过期/代理抽风，重新解析一次拿到新图片链接再下载
+                synchronized(imageConfigCache) { imageConfigCache.remove(url) }
+                delay(800L * (attempt + 1))
+                return resolveEhentaiImage(url, attempt + 1)
+            }
+        }
+        return if (cacheFile.exists() && cacheFile.length() > 0L) {
+            android.net.Uri.fromFile(cacheFile).toString()
+        } else {
+            realUrl
+        }
+    }
+
+    override suspend fun getResolvedHeaders(url: String): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            if (sourceKey != "ehentai") return@withContext emptyMap()
+            synchronized(imageConfigCache) {
+                imageConfigCache[url]?.headers
+                    ?: imageConfigCache.values.firstOrNull { it.finalUrl == url }?.headers
+            } ?: emptyMap()
+        }
+
+    private suspend fun resolveImageConfig(
+        chapterId: String,
+        url: String,
+        prevNl: String? = null
+    ): ImageConfig {
+        synchronized(imageConfigCache) {
+            imageConfigCache[url]?.let { return it }
+        }
+        val pair = splitChapterId(chapterId)
+        val fallback = ImageConfig(url, url, emptyMap(), null, null)
+        val config = if (pair == null) fallback else try {
+            val nlArg = prevNl?.let { ", ${q(it)}" } ?: ""
+            val obj = callJsWithRetry(
+                "(src.comic.onImageLoad ? src.comic.onImageLoad.call(src, ${q(url)}, ${q(pair.first)}, ${q(pair.second)}$nlArg) : null)"
+            )
+            if (obj?.optBoolean("ok") != true) fallback else {
+                val data = obj.optJSONObject("data")
+                if (data == null) fallback else {
+                    val merged = LinkedHashMap<String, String>()
+                    data.optJSONObject("headers")?.keys()?.forEach { k ->
+                        merged[k] = data.optJSONObject("headers")!!.optString(k)
+                    }
+                    data.optString("referer").ifBlank { null }?.let {
+                        merged.putIfAbsent("Referer", it)
+                    }
+                    ImageConfig(
+                        originalUrl = url,
+                        finalUrl = data.optString("url")
+                            .takeIf { it.startsWith("http") || it.startsWith("//") }
+                            ?.let { if (it.startsWith("//")) "https:$it" else it }
+                            ?: url,
+                        headers = merged,
+                        modifyCode = data.optString("modifyImage").ifBlank { null },
+                        nl = data.optString("nl").ifBlank { null }
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            fallback
+        }
+        synchronized(imageConfigCache) { imageConfigCache[url] = config }
+        if (config.modifyCode != null) {
+            Log.i("JsImageProcessor", "register ${config.finalUrl.take(80)} code=${config.modifyCode.take(40).replace('\n', ' ')}")
+            JsImageProcessor.register(config.finalUrl, getEngine(), config.modifyCode)
+        } else {
+            JsImageProcessor.unregister(config.finalUrl)
+        }
+        return config
     }
 
     override suspend fun getDetail(bookId: String): SourceResult<SearchBook> {
@@ -261,6 +406,51 @@ class JsComicSource(
     }
 
     private fun q(value: String): String = org.json.JSONObject.quote(value)
+
+    /** 兼容数组/对象形式的作者字段（jm 的 author 是数组，picacg 等为字符串）。 */
+    private fun JSONObject.optStringOrJoin(key: String): String = when (val v = opt(key)) {
+        is String -> v.trim()
+        is JSONArray -> (0 until v.length()).mapNotNull { i ->
+            v.optString(i).trim().ifBlank { null }
+        }.distinct().joinToString("、")
+        is JSONObject -> v.optString("name", "").trim()
+        else -> ""
+    }
+
+    /** 从 tags 中提取 artist/author/cosplayer/group 作为作者兜底。 */
+    private fun extractAuthorFromTags(tags: JSONArray?): String {
+        if (tags == null) return ""
+        val hits = mutableListOf<String>()
+        for (i in 0 until tags.length()) {
+            val t = tags.optString(i)
+            val lower = t.lowercase()
+            val hit = when {
+                lower.startsWith("artist:") -> t.substringAfter(':').trim()
+                lower.startsWith("author:") -> t.substringAfter(':').trim()
+                lower.startsWith("cosplayer:") -> t.substringAfter(':').trim()
+                lower.startsWith("group:") -> t.substringAfter(':').trim()
+                else -> null
+            }
+            if (!hit.isNullOrBlank()) hits.add(hit)
+        }
+        return hits.distinct().joinToString("、")
+    }
+
+    /** 提取作品编号（jm 号 / ehentai gid / nhentai id 等），方便用户按号码搜索。 */
+    private fun extractComicId(c: JSONObject): String? {
+        val id = c.optString("id").trim()
+        if (id.isBlank()) return null
+        val patterns = listOf(
+            Regex("""/g/(\d+)/"""),
+            Regex("""album[=/](\d+)"""),
+            Regex("""/(\d+)/?$""")
+        )
+        for (re in patterns) {
+            re.find(id)?.groupValues?.getOrNull(1)?.let { return it }
+        }
+        if (id.all(Char::isDigit)) return id
+        return null
+    }
 }
 
 /** 缓存 Venera 运行时脚本，避免每个源重复读 assets。 */

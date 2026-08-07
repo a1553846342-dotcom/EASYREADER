@@ -55,6 +55,16 @@ class MainActivity : ComponentActivity() {
             }
             mainViewModel = viewModel
 
+            // adb 触发逐源冒烟测试：adb shell am start -n com.aistudio.novelreader.kxmpzq/.MainActivity --ez smoke_test true
+            LaunchedEffect(Unit) {
+                if (intent?.getBooleanExtra("smoke_test", false) == true) {
+                    libraryViewModel.runSourceSmokeTest(
+                        filter = intent?.getStringExtra("smoke_source") ?: "",
+                        keyword = intent?.getStringExtra("smoke_keyword") ?: ""
+                    )
+                }
+            }
+
             val autoNightMode by viewModel.autoNightMode.collectAsState()
             val blueLightFilter by viewModel.blueLightFilter.collectAsState()
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
@@ -581,6 +591,8 @@ class MainActivity : ComponentActivity() {
                                 error = error,
                                 referer = if (comicBook?.sourceId == "mangadex") "https://mangadex.live/" else null,
                                 imageHeaders = imageHeaders,
+                                resolveImage = { url -> libraryViewModel.resolveComicImage(url) },
+                                resolveImageHeaders = { url -> libraryViewModel.resolveComicImageHeaders(url) },
                                 onBack = { navController.popBackStack() },
                                 onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
                             )

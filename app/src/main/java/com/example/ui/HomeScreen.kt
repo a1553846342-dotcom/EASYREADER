@@ -329,37 +329,6 @@ fun HomeScreen(
                         )
                     }
 
-                    if (!isSearchExpanded) {
-                        AppIconButton(
-                            onClick = { isSearchExpanded = true },
-                            modifier = Modifier
-                                .shadow(2.dp, CircleShape).background(iconBtnBgColor, CircleShape)
-                                
-                        ) {
-                            Icon(
-                                Icons.Filled.Search,
-                                contentDescription = "搜索",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        AppIconButton(
-                            onClick = onSettingsClick,
-                            modifier = Modifier
-                                .shadow(2.dp, CircleShape).background(iconBtnBgColor, CircleShape)
-                                
-                        ) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = "设置",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
                 }
             }
             }

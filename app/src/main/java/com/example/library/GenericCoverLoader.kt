@@ -5,6 +5,7 @@ import coil.ImageLoader
 import com.example.source.zlibrary.network.SystemProxyResolver
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 
 /**
  * 通用封面加载器：只带浏览器 UA，不附加任何站点专用 Referer/Cookie，
@@ -24,6 +25,7 @@ object GenericCoverLoader {
         val clientBuilder = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
+            .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor { chain ->
                 val req = chain.request()
                 chain.proceed(

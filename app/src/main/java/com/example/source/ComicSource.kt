@@ -17,6 +17,15 @@ interface ComicSource : BookSource {
     ): Map<String, Map<String, String>> = emptyMap()
 
     /**
+     * 懒加载解析：把源返回的“图片页 URL”解析成真实图片 URL（e-hentai 等），
+     * 阅读器/下载器在真正加载某一页时按需调用并缓存。默认不支持。
+     */
+    suspend fun resolveChapterImage(url: String): String? = null
+
+    /** 懒加载解析后，真实图片 URL 需要的请求头。 */
+    suspend fun getResolvedHeaders(url: String): Map<String, String> = emptyMap()
+
+    /**
      * 封面图请求头（Referer/Cookie 等）。JS 源通过 onThumbnailLoad 提供。
      */
     suspend fun getCoverHeaders(url: String): Map<String, String> = emptyMap()

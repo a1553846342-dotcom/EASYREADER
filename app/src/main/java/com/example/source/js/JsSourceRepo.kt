@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 object JsSourceRepo {
 
     /** 本地补丁版本：升级后强制重新下载全部源脚本，避免缓存到旧补丁/坏脚本。 */
-    private const val PATCH_VERSION = 1
+    private const val PATCH_VERSION = 25
 
     /** 已知成人源 key 黑名单（默认隐藏，设置彩蛋开启后可见）。 */
     val ADULT_KEYS = setOf(
@@ -42,6 +42,7 @@ object JsSourceRepo {
         // 当前网络/站点确认不可用：同步仓库时默认排除
         "zaimanhua", "ManHuaGui", "ykmh", "happy", "Komiic",
         "shonen_jump_plus", "mh1234", "ccc", "comic_walker"
+        , "mh18"
     )
 
     /** 证书不完整/自签名，需要忽略 TLS 校验的源。 */
@@ -73,7 +74,12 @@ object JsSourceRepo {
             val prefs = context.getSharedPreferences("js_source_meta", Context.MODE_PRIVATE)
             if (prefs.getInt("patch_version", 0) != PATCH_VERSION) {
                 dir(context).deleteRecursively()
-                prefs.edit().putInt("patch_version", PATCH_VERSION).apply()
+                // 清理旧补丁写入的 e-hentai 测试 cookie（sl/ns），避免污染新脚本
+                context.getSharedPreferences("js_source_cookies", Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("ck_e-hentai.org")
+                    .remove("ck_exhentai.org")
+                    .apply()
                 return@withContext emptyList()
             }
             val index = indexFile(context)
@@ -169,6 +175,7 @@ object JsSourceRepo {
                                     meta to patched
                                 } else null
                             } catch (e: Exception) {
+                                Log.w("JsRepo", "install failed: ${meta.fileName}", e)
                                 null
                             }
                         }
@@ -177,6 +184,10 @@ object JsSourceRepo {
             }
             if (results.isEmpty()) return@withContext emptyList()
             indexFile(context).writeText(indexJson)
+            context.getSharedPreferences("js_source_meta", Context.MODE_PRIVATE)
+                .edit()
+                .putInt("patch_version", PATCH_VERSION)
+                .apply()
             Log.i("JsRepo", "installed ${results.size} sources")
             onStatus("已安装 ${results.size} 个漫画源")
             results.map { (meta, script) ->
@@ -221,7 +232,8 @@ object JsSourceRepo {
      * 仅做最小改动，不破坏源脚本其它逻辑。
      */
     private fun patchScript(key: String, script: String): String = when (key) {
-        "ehentai" -> script.replace(
+        "ehentai" -> {
+            var p = script.replace(
             Regex(
                 """if\(isFavorited\) \{\s*let position = document\s*\.querySelector\("div#fav"\)\s*\.children\[0\]\s*\.attributes\["style"\]\s*\.split\("background-position:0px -"\)\[1\]\s*\.split\("px;"\)\[0\];\s*folder = \(Number\(position-2\) / 19\)\.toString\(\)\s*\}""",
                 setOf(RegexOption.DOT_MATCHES_ALL)
@@ -241,6 +253,199 @@ object JsSourceRepo {
             }
             """.trimIndent()
         )
+            // 预连接暖身：Clash 代理首连 e-hentai 可能冷启动 30s+，init 时后台预热连接
+            p = p.replace(
+                """    // update url
+    url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/ehentai.js"""",
+                """    // update url
+    url = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/ehentai.js"
+
+    async init() {
+        try {
+            Network.get(this.baseUrl + '/', {}).catch(() => {});
+            Network.get(this.baseUrl + '/popular', {}).catch(() => {});
+        } catch (e) {}
+    }"""
+            )
+            // 详情页走 nw=session（delta-comic 风格）；不预置 sl/ns cookie（实测会导致匿名搜索挂起）
+            // 详情页请求与 delta-comic 一致：hc=1&nw=session + referer（临时保留诊断日志）
+            p = p.replace(
+                """            let res = await Network.get(id, {
+                'cookie': 'nw=1'
+            });""",
+                """            let __detailUrl = id.includes('?') ? id : id + '?hc=1&nw=session';
+            let res = await Network.get(__detailUrl, {
+                'cookie': 'nw=1',
+                'referer': this.baseUrl + '/',
+            });"""
+            )
+            // 缩略图分页请求同样带 referer 与 nw=session
+            p = p.replace(
+                """            let res = await Network.get(url, {
+                'cache-time': 'long',
+                'prevent-parallel': 'true',
+                'cookie': 'nw=1'
+            });""",
+                """            let __thumbUrl = url.includes('?') ? url + '&nw=session' : url + '?nw=session';
+            let res = await Network.get(__thumbUrl, {
+                'cache-time': 'long',
+                'prevent-parallel': 'true',
+                'cookie': 'nw=1',
+                'referer': this.baseUrl + '/',
+            });"""
+            )
+            // 复制 delta-comic 的取图方式：直接抓图片页 #img，不再走 api.e-hentai.org
+            p = p.replace(
+                Regex(
+                    """onImageLoad: async \(image, comicId, epId, nl\) => \{.*?\n        \},\n        /\*\*\n         \* \[Optional\] provide configs for a thumbnail loading""",
+                    setOf(RegexOption.DOT_MATCHES_ALL)
+                ),
+                """        onImageLoad: async (image, comicId, epId, nl) => {
+            if (typeof image === 'string' && image.startsWith('http') && !image.includes('/s/')) {
+                return {
+                    url: image,
+                    headers: { 'referer': this.baseUrl + '/' },
+                }
+            }
+            let url = ''
+            if (typeof image === 'string' && image.startsWith('http') && image.includes('/s/')) {
+                url = image
+            } else {
+                let page = Number(image)
+                if (!(page >= 0)) page = 0
+                let cache = await this.getThumbUrls(comicId)
+                let urls = cache.urls || []
+                let pageSize = cache.pageSize || Math.max(urls.length, 1)
+                if (page < urls.length) {
+                    url = urls[page]
+                } else {
+                    let pageIndex = Math.floor(page / pageSize)
+                    let index = page % pageSize
+                    let more = await this.getThumbPage(comicId, pageIndex)
+                    url = more[index] || urls[urls.length - 1]
+                }
+            }
+            if (!url) throw "Failed to get image page url"
+            let res = await Network.get(url, {
+                'cookie': 'nw=1',
+                'referer': this.baseUrl + '/',
+            })
+            if (res.status !== 200) throw 'Invalid status code: ' + res.status
+            let document = new HtmlDocument(res.body)
+            let img = document.querySelector('#img')
+            let imgUrl = img ? img.attributes["src"] : ""
+            document.dispose()
+            if (!imgUrl) throw "Failed to get image url"
+            return {
+                url: imgUrl,
+                headers: { 'referer': this.baseUrl + '/' },
+            }
+        },
+        /**
+         * [Optional] provide configs for a thumbnail loading"""
+            )
+            // loadEp 只返回每页的“图片页 URL”（每 40 页一次请求），真正图片在阅读/下载时懒加载
+            p = p.replace(
+                """        loadEp: async (comicId, epId) => {
+            let comic = await this.comic.loadInfo(comicId)
+            return {
+                images: Array.from({length: comic.maxPage}, (_, i) => i.toString())
+            }
+        },""",
+                """        loadEp: async (comicId, epId) => {
+            let comic = await this.comic.loadInfo(comicId)
+            let total = comic.maxPage || 0
+            if (total === 0) return { images: [] }
+            let cache = await this.getThumbUrls(comicId)
+            let urls = cache.urls || []
+            let pageSize = cache.pageSize || Math.max(urls.length, 1)
+            let results = new Array(total)
+            let pageIndices = new Set()
+            for (let p = 0; p < total; p++) {
+                if (p < urls.length) {
+                    results[p] = urls[p]
+                } else {
+                    pageIndices.add(Math.floor(p / pageSize))
+                }
+            }
+            await Promise.all(Array.from(pageIndices).map((pi) => this.getThumbPage(comicId, pi)))
+            for (let p = 0; p < total; p++) {
+                if (p >= urls.length) {
+                    let pi = Math.floor(p / pageSize)
+                    let idx = p % pageSize
+                    let more = await this.getThumbPage(comicId, pi)
+                    results[p] = more[idx] || urls[urls.length - 1]
+                }
+            }
+            return { images: results }
+        },"""
+            )
+            // 搜索作者：从 tags 里提取 artist/cosplayer/group，方便卡片显示真实作者
+            p = p.replace(
+                "    async onLoadFailed() {",
+                """    getThumbUrls(comicId) {
+        if (!this.__thumbCache) this.__thumbCache = {};
+        if (!this.__thumbCache[comicId]) {
+            this.__thumbCache[comicId] = (async () => {
+                let first = await this.comic.loadThumbnails(comicId);
+                return {
+                    urls: first.urls || [],
+                    pageSize: Math.max(first.thumbnails.length, first.urls.length, 1)
+                };
+            })();
+        }
+        return this.__thumbCache[comicId];
+    }
+
+    getThumbPage(comicId, pageIndex) {
+        if (!this.__thumbCache) this.__thumbCache = {};
+        let key = comicId + '#p' + pageIndex;
+        if (!this.__thumbCache[key]) {
+            this.__thumbCache[key] = (async () => {
+                let t = await this.comic.loadThumbnails(comicId, String(pageIndex));
+                return t.urls || [];
+            })();
+        }
+        return this.__thumbCache[key];
+    }
+
+    getAuthorFromTags(tags, fallback) {
+        try {
+            if (Array.isArray(tags)) {
+                for (let prefix of ["artist:", "cosplayer:", "group:"]) {
+                    let hit = tags.find((e) => e && e.toLowerCase().startsWith(prefix));
+                    if (hit) {
+                        let v = hit.split(":")[1];
+                        if (v && v.trim()) return v.trim();
+                    }
+                }
+            }
+        } catch (e) {}
+        return fallback || "";
+    }
+
+    async onLoadFailed() {"""
+            )
+            // extended 模式
+            p = p.replace(
+                """                    subTitle: uploader,
+                    cover: coverPath,
+                    tags: tags,""",
+                """                    subTitle: this.getAuthorFromTags(tags, uploader),
+                    cover: coverPath,
+                    tags: tags,"""
+            )
+            // compact 模式
+            p = p.replace(
+                """                    subTitle: uploader,
+                    cover: cover,
+                    tags: tags,""",
+                """                    subTitle: this.getAuthorFromTags(tags, uploader),
+                    cover: cover,
+                    tags: tags,"""
+            )
+            p
+        }
         "wnacg" -> script.replace(
             Regex(
                 """let title = document\.querySelector\("div\.userwrap > h2"\)\.text\s*""" +
@@ -290,31 +495,71 @@ object JsSourceRepo {
             """.trimIndent()
         )
         // hitomi：gg.js（图片子域映射）10 分钟内复用，避免每开一个章节都重新下载并 eval
-        "hitomi" -> script.replace(
-            Regex(
-                """async function get_image_srcs\(files\) \{\s*const resp = await Network\.get\(\s*"https://" \+ domain \+ "/" \+ "gg\.js\?_=" \+ new Date\(\)\.getTime\(\),\s*\{\s*referer: refererUrl,\s*\}\s*\);\s*if \(resp\.status >= 400\) \{\s*throw new Error\(resp\.status\);\s*\}\s*eval\(resp\.body\);\s*if \(!gg\.b\) throw new Error\(\);""",
-                setOf(RegexOption.DOT_MATCHES_ALL)
-            ),
-            """
-            let __ggCacheTime = 0;
-            async function get_image_srcs(files) {
-              const now = Date.now();
-              if (!(__ggCacheTime && now - __ggCacheTime < 600000 && typeof gg !== 'undefined' && gg && gg.b)) {
-                const resp = await Network.get(
-                  "https://" + domain + "/" + "gg.js?_=" + now,
-                  {
-                    referer: refererUrl,
+        "hitomi" -> {
+            var patched = script.replace(
+                Regex(
+                    """async function get_image_srcs\(files\) \{\s*const resp = await Network\.get\(\s*"https://" \+ domain \+ "/" \+ "gg\.js\?_=" \+ new Date\(\)\.getTime\(\),\s*\{\s*referer: refererUrl,\s*\}\s*\);\s*if \(resp\.status >= 400\) \{\s*throw new Error\(resp\.status\);\s*\}\s*eval\(resp\.body\);\s*if \(!gg\.b\) throw new Error\(\);""",
+                    setOf(RegexOption.DOT_MATCHES_ALL)
+                ),
+                """
+                let __ggCacheTime = 0;
+                async function get_image_srcs(files) {
+                  const now = Date.now();
+                  if (!(__ggCacheTime && now - __ggCacheTime < 600000 && typeof gg !== 'undefined' && gg && gg.b)) {
+                    const resp = await Network.get(
+                      "https://" + domain + "/" + "gg.js?_=" + now,
+                      {
+                        referer: refererUrl,
+                      }
+                    );
+                    if (resp.status >= 400) {
+                      throw new Error(resp.status);
+                    }
+                    eval(resp.body);
+                    if (!gg.b) throw new Error();
+                    __ggCacheTime = now;
                   }
-                );
-                if (resp.status >= 400) {
-                  throw new Error(resp.status);
-                }
-                eval(resp.body);
-                if (!gg.b) throw new Error();
-                __ggCacheTime = now;
-              }
+                """.trimIndent()
+            )
+            // hitomi CDN 现在默认给 AVIF（Android 平台解码不稳定），改要 webp
+            patched.replace(
+                Regex("""return files\.map\(\(image\) => url_from_url_from_hash\(0, image, "avif"\)\);"""),
+                """return files.map((image) => url_from_url_from_hash(0, image, "webp"));"""
+            )
+        }
+        // 漫画人：loadEp 直接把 epId 拼成相对路径，Cronet 无法请求；补成绝对 URL
+        "manhuaren" -> script.replace(
+            Regex("""let url = `\$\{epId\}/`;"""),
+            """
+            let url = epId.startsWith('http') ? epId : this.baseUrl + epId;
+            if (!url.endsWith('/')) url += '/';
             """.trimIndent()
         )
+        // comick：loadEp 请求章节页没带 headers，容易被反爬拒绝导致图片列表为空
+        "comick" -> script.replace(
+            Regex("""let res = await Network\.get\(url\);"""),
+            """let res = await Network.get(url, Comick.getRandomHeaders());"""
+        )
+        // picacg：登录后补存账号，否则搜索时的 reLogin 报 Invalid account data
+        "picacg" -> {
+            var patched = script.replace(
+                Regex("""this\.saveData\('token', json\.data\.token\)\s*return 'ok'"""),
+                """this.saveData('token', json.data.token); this.saveData('account', [account, pwd]); return 'ok'"""
+            )
+            // 账号数据缺失时不再中断，直接用现有 token 重试
+            patched = patched.replace(
+                Regex("""if\(!Array\.isArray\(account\)\) \{\s*throw new Error\('Failed to reLogin: Invalid account data'\);\s*\}"""),
+                """if(!Array.isArray(account)) { return 'ok'; }"""
+            )
+            patched = patched.replace(
+                Regex("""this\.buildHeaders\('POST', `comics/advanced-search\?page=\$\{page\}`, this\.loadData\('token'\)\)"""),
+                """this.buildHeaders('POST', 'comics/advanced-search?page=' + page, this.loadData('token'))"""
+            )
+            patched.replace(
+                Regex("""throw 'Invalid status code: ' \+ res\.status"""),
+                """throw 'Invalid status code: ' + res.status + ' body=' + String(res.body || '').substring(0, 160)"""
+            )
+        }
         // 拷贝漫画：动态 API 域名没有真正持久化（脚本里写 this.settings 不走 loadSetting），
         // 导致一直用默认域名 api.copy2000.online，它一抽风就全挂。
         // 这里把网络2接口返回的可用域名 saveData 持久化，并加入候选域名 + 失败自动刷新重试。

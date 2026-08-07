@@ -1,6 +1,7 @@
 package com.example.library
 
 import android.app.Application
+import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,10 +16,14 @@ import com.example.source.impl.MangaDexSource
 import com.example.source.js.JsSourceRepo
 import com.example.source.zlibrary.ZLibrarySource
 import com.example.source.storage.SharedPreferencesSourceStorage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -27,6 +32,9 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     
@@ -73,27 +81,39 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _activeComicChapter = MutableStateFlow<ComicChapter?>(null)
     val activeComicChapter: StateFlow<ComicChapter?> = _activeComicChapter.asStateFlow()
 
-    private val _comicDownloading = MutableStateFlow<Set<String>>(emptySet())
-    val comicDownloading: StateFlow<Set<String>> = _comicDownloading.asStateFlow()
+    /** 漫画下载统一由应用级 ComicDownloadManager 管理：切页面不中断、失败可重试。 */
+    val comicDownloadTasks: StateFlow<Map<String, ComicDownloadTask>> = ComicDownloadManager.tasks
 
-    private val _comicDownloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
-    val comicDownloadProgress: StateFlow<Map<String, Float>> = _comicDownloadProgress.asStateFlow()
+    val comicDownloading: StateFlow<Set<String>> = ComicDownloadManager.tasks
+        .map { tasks -> tasks.filterValues { it.status == ComicDownloadStatus.DOWNLOADING }.keys }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    private val _comicPaused = MutableStateFlow<Set<String>>(emptySet())
-    val comicPaused: StateFlow<Set<String>> = _comicPaused.asStateFlow()
+    val comicDownloadProgress: StateFlow<Map<String, Float>> = ComicDownloadManager.tasks
+        .map { tasks -> tasks.mapValues { (_, t) -> t.progress } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    private val comicDownloadJobs = mutableMapOf<String, Job>()
-    private val comicDownloadDirs = mutableMapOf<String, java.io.File>()
-    private val pendingPause = mutableSetOf<String>()
+    val comicPaused: StateFlow<Set<String>> = ComicDownloadManager.tasks
+        .map { tasks -> tasks.filterValues { it.status == ComicDownloadStatus.PAUSED }.keys }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    private val _comicMessage = MutableStateFlow<String?>(null)
-    val comicMessage: StateFlow<String?> = _comicMessage.asStateFlow()
+    val comicMessage: StateFlow<String?> = ComicDownloadManager.message
 
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
     init {
         _searchHistory.value = prefs.searchHistory
+        // 漫画下载完成后刷新“已导入本地书”状态
+        val notifiedSuccess = mutableSetOf<String>()
+        viewModelScope.launch {
+            ComicDownloadManager.tasks.collect { tasks ->
+                tasks.forEach { (id, t) ->
+                    if (t.status == ComicDownloadStatus.SUCCESS && notifiedSuccess.add(id)) {
+                        markLocalBookImported()
+                    }
+                }
+            }
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             sourceManager.initialize()
             sourceManager.registerSource(ZLibrarySource(application))
@@ -264,103 +284,57 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** 供阅读器按页懒加载：把 e-hentai 图片页 URL 解析成真实图片 URL（带缓存）。 */
+    suspend fun resolveComicImage(url: String): String? = withContext(Dispatchers.IO) {
+        val source = sourceManager.availableSources.value
+            .firstOrNull { it.id == _comicBook.value?.sourceId } as? ComicSource
+        source?.resolveChapterImage(url)
+    }
+
+    /** 供阅读器按页懒加载：真实图片 URL 需要的请求头。 */
+    suspend fun resolveComicImageHeaders(url: String): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            val source = sourceManager.availableSources.value
+                .firstOrNull { it.id == _comicBook.value?.sourceId } as? ComicSource
+            source?.getResolvedHeaders(url) ?: emptyMap()
+        }
+
     fun downloadComicChapter(book: SearchBook, chapter: ComicChapter) {
         if (chapter.external) {
-            _comicMessage.value = "站外链接章节暂不支持下载"
+            android.widget.Toast.makeText(
+                getApplication(),
+                "站外链接章节暂不支持下载",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
             return
         }
         val source = sourceManager.availableSources.value
             .firstOrNull { it.id == book.sourceId } as? ComicSource
         if (source == null) {
-            _comicMessage.value = "当前书源不支持漫画"
+            android.widget.Toast.makeText(
+                getApplication(),
+                "当前书源不支持漫画",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
             return
         }
-        // 正在下载且未暂停时忽略重复点击；已暂停允许重新继续
-        if (chapter.id in _comicDownloading.value && chapter.id !in _comicPaused.value) return
-        val app = getApplication<android.app.Application>()
-        val job = viewModelScope.launch {
-            var keepPaused = false
-            var completed = false
-            _comicDownloading.value = _comicDownloading.value + chapter.id
-            _comicPaused.value = _comicPaused.value - chapter.id
-            if (chapter.id !in _comicDownloadProgress.value) {
-                _comicDownloadProgress.value = _comicDownloadProgress.value + (chapter.id to 0f)
-            }
-            try {
-                val images = when (val result = source.getChapterImages(chapter.id)) {
-                    is SourceResult.Success -> result.data
-                    is SourceResult.Error -> {
-                        _comicMessage.value = result.exception.message ?: "获取图片列表失败"
-                        return@launch
-                    }
-                }
-                val imageHeaders = source.getChapterImageHeaders(chapter.id, images)
-                val dir = comicDownloadDirs[chapter.id]
-                    ?: java.io.File(app.filesDir, "comics_${System.currentTimeMillis()}")
-                        .apply { mkdirs() }
-                        .also { comicDownloadDirs[chapter.id] = it }
-                val currentProgress = _comicDownloadProgress.value[chapter.id] ?: 0f
-                val startIndex = (currentProgress * images.size).toInt()
-                    .coerceIn(0, (images.size - 1).coerceAtLeast(0))
-                val importResult = ComicLocalImporter.importChapter(
-                    context = app,
-                    bookDao = database.bookDao(),
-                    book = book,
-                    chapter = chapter,
-                    imageUrls = images,
-                    headers = imageHeaders,
-                    referer = if (book.sourceId == "mangadex") "https://mangadex.live/" else null,
-                    targetDir = dir,
-                    startIndex = startIndex,
-                    onProgress = { p ->
-                        _comicDownloadProgress.value = _comicDownloadProgress.value + (chapter.id to p)
-                    }
-                )
-                importResult.onSuccess {
-                    completed = true
-                    _comicMessage.value = "已下载到书架：《${it.title}》"
-                    markLocalBookImported()
-                }.onFailure {
-                    _comicMessage.value = it.message ?: "章节下载失败"
-                }
-            } catch (e: CancellationException) {
-                keepPaused = chapter.id in pendingPause
-                pendingPause.remove(chapter.id)
-                if (keepPaused) {
-                    _comicPaused.value = _comicPaused.value + chapter.id
-                }
-                throw e
-            } finally {
-                comicDownloadJobs.remove(chapter.id)
-                pendingPause.remove(chapter.id)
-                if (keepPaused) return@launch
-                _comicDownloading.value = _comicDownloading.value - chapter.id
-                _comicPaused.value = _comicPaused.value - chapter.id
-                _comicDownloadProgress.value = _comicDownloadProgress.value - chapter.id
-                val dir = comicDownloadDirs.remove(chapter.id)
-                if (!completed && dir != null) dir.deleteRecursively()
-            }
-        }
-        comicDownloadJobs[chapter.id] = job
+        ComicDownloadManager.start(getApplication(), database, book, chapter, source)
+    }
+
+    fun retryComicChapter(book: SearchBook, chapter: ComicChapter) {
+        downloadComicChapter(book, chapter)
     }
 
     fun pauseComicChapter(chapterId: String) {
-        if (chapterId !in _comicDownloading.value) return
-        if (chapterId in _comicPaused.value) return
-        pendingPause.add(chapterId)
-        comicDownloadJobs[chapterId]?.cancel()
+        ComicDownloadManager.pause(chapterId)
     }
 
     fun cancelComicChapter(chapterId: String) {
-        pendingPause.remove(chapterId)
-        comicDownloadJobs.remove(chapterId)?.cancel()
-        _comicDownloading.value = _comicDownloading.value - chapterId
-        _comicPaused.value = _comicPaused.value - chapterId
-        _comicDownloadProgress.value = _comicDownloadProgress.value - chapterId
+        ComicDownloadManager.cancel(chapterId)
     }
 
     fun clearComicMessage() {
-        _comicMessage.value = null
+        ComicDownloadManager.clearMessage()
     }
 
     fun recordSearch(query: String) {
@@ -374,6 +348,214 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun clearSearchHistory() {
         _searchHistory.value = emptyList()
         prefs.searchHistory = emptyList()
+    }
+
+    /**
+     * 远程触发的逐源冒烟测试（adb am start -n ... --ez smoke_test true）：
+     * 对每个 JS 漫画源 + MangaDex 依次做 搜索 → 章节 → 图片列表 → 真实拉取第一张图并解码，
+     * 结果输出到 Logcat 的 SmokeTest 标签，用于排查“黑屏”问题。
+     */
+    fun runSourceSmokeTest(filter: String = "", keyword: String = "") {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.i("SmokeTest", "=== smoke test start ===")
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(25, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+                .build()
+            val prefs = com.example.data.PreferencesManager(getApplication())
+            var jsSources = JsSourceRepo.loadCached(getApplication(), includeAdult = true)
+            if (jsSources.isEmpty()) {
+                jsSources = JsSourceRepo.install(getApplication(), prefs.jsSourceRepoUrl, includeAdult = true)
+            }
+            val all = jsSources + listOf(MangaDexSource())
+            all.forEach { source ->
+                val name = (source as? com.example.source.js.JsComicSource)?.name ?: source.id
+                if (filter.isNotBlank() && !source.id.contains(filter, ignoreCase = true) &&
+                    !name.contains(filter, ignoreCase = true)
+                ) {
+                    return@forEach
+                }
+                val started = System.currentTimeMillis()
+                try {
+                    if (source.id == "js_picacg") {
+                        val loginResult = source.login(
+                            LoginCredential(
+                                username = "a1553846342",
+                                password = "a1553846342"
+                            )
+                        )
+                        Log.i("SmokeTest", "$name|login=${loginResult is SourceResult.Success}")
+                    }
+                    var books = emptyList<SearchBook>()
+                    var second: SourceResult<List<SearchBook>>? = null
+                    val searchTimeout = if (name.contains("ehentai", ignoreCase = true)) 50000L else 15000L
+                    val first = if (keyword.isNotBlank()) {
+                        withTimeoutOrNull(searchTimeout) { source.search(keyword) }
+                    } else {
+                        withTimeoutOrNull(searchTimeout) { source.search("海贼王") }
+                    }
+                    if (first is SourceResult.Success && first.data.isNotEmpty()) {
+                        books = first.data
+                    } else if (keyword.isBlank()) {
+                        second = withTimeoutOrNull(searchTimeout) { source.search("one piece") }
+                        if (second is SourceResult.Success) books = second.data
+                    }
+                    if (books.isEmpty()) {
+                        val err1 = (first as? SourceResult.Error)?.exception?.message
+                        val err2 = if (first is SourceResult.Success) "" else (second as? SourceResult.Error)?.exception?.message ?: ""
+                        Log.i("SmokeTest", "$name|FAIL|search empty ($err1 / $err2)|${System.currentTimeMillis() - started}ms")
+                        return@forEach
+                    }
+                    val chapters = when (val r = withTimeoutOrNull(20000) { source.getChapters(books.first().id) }) {
+                        is SourceResult.Success -> r.data
+                        is SourceResult.Error -> {
+                            Log.i("SmokeTest", "$name|FAIL|chapters err: ${r.exception.message}|${System.currentTimeMillis() - started}ms")
+                            return@forEach
+                        }
+                        else -> emptyList()
+                    }
+                    if (chapters.isEmpty()) {
+                        Log.i("SmokeTest", "$name|FAIL|chapters empty|${System.currentTimeMillis() - started}ms")
+                        return@forEach
+                    }
+                    val chapter = chapters.first()
+                    Log.i("SmokeTest", "  first chapter id: ${chapter.id.take(120)}")
+                    val imgTimeout = if (name.contains("hitomi", ignoreCase = true) || name.contains("ehentai", ignoreCase = true)) 60000L else 25000L
+                    val urls = when (val r = withTimeoutOrNull(imgTimeout) { source.getChapterImages(chapter.id) }) {
+                        is SourceResult.Success -> r.data
+                        is SourceResult.Error -> {
+                            Log.i("SmokeTest", "$name|FAIL|images err: ${r.exception.message}|${System.currentTimeMillis() - started}ms")
+                            return@forEach
+                        }
+                        else -> emptyList()
+                    }
+                    if (urls.isEmpty()) {
+                        Log.i("SmokeTest", "$name|FAIL|images empty|${System.currentTimeMillis() - started}ms")
+                        return@forEach
+                    }
+                    var fetchTarget = urls.first()
+                    val resolved = source.resolveChapterImage(fetchTarget)
+                    if (resolved != null && resolved != fetchTarget) fetchTarget = resolved
+                    val baseHeaders = source.getChapterImageHeaders(chapter.id, urls)[urls.first()] ?: emptyMap()
+                    val resolvedHeaders = source.getResolvedHeaders(fetchTarget)
+                    val headers = baseHeaders + resolvedHeaders
+                    val ok = fetchAndDecode(client, fetchTarget, headers)
+                    if (ok) {
+                        Log.i("SmokeTest", "$name|OK|pages=${urls.size}|${System.currentTimeMillis() - started}ms")
+                    } else {
+                        Log.i("SmokeTest", "$name|FAIL|image fetch/decode|pages=${urls.size}|${System.currentTimeMillis() - started}ms")
+                    }
+                } catch (e: Exception) {
+                    Log.i("SmokeTest", "$name|FAIL|${e.javaClass.simpleName}: ${e.message}|${System.currentTimeMillis() - started}ms")
+                }
+            }
+            Log.i("SmokeTest", "=== smoke test done ===")
+        }
+    }
+
+    private suspend fun fetchAndDecode(
+        client: OkHttpClient,
+        url: String,
+        headers: Map<String, String>
+    ): Boolean = withTimeoutOrNull(30000) {
+        var lastErr: Exception? = null
+        for (attempt in 1..3) {
+            try {
+                return@withTimeoutOrNull fetchOnce(client, url, headers)
+            } catch (e: Exception) {
+                lastErr = e
+                Log.i("SmokeTest", "  fetch attempt $attempt failed: ${e.javaClass.simpleName}: ${e.message} url=${url.take(120)}")
+                kotlinx.coroutines.delay(1000L * attempt)
+            }
+        }
+        Log.i("SmokeTest", "  fetch all attempts failed: ${lastErr?.message}")
+        false
+    } ?: false
+
+    private suspend fun fetchOnce(
+        client: OkHttpClient,
+        url: String,
+        headers: Map<String, String>
+    ): Boolean {
+        if (url.startsWith("file:")) {
+            val f = java.io.File(java.net.URI.create(url))
+            if (!f.exists() || f.length() == 0L) return false
+            val raw = f.readBytes()
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size)
+            val ok = bmp != null && bmp.width > 0
+            Log.i("SmokeTest", "  file fetch ${f.name}: ${raw.size} bytes, decode ok=$ok")
+            return ok
+        }
+        val builder = Request.Builder().url(url)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.128 Mobile Safari/537.36"
+            )
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        if (headers.keys.none { it.equals("Accept", ignoreCase = true) }) {
+            builder.header("Accept", "image/webp,image/jpeg,image/png,*/*;q=0.8")
+        }
+        val cookie = com.example.source.js.JsCookieJar.cookieHeader(getApplication(), url)
+        if (cookie.isNotBlank()) builder.header("Cookie", cookie)
+        client.newCall(builder.build()).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.i("SmokeTest", "  fetch ${url.take(90)} -> HTTP ${response.code}")
+                return false
+            }
+            val raw = response.body?.bytes() ?: return false
+            Log.i(
+                "SmokeTest",
+                "  fetch ${url.take(90)} -> HTTP 200, ${raw.size} bytes, type=${response.header("Content-Type")}"
+            )
+            var bytes = ImageBytes.normalizeImage(raw, response.header("Content-Encoding"))
+            val magicAfter = bytes.take(12).joinToString(" ") { "%02X".format(it) }
+            Log.i("SmokeTest", "  after normalize: ${bytes.size} bytes, magic=$magicAfter")
+            if (ImageBytes.isAvif(bytes) && !ImageBytes.decodeOk(bytes)) {
+                for (candidate in ImageBytes.webpVariants(url)) {
+                    try {
+                        val rb = Request.Builder().url(candidate)
+                            .header(
+                                "User-Agent",
+                                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.128 Mobile Safari/537.36"
+                            )
+                        client.newCall(rb.build()).execute().use { r2 ->
+                            if (r2.isSuccessful) {
+                                val b2 = r2.body?.bytes()
+                                if (b2 != null) {
+                                    val p2 = ImageBytes.normalizeImage(b2, r2.header("Content-Encoding"))
+                                    if (!ImageBytes.isAvif(p2) && ImageBytes.decodeOk(p2)) {
+                                        Log.i("SmokeTest", "  webp fallback OK: $candidate")
+                                        bytes = p2
+                                    }
+                                }
+                            }
+                        }
+                        if (!ImageBytes.isAvif(bytes) && ImageBytes.decodeOk(bytes)) break
+                    } catch (e: Exception) {
+                        // 尝试下一个候选
+                    }
+                }
+            }
+            bytes = if (MhttuImageDecryptor.isEncryptedHost(
+                    try { java.net.URL(url).host } catch (e: Exception) { "" }
+                )
+            ) {
+                MhttuImageDecryptor.decryptIfNeeded(bytes)
+            } else {
+                bytes
+            }
+            val transformed = com.example.source.js.JsImageProcessor.transform(url, bytes)
+            if (transformed != null) {
+                Log.i("SmokeTest", "  modifyImage applied: ${raw.size} -> ${transformed.size} bytes")
+                bytes = transformed
+            }
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            val ok = bmp != null && bmp.width > 0 && bmp.height > 0
+            Log.i("SmokeTest", "  decode ok=$ok size=${bmp?.width}x${bmp?.height}")
+            return ok
+        }
     }
 
     fun clearComicState() {

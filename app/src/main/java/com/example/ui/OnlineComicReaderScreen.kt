@@ -27,13 +27,21 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.ImageLoader
 import coil.request.ImageRequest
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import com.example.library.MhttuImageDecryptor
+import com.example.library.ImageBytes
+import com.example.source.js.JsImageProcessor
 import com.example.source.js.JsCookieJar
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import com.example.ui.components.ChasingDots
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import net.engawapg.lib.zoomable.ExperimentalZoomableApi
 import net.engawapg.lib.zoomable.rememberZoomState
 import net.engawapg.lib.zoomable.zoomable
@@ -50,6 +58,8 @@ fun OnlineComicReaderScreen(
     error: String?,
     referer: String? = null,
     imageHeaders: Map<String, Map<String, String>> = emptyMap(),
+    resolveImage: (suspend (String) -> String?)? = null,
+    resolveImageHeaders: (suspend (String) -> Map<String, String>)? = null,
     onBack: () -> Unit,
     onRetry: () -> Unit
 ) {
@@ -60,12 +70,41 @@ fun OnlineComicReaderScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val currentResolveImage by rememberUpdatedState(resolveImage)
+    val currentResolveImageHeaders by rememberUpdatedState(resolveImageHeaders)
 
     // 漫画阅读专用加载器：对 tu.mhttu.cc 加密图床自动 AES 解密
     val imageLoader = remember {
         val client = OkHttpClient.Builder()
+            .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor { chain ->
-                val original = chain.request()
+                var original = chain.request()
+                if (currentResolveImage != null) {
+                    val pageUrl = original.url.toString()
+                    val resolved = runBlocking { currentResolveImage!!(pageUrl) }
+                    if (!resolved.isNullOrBlank() && resolved != pageUrl) {
+                        if (resolved.startsWith("file:")) {
+                            // H@H 图片已由 Cronet 下载缓存到本地，直接作为响应返回，避免 OkHttp 请求 file://
+                            val f = java.io.File(java.net.URI.create(resolved))
+                            if (f.exists() && f.length() > 0) {
+                                val bytes = f.readBytes()
+                                return@addInterceptor okhttp3.Response.Builder()
+                                    .request(original)
+                                    .protocol(Protocol.HTTP_1_1)
+                                    .code(200)
+                                    .message("OK")
+                                    .header("Content-Type", "image/*")
+                                    .body(bytes.toResponseBody("image/*".toMediaType()))
+                                    .build()
+                            }
+                        } else {
+                            val rb = original.newBuilder().url(resolved)
+                            val rh = runBlocking { currentResolveImageHeaders?.invoke(resolved) }.orEmpty()
+                            rh.forEach { (k, v) -> rb.header(k, v) }
+                            original = rb.build()
+                        }
+                    }
+                }
                 val builder = original.newBuilder()
                 if (original.headers.names().none { it.equals("User-Agent", ignoreCase = true) }) {
                     builder.header(
@@ -77,21 +116,51 @@ fun OnlineComicReaderScreen(
                     val cookie = JsCookieJar.cookieHeader(context, original.url.toString())
                     if (cookie.isNotBlank()) builder.header("Cookie", cookie)
                 }
-                val response = chain.proceed(builder.build())
-                val host = response.request.url.host
-                if (MhttuImageDecryptor.isEncryptedHost(host)) {
-                    val bytes = response.body?.bytes()
-                    if (bytes != null) {
-                        val decrypted = MhttuImageDecryptor.decryptIfNeeded(bytes)
-                        response.newBuilder()
-                            .body(decrypted.toResponseBody(response.body?.contentType()))
-                            .build()
-                    } else {
-                        response
-                    }
-                } else {
-                    response
+                // 不声明 avif，避免部分图源 CDN 返回 BitmapFactory/Coil 解不了的 AVIF
+                if (original.headers.names().none { it.equals("Accept", ignoreCase = true) }) {
+                    builder.header("Accept", "image/webp,image/jpeg,image/png,*/*;q=0.8")
                 }
+                var response: okhttp3.Response? = null
+                var lastError: Exception? = null
+                for (attempt in 1..3) {
+                    try {
+                        response = chain.proceed(builder.build())
+                        break
+                    } catch (e: Exception) {
+                        lastError = e
+                        Thread.sleep(1000L * attempt)
+                    }
+                }
+                if (response == null) throw (lastError ?: Exception("图片请求失败"))
+                val finalResponse = response!!
+                val raw = finalResponse.body?.bytes() ?: return@addInterceptor finalResponse
+                val host = response.request.url.host
+                var processed = ImageBytes.normalizeImage(raw, finalResponse.header("Content-Encoding"))
+                // 平台解不了 AVIF 时，自动尝试 hitomi 类 CDN 的 webp 变体
+                if (ImageBytes.isAvif(processed) && !ImageBytes.decodeOk(processed)) {
+                    for (candidate in ImageBytes.webpVariants(response.request.url.toString())) {
+                        try {
+                            val r2 = chain.proceed(response.request.newBuilder().url(candidate).build())
+                            val b2 = r2.body?.bytes() ?: continue
+                            val p2 = ImageBytes.normalizeImage(b2, r2.header("Content-Encoding"))
+                            if (!ImageBytes.isAvif(p2) && ImageBytes.decodeOk(p2)) {
+                                processed = p2
+                                break
+                            }
+                        } catch (e: Exception) {
+                            // 尝试下一个候选
+                        }
+                    }
+                }
+                processed = if (MhttuImageDecryptor.isEncryptedHost(host)) {
+                    MhttuImageDecryptor.decryptIfNeeded(processed)
+                } else {
+                    processed
+                }
+                processed = JsImageProcessor.transform(response.request.url.toString(), processed) ?: processed
+                finalResponse.newBuilder()
+                    .body(processed.toResponseBody(finalResponse.body?.contentType()))
+                    .build()
             }
             .build()
         ImageLoader.Builder(context).okHttpClient(client).crossfade(true).build()
@@ -282,8 +351,10 @@ private fun OnlineComicPage(
     onTapCenter: () -> Unit = {}
 ) {
     var pageWidth by remember { mutableIntStateOf(0) }
+    var attempt by remember(url) { mutableIntStateOf(0) }
+    var autoRetried by remember(url) { mutableStateOf(false) }
     val zoomState = rememberZoomState()
-    val request = remember(url, referer, headers) {
+    val request = remember(url, referer, headers, attempt) {
         val builder = ImageRequest.Builder(context)
             .data(url)
             .crossfade(true)
@@ -300,7 +371,7 @@ private fun OnlineComicPage(
             .onSizeChanged { pageWidth = it.width },
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = request,
             imageLoader = imageLoader,
             contentDescription = null,
@@ -326,6 +397,51 @@ private fun OnlineComicPage(
             } else {
                 Modifier.fillMaxSize()
             }
-        )
+        ) {
+            when (painter.state) {
+                is AsyncImagePainter.State.Loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ChasingDots(size = 30.dp, color = MintPrimary)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "加载图片中…",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+                is AsyncImagePainter.State.Error -> {
+                    LaunchedEffect(Unit) {
+                        if (!autoRetried) {
+                            autoRetried = true
+                            kotlinx.coroutines.delay(1500)
+                            attempt++
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "图片加载失败",
+                                color = Color(0xFFFF8A8A),
+                                fontSize = 13.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(onClick = { attempt++ }) {
+                                Text("重试", color = MintPrimary)
+                            }
+                        }
+                    }
+                }
+                else -> SubcomposeAsyncImageContent()
+            }
+        }
     }
 }

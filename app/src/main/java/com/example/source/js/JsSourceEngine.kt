@@ -9,6 +9,7 @@ import com.example.source.SourceException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -33,6 +34,12 @@ class JsSourceEngine(
     }
 
     fun isLoggedIn(): Boolean = handler.isLoggedIn()
+
+    /** 用 Cronet 直接下载图片字节（H@H 等 OkHttp 握手失败的图床）。 */
+    suspend fun fetchImageBytes(url: String, headers: Map<String, String>): ByteArray? =
+        withContext(Dispatchers.IO) {
+            handler.fetchImageBytes(url, headers)
+        }
 
     /** 执行一段以 src 为实例的 JS 表达式，返回 JSON 字符串 {ok, data|error}。 */
     suspend fun call(jsCall: String): String? = mutex.withLock {
@@ -99,6 +106,35 @@ class JsSourceEngine(
             "{\"ok\":false,\"error\":${org.json.JSONObject.quote(message)}}"
         }
     }
+
+    /** 运行脚本返回的 modifyImage 代码，对图片字节做像素级重排（如禁漫天堂分块乱序）。 */
+    suspend fun transformImage(jsCode: String, input: ByteArray): ByteArray? = mutex.withLock {
+        ensureReadyLocked()
+        val key = handler.createImage(input) ?: return@withLock null
+        try {
+            val code = """
+                (() => {
+                    const __img = new Image($key);
+                    $jsCode
+                    const __res = modifyImage(__img);
+                    const __outKey = __res && __res.key != null ? String(__res.key) : String($key);
+                    return __outKey;
+                })()
+            """.trimIndent()
+            val raw = quickJs.evaluate<String?>(code, filename = "modify_image.js")
+            val outKey = raw?.trim()?.toIntOrNull()
+            if (outKey == null) null else handler.exportImageBytes(outKey)
+        } catch (e: Exception) {
+            Log.w("JsEngine[$sourceKey]", "modifyImage failed", e)
+            null
+        } finally {
+            handler.disposeImage(key)
+        }
+    }
+
+    /** OkHttp 拦截器等阻塞场景使用 */
+    fun transformImageBlocking(jsCode: String, input: ByteArray): ByteArray? =
+        kotlinx.coroutines.runBlocking { transformImage(jsCode, input) }
 
     private suspend fun ensureReadyLocked() {
         if (ready) return

@@ -107,6 +107,7 @@ fun LibraryScreen(
     val comicDownloading by viewModel.comicDownloading.collectAsState()
     val comicDownloadProgress by viewModel.comicDownloadProgress.collectAsState()
     val comicPaused by viewModel.comicPaused.collectAsState()
+    val comicDownloadTasks by viewModel.comicDownloadTasks.collectAsState()
     val comicBook by viewModel.comicBook.collectAsState()
     val comicChapters by viewModel.comicChapters.collectAsState()
     val searchHistory by viewModel.searchHistory.collectAsState()
@@ -857,15 +858,7 @@ fun LibraryScreen(
                 )
                 val book = activeDownloadBook
                 val st = book?.let { downloadStates[it.id] } ?: DownloadState.Idle
-                val comicTask = comicDownloading.firstOrNull()
-                val comicProgress = comicTask?.let { comicDownloadProgress[it] } ?: 0f
-                val comicPausedTask = comicTask?.let { comicPaused.contains(it) } ?: false
-                val comicTitle = comicTask?.let { task ->
-                    comicChapters.firstOrNull { it.id == task }?.title ?: "漫画章节"
-                } ?: ""
-                val comicChapter = comicTask?.let { task ->
-                    comicChapters.firstOrNull { it.id == task }
-                }
+                val comicTasks = comicDownloadTasks.values.toList()
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.92f)
@@ -876,20 +869,21 @@ fun LibraryScreen(
                         }
                         .clickable(enabled = false) {} // Prevent clicks from passing through
                 ) {
-                    if (comicTask != null) {
+                    if (comicTasks.isNotEmpty()) {
                         ComicDownloadGlassCard(
-                            title = comicTitle,
-                            progress = comicProgress,
-                            paused = comicPausedTask,
-                            onPause = { viewModel.pauseComicChapter(comicTask) },
-                            onResume = {
-                                comicChapter?.let { chapter ->
-                                    comicBook?.let { book ->
-                                        viewModel.downloadComicChapter(book, chapter)
-                                    }
+                            tasks = comicTasks,
+                            onPause = { viewModel.pauseComicChapter(it) },
+                            onResume = { id ->
+                                comicDownloadTasks[id]?.let { t ->
+                                    viewModel.downloadComicChapter(t.book, t.chapter)
                                 }
                             },
-                            onCancel = { viewModel.cancelComicChapter(comicTask) },
+                            onRetry = { id ->
+                                comicDownloadTasks[id]?.let { t ->
+                                    viewModel.retryComicChapter(t.book, t.chapter)
+                                }
+                            },
+                            onCancel = { viewModel.cancelComicChapter(it) },
                             onDismiss = { showDownloadPanel = false }
                         )
                     } else {
@@ -910,12 +904,11 @@ fun LibraryScreen(
 
 @Composable
 private fun ComicDownloadGlassCard(
-    title: String,
-    progress: Float,
-    paused: Boolean,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onCancel: () -> Unit,
+    tasks: List<ComicDownloadTask>,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onRetry: (String) -> Unit,
+    onCancel: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     Card(
@@ -948,65 +941,139 @@ private fun ComicDownloadGlassCard(
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
+            if (tasks.isEmpty()) {
+                Text(
+                    text = "暂无漫画下载任务",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                tasks.take(4).forEach { task ->
+                    ComicDownloadTaskRow(
+                        task = task,
+                        onPause = onPause,
+                        onResume = onResume,
+                        onRetry = onRetry,
+                        onCancel = onCancel
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (tasks.size > 4) {
+                    Text(
+                        text = "还有 ${tasks.size - 4} 个任务…",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComicDownloadTaskRow(
+    task: ComicDownloadTask,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onRetry: (String) -> Unit,
+    onCancel: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = if (paused) "已暂停：$title" else title,
-                fontSize = 14.sp,
+                text = task.chapter.title.ifBlank { "漫画章节" },
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            when (task.status) {
+                ComicDownloadStatus.DOWNLOADING -> {
+                    Text(
+                        text = "${(task.progress.coerceIn(0f, 1f) * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MintPrimary
+                    )
+                    AppIconButton(onClick = { onPause(task.chapterId) }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "暂停下载",
+                            tint = MintPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                ComicDownloadStatus.PAUSED -> {
+                    Text("已暂停", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AppIconButton(onClick = { onResume(task.chapterId) }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "继续下载",
+                            tint = MintPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                ComicDownloadStatus.FAILED -> {
+                    Text("失败", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    AppIconButton(onClick = { onRetry(task.chapterId) }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "重新下载",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                ComicDownloadStatus.SUCCESS -> {
+                    Text(
+                        "已完成",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+            AppIconButton(onClick = { onCancel(task.chapterId) }, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "取消任务",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        if (task.status == ComicDownloadStatus.DOWNLOADING) {
+            Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
+                progress = { task.progress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
                 color = MintPrimary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!paused) {
-                    Text(
-                        text = "${(progress.coerceIn(0f, 1f) * 100).toInt()}%",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MintPrimary
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (paused) {
-                        AppIconButton(onClick = onResume, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "继续下载",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else {
-                        AppIconButton(onClick = onPause, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Pause,
-                                contentDescription = "暂停下载",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    AppIconButton(onClick = onCancel, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "取消下载",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
+        }
+        if (task.status == ComicDownloadStatus.FAILED && !task.error.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = task.error,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -1261,8 +1328,12 @@ fun LibraryBookCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 } else {
+                    val extras = buildList {
+                        book.comicId?.takeIf { it.isNotBlank() }?.let { add("#$it") }
+                        book.language?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    }
                     Text(
-                        text = "格式：${book.displayFormat()}${book.language?.let { " · $it" } ?: ""}",
+                        text = "格式：${book.displayFormat()}${if (extras.isNotEmpty()) " · " + extras.joinToString(" · ") else ""}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MintPrimary

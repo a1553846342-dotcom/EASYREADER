@@ -1,8 +1,14 @@
 package com.example.source.js
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Rect
 import android.util.Base64
 import android.util.Log
+import com.example.library.ImageBytes
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -12,7 +18,6 @@ import org.chromium.net.CronetEngine
 import org.chromium.net.UploadDataProviders
 import org.chromium.net.UrlRequest
 import org.chromium.net.UrlResponseInfo
-import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.nio.charset.Charset
 import java.security.MessageDigest
@@ -23,6 +28,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
+import java.io.ByteArrayOutputStream
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.IvParameterSpec
@@ -47,6 +54,110 @@ class JsMessageHandler(
 
     private val settingDefaults = HashMap<String, String>()
     private val client = buildClient(insecureTls)
+
+    // ---- 真实 Bitmap 图像桥：供 onImageLoad.modifyImage 等脚本做像素级重排 ----
+    private val images = object : LinkedHashMap<Int, Bitmap>(48, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean = size > 48
+    }
+    private val imageKeyGen = AtomicInteger(1)
+
+    private fun putImage(bmp: Bitmap): Int {
+        val key = imageKeyGen.incrementAndGet()
+        synchronized(images) { images[key] = bmp }
+        return key
+    }
+
+    private fun getImage(key: Int): Bitmap? = synchronized(images) { images[key] }
+
+    /** 供 JsSourceEngine 解码一张图片并登记到桥中 */
+    fun createImage(bytes: ByteArray): Int? {
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        return putImage(bmp)
+    }
+
+    /** 供 JsSourceEngine 导出处理后的图片（PNG） */
+    fun exportImageBytes(key: Int): ByteArray? {
+        val bmp = getImage(key) ?: return null
+        val out = ByteArrayOutputStream()
+        if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, out)) return null
+        return out.toByteArray()
+    }
+
+    fun disposeImage(key: Int) {
+        synchronized(images) { images.remove(key) }
+    }
+
+    /** 用 Cronet（Chromium 网络栈）直接下载图片字节，用于 H@H 等 OkHttp 握手不兼容的图床。 */
+    fun fetchImageBytes(url: String, headers: Map<String, String>): ByteArray? {
+        val res = cronetRequest("GET", url, headers, null)
+        if (res.error != null || res.status !in 200..299) return null
+        return res.body
+    }
+
+    private fun handleImage(msg: Map<*, *>): Any? {
+        val function = msg["function"] as? String ?: return null
+        return try {
+            when (function) {
+                "emptyImage" -> {
+                    val w = (msg["width"] as? Number)?.toInt() ?: return null
+                    val h = (msg["height"] as? Number)?.toInt() ?: return null
+                    if (w <= 0 || h <= 0) null
+                    else putImage(Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888))
+                }
+                "copyRange" -> {
+                    val key = (msg["key"] as? Number)?.toInt() ?: return null
+                    val src = getImage(key) ?: return null
+                    val x = (msg["x"] as? Number)?.toInt() ?: 0
+                    val y = (msg["y"] as? Number)?.toInt() ?: 0
+                    val w = (msg["width"] as? Number)?.toInt() ?: 0
+                    val h = (msg["height"] as? Number)?.toInt() ?: 0
+                    if (w <= 0 || h <= 0 || x + w > src.width || y + h > src.height) null
+                    else putImage(Bitmap.createBitmap(src, x, y, w, h))
+                }
+                "copyAndRotate90" -> {
+                    val key = (msg["key"] as? Number)?.toInt() ?: return null
+                    val src = getImage(key) ?: return null
+                    val matrix = Matrix().apply { setRotate(90f) }
+                    putImage(
+                        Bitmap.createBitmap(
+                            src, 0, 0, src.width, src.height, matrix, true
+                        )
+                    )
+                }
+                "fillImageAt" -> {
+                    val dst = getImage((msg["key"] as? Number)?.toInt() ?: return null) ?: return null
+                    val srcKey = (msg["image"] as? Number)?.toInt() ?: return null
+                    val src = getImage(srcKey) ?: return null
+                    val x = (msg["x"] as? Number)?.toFloat() ?: 0f
+                    val y = (msg["y"] as? Number)?.toFloat() ?: 0f
+                    Canvas(dst).drawBitmap(src, x, y, null)
+                    null
+                }
+                "fillImageRangeAt" -> {
+                    val dst = getImage((msg["key"] as? Number)?.toInt() ?: return null) ?: return null
+                    val srcKey = (msg["image"] as? Number)?.toInt() ?: return null
+                    val src = getImage(srcKey) ?: return null
+                    val x = (msg["x"] as? Number)?.toInt() ?: 0
+                    val y = (msg["y"] as? Number)?.toInt() ?: 0
+                    val sx = (msg["srcX"] as? Number)?.toInt() ?: 0
+                    val sy = (msg["srcY"] as? Number)?.toInt() ?: 0
+                    val w = (msg["width"] as? Number)?.toInt() ?: 0
+                    val h = (msg["height"] as? Number)?.toInt() ?: 0
+                    if (w <= 0 || h <= 0) return null
+                    val srcRect = Rect(sx, sy, sx + w, sy + h)
+                    val dstRect = Rect(x, y, x + w, y + h)
+                    Canvas(dst).drawBitmap(src, srcRect, dstRect, null)
+                    null
+                }
+                "getWidth" -> getImage((msg["key"] as? Number)?.toInt() ?: return null)?.width
+                "getHeight" -> getImage((msg["key"] as? Number)?.toInt() ?: return null)?.height
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.w("JsSource[$sourceKey]", "image $function failed", e)
+            null
+        }
+    }
     private val cronetExecutor = Executors.newSingleThreadExecutor()
     private val cronetEngine: CronetEngine by lazy {
         CronetEngine.Builder(context)
@@ -116,7 +227,10 @@ class JsMessageHandler(
             "http" -> handleHttp(msg)
             "cookie" -> handleCookie(msg)
             "html" -> handleHtml(msg)
-            "load_data" -> loadStored(dataKey(msg["data_key"]))
+            "load_data" -> {
+                val key = dataKey(msg["data_key"])
+                loadStored(dataPrefs.getString(key, null))
+            }
             "save_data" -> {
                 dataPrefs.edit().putString(dataKey(msg["data_key"]), encodeStored(msg["data"])).apply()
                 null
@@ -144,7 +258,7 @@ class JsMessageHandler(
                 null
             }
             "compute" -> null
-            "image" -> null
+            "image" -> handleImage(msg)
             else -> null
         }
     }
@@ -249,7 +363,16 @@ class JsMessageHandler(
             if (effectiveHeaders.keys.none { it.equals("Accept-Language", ignoreCase = true) }) {
                 effectiveHeaders["Accept-Language"] = "zh-CN,zh;q=0.9,en;q=0.8"
             }
-            getCookiesFor(url).takeIf { it.isNotBlank() }?.let { effectiveHeaders["Cookie"] = it }
+            // 合并脚本显式 Cookie 与本地 CookieJar：之前直接覆盖会把脚本里
+            // 的 cookie（如 ehentai 的 nw=1）丢掉，导致站点响应异常/挂起。
+            val scriptCookie = sourceHeaders?.entries
+                ?.firstOrNull { it.key.toString().equals("Cookie", ignoreCase = true) }
+                ?.value?.toString()?.trim()
+            val jarCookie = getCookiesFor(url).trim()
+            val mergedCookie = listOfNotNull(scriptCookie, jarCookie)
+                .filter { it.isNotBlank() }
+                .joinToString("; ")
+            if (mergedCookie.isNotBlank()) effectiveHeaders["Cookie"] = mergedCookie
 
             val body = when (val data = msg["data"]) {
                 is ByteArray -> data.toRequestBody("application/octet-stream".toMediaType())
@@ -307,15 +430,16 @@ class JsMessageHandler(
                 val obj = JSONObject()
                 obj.put("status", it.code)
                 obj.put("headers", JSONObject(respHeaders))
+                val b = it.body?.bytes()
+                val decoded = b?.let { bytes -> ImageBytes.gunzipIfNeeded(bytes) }
                 if (bytes) {
-                    val b = it.body?.bytes()
                     obj.put(
                         "body",
-                        b?.let { data -> Base64.encodeToString(data, Base64.NO_WRAP) }
+                        decoded?.let { data -> Base64.encodeToString(data, Base64.NO_WRAP) }
                             ?: JSONObject.NULL
                     )
                 } else {
-                    val text = it.body?.string() ?: ""
+                    val text = decoded?.toString(Charsets.UTF_8) ?: ""
                     obj.put("body", text.ifEmpty { JSONObject.NULL })
                 }
                 obj.toString()
@@ -431,7 +555,8 @@ class JsMessageHandler(
         }
         val request = builder.build()
         request.start()
-        if (!latch.await(35, TimeUnit.SECONDS)) {
+        // 部分代理/节点首次连接 e-hentai 等站点可能冷启动 30s+，放宽到 60s 避免误杀
+        if (!latch.await(60, TimeUnit.SECONDS)) {
             request.cancel()
             return CronetResult(-1, emptyMap(), null, "请求超时")
         }
