@@ -53,6 +53,8 @@ import com.example.source.SearchBook
 import com.example.ui.components.FlowingGradientProgressBar
 import com.example.ui.components.MascotEmptyState
 import com.example.ui.mascot.MascotSpriteSheet
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonVariant
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.hazeChild
@@ -120,20 +122,8 @@ fun DownloadGlassCard(
 
     val cardShape = RoundedCornerShape(28.dp)
     
-    val baseModifier = modifier
-        .shadow(24.dp, cardShape)
-        .clip(cardShape)
-
-    val hazeModifier = if (hazeState != null) {
-        baseModifier.hazeChild(state = hazeState, style = HazeStyle(backgroundColor = MaterialTheme.colorScheme.surface, tint = null))
-    } else {
-        baseModifier
-    }
-
     Box(
-        modifier = hazeModifier
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f), cardShape)
+        modifier = modifier
             .padding(22.dp)
     ) {
         if (book == null) {
@@ -186,16 +176,12 @@ fun DownloadGlassCard(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                Button(
+                AppActionButton(
+                    text = "知道了",
                     onClick = { onDismiss?.invoke() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
-                    Text("知道了", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                }
+                    variant = AppButtonVariant.Secondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         } else {
             Column {
@@ -337,4 +323,3 @@ private fun formatSize(bytes: Long): String {
     if (mb < 1024) return "${String.format("%.1f", mb)} MB"
     return "${String.format("%.2f", mb / 1024.0)} GB"
 }
-

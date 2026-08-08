@@ -38,8 +38,14 @@ import com.example.data.BackupManager
 import com.example.data.CategoryEntity
 import com.example.data.PreferencesManager
 import com.example.ui.pageturn.PageTurnType
-import com.example.ui.components.CustomSwitch
 import com.example.ui.components.AppButton
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.ColorMorphSwatch
+import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.AppLiquidSwitch
+import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
@@ -190,11 +196,12 @@ fun SettingsTabScreen(
                                             Text("清除")
                                         }
                                     }
-                                    AppButton(
-                                        onClick = { posterLauncher.launch("image/*") }
-                                    ) {
-                                        Text("选择相册图片", color = Color.White)
-                                    }
+                                    AppActionButton(
+                                        text = "选择相册图片",
+                                        onClick = { posterLauncher.launch("image/*") },
+                                        variant = AppButtonVariant.Primary,
+                                        buttonSize = AppButtonSize.Small
+                                    )
                                 }
                             }
 
@@ -227,7 +234,7 @@ fun SettingsTabScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("纯净模式", fontWeight = FontWeight.SemiBold)
-                                CustomSwitch(
+                                AppLiquidSwitch(
                                     checked = splashPureMode,
                                     onCheckedChange = {
                                         splashPureMode = it
@@ -268,31 +275,14 @@ fun SettingsTabScreen(
                                 val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
                                 com.example.ui.theme.BasePrimaryColors.forEachIndexed { index, color ->
                                     val selected = colorPrimaryIndex == index
-                                    val scale by animateFloatAsState(targetValue = if (selected) 1.15f else 1f, label = "scalePrimary")
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .scale(scale)
-                                            .clip(CircleShape)
-                                            .background(color)
-                                            .then(
-                                                if (selected) {
-                                                    Modifier.border(3.dp, Color.White, CircleShape)
-                                                        .shadow(4.dp, CircleShape)
-                                                } else {
-                                                    Modifier
-                                                }
-                                            )
-                                            .clickable {
-                                                colorPrimaryIndex = index
-                                                onColorThemeChange(index, colorSecondaryIndex)
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (selected) {
-                                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    ColorMorphSwatch(
+                                        color = color,
+                                        selected = selected,
+                                        onClick = {
+                                            colorPrimaryIndex = index
+                                            onColorThemeChange(index, colorSecondaryIndex)
                                         }
-                                    }
+                                    )
                                 }
                             }
 
@@ -307,31 +297,14 @@ fun SettingsTabScreen(
                                 val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
                                 com.example.ui.theme.BaseSecondaryColors.forEachIndexed { index, color ->
                                     val selected = colorSecondaryIndex == index
-                                    val scale by animateFloatAsState(targetValue = if (selected) 1.15f else 1f, label = "scaleSecondary")
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .scale(scale)
-                                            .clip(CircleShape)
-                                            .background(color)
-                                            .then(
-                                                if (selected) {
-                                                    Modifier.border(3.dp, Color.White, CircleShape)
-                                                        .shadow(4.dp, CircleShape)
-                                                } else {
-                                                    Modifier
-                                                }
-                                            )
-                                            .clickable {
-                                                colorSecondaryIndex = index
-                                                onColorThemeChange(colorPrimaryIndex, index)
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (selected) {
-                                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                    ColorMorphSwatch(
+                                        color = color,
+                                        selected = selected,
+                                        onClick = {
+                                            colorSecondaryIndex = index
+                                            onColorThemeChange(colorPrimaryIndex, index)
                                         }
-                                    }
+                                    )
                                 }
                             }
 
@@ -343,9 +316,9 @@ fun SettingsTabScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex].copy(alpha = 0.08f)
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                                 ),
-                                border = BorderStroke(1.dp, com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex].copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
@@ -358,20 +331,21 @@ fun SettingsTabScreen(
                                                 modifier = Modifier
                                                     .size(28.dp)
                                                     .clip(CircleShape)
-                                                    .background(com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+                                                    .background(MaterialTheme.colorScheme.primary)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
-            Text("Ciallo 阅览室", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex])
+            Text("Ciallo 阅览室", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
-                                            color = com.example.ui.theme.BaseSecondaryColors[colorSecondaryIndex]
+                                            color = MaterialTheme.colorScheme.secondary
                                         ) {
                                             Text("副色标签", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    Button(
+                                    AppLiquidButton(
+                                        text = "主色按钮实时联动效果",
                                         onClick = {
                                             val now = System.currentTimeMillis()
                                             liveButtonTapCount = if (now - liveButtonLastTapMs < 3000) {
@@ -385,12 +359,8 @@ fun SettingsTabScreen(
                                                 liveButtonTapCount = 0
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.BasePrimaryColors[colorPrimaryIndex]),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.fillMaxWidth().height(36.dp)
-                                    ) {
-                                        Text("主色按钮实时联动效果", color = Color.White, fontSize = 12.sp)
-                                    }
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
                             }
                         }
@@ -420,18 +390,14 @@ fun SettingsTabScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("带你登大郎~~~", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                     }
-                                    Switch(
+                                    AppLiquidSwitch(
                                         checked = showAdultSources,
                                         onCheckedChange = {
                                             showAdultSources = it
                                             prefs.showAdultSources = it
                                             onAdultSourcesChange(it)
                                             Toast.makeText(context, if (it) "正在更新成人源…" else "成人源已隐藏", Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = MintPrimary,
-                                            checkedTrackColor = MintPrimary.copy(alpha = 0.3f)
-                                        )
+                                        }
                                     )
                                 }
                             }
@@ -552,18 +518,15 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("导出备份", fontWeight = FontWeight.SemiBold)
                                 }
-                                Button(
-                                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                                    shape = CircleShape,
+                                AppLiquidButton(
+                                    text = "导出",
                                     onClick = {
                                         scope.launch {
                                             backupManager.exportBackupJson()
                                             Toast.makeText(context, "备份已导出", Toast.LENGTH_SHORT).show()
                                         }
                                     }
-                                ) {
-                                    Text("导出", color = Color.White)
-                                }
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -580,8 +543,8 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("恢复备份", fontWeight = FontWeight.SemiBold)
                                 }
-                                OutlinedButton(
-                                    shape = CircleShape,
+                                AppLiquidButton(
+                                    text = "恢复",
                                     onClick = {
                                         scope.launch {
                                             val json = backupManager.exportBackupJson()
@@ -591,9 +554,7 @@ fun SettingsTabScreen(
                                             }
                                         }
                                     }
-                                ) {
-                                    Text("恢复")
-                                }
+                                )
                             }
                         }
                     }
@@ -675,19 +636,16 @@ fun SettingsTabScreen(
                                     ),
                                     shape = RoundedCornerShape(12.dp)
                                 )
-                                Button(
+                                AppLiquidButton(
+                                    text = "设置",
                                     onClick = {
                                         val mins = customText.toIntOrNull() ?: 0
                                         if (mins > 0) {
                                             restReminderMinutes = mins
                                             prefs.restReminderMinutes = mins
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("设置", color = Color.White)
-                                }
+                                    }
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -704,7 +662,7 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("夜间模式", fontWeight = FontWeight.SemiBold)
                                 }
-                                CustomSwitch(
+                                AppLiquidSwitch(
                                     checked = autoNightMode,
                                     onCheckedChange = {
                                         autoNightMode = it
@@ -727,7 +685,7 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("护眼滤镜", fontWeight = FontWeight.SemiBold)
                                 }
-                                CustomSwitch(
+                                AppLiquidSwitch(
                                     checked = blueLightFilter,
                                     onCheckedChange = {
                                         blueLightFilter = it
@@ -819,17 +777,20 @@ fun SettingsTabScreen(
                 )
             },
             confirmButton = {
-                AppButton(
-                    onClick = {
-                        if (newCategoryText.isNotBlank()) {
-                            onAddCategory(newCategoryText.trim())
-                            newCategoryText = ""
-                            showAddCategoryDialog = false
-                            Toast.makeText(context, "新建成功", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ) {
-                    Text("新建", color = Color.White)
+                DialogLiquidGlass(fillMaxSize = false) {
+                    AppActionButton(
+                        text = "新建",
+                        onClick = {
+                            if (newCategoryText.isNotBlank()) {
+                                onAddCategory(newCategoryText.trim())
+                                newCategoryText = ""
+                                showAddCategoryDialog = false
+                                Toast.makeText(context, "新建成功", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        variant = AppButtonVariant.Primary,
+                        buttonSize = AppButtonSize.Small
+                    )
                 }
             },
             dismissButton = {

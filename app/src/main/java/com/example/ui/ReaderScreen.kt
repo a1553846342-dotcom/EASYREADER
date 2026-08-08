@@ -65,7 +65,9 @@ import com.example.ui.pageturn.PageTurnContainer
 import com.example.ui.pageturn.PageTurnType
 import com.example.ui.components.CustomSwitch
 import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppButton
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
@@ -1318,14 +1320,12 @@ fun ReaderScreen(
                     }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
+                AppActionButton(
+                    text = "好的",
                     onClick = { showRestDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text("好的", color = Color.White, fontSize = 12.sp)
-                }
+                    variant = AppButtonVariant.Secondary,
+                    buttonSize = AppButtonSize.Small
+                )
             }
         }
     }

@@ -130,21 +130,21 @@ class SourceViewModel(
         viewModelScope.launch {
             _importStatus.value = "正在刷新 JS 源仓库…"
             val prefs = com.example.data.PreferencesManager(getApplication())
-            sourceManager.allSources.value
-                .filter { it.id.startsWith("js_") }
-                .forEach { sourceManager.unregisterSource(it.id) }
             val sources = JsSourceRepo.install(
                 context = getApplication(),
                 repoUrl = prefs.jsSourceRepoUrl,
                 includeAdult = prefs.showAdultSources
             )
-            sources.forEach { source ->
-                sourceManager.registerSource(source, defaultEnabled = true)
-            }
-            _importStatus.value = if (sources.isEmpty()) {
-                "源仓库刷新失败或仓库为空，请检查网络后重试"
+            if (sources.isNotEmpty()) {
+                sourceManager.allSources.value
+                    .filter { it.id.startsWith("js_") }
+                    .forEach { sourceManager.unregisterSource(it.id) }
+                sources.forEach { source ->
+                    sourceManager.registerSource(source, defaultEnabled = true)
+                }
+                _importStatus.value = "源仓库刷新完成，共 ${sources.size} 个漫画源"
             } else {
-                "源仓库刷新完成，共 ${sources.size} 个漫画源"
+                _importStatus.value = "源仓库刷新失败或仓库为空，请检查网络后重试"
             }
         }
     }
@@ -159,21 +159,21 @@ class SourceViewModel(
             prefs.showAdultSources = enabled
             if (enabled) {
                 _importStatus.value = "正在更新成人源…"
-                sourceManager.allSources.value
-                    .filter { it.id.startsWith("js_") }
-                    .forEach { sourceManager.unregisterSource(it.id) }
                 val sources = JsSourceRepo.install(
                     context = getApplication(),
                     repoUrl = prefs.jsSourceRepoUrl,
                     includeAdult = true
                 )
-                sources.forEach { source ->
-                    sourceManager.registerSource(source, defaultEnabled = true)
-                }
-                _importStatus.value = if (sources.isEmpty()) {
-                    "成人源更新失败，请检查网络后重试"
+                if (sources.isNotEmpty()) {
+                    sourceManager.allSources.value
+                        .filter { it.id.startsWith("js_") }
+                        .forEach { sourceManager.unregisterSource(it.id) }
+                    sources.forEach { source ->
+                        sourceManager.registerSource(source, defaultEnabled = true)
+                    }
+                    _importStatus.value = "成人源已更新（共 ${sources.size} 个漫画源）"
                 } else {
-                    "成人源已更新（共 ${sources.size} 个漫画源）"
+                    _importStatus.value = "成人源更新失败，请检查网络后重试"
                 }
             } else {
                 val adultKeys = JsSourceRepo.ADULT_KEYS

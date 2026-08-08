@@ -35,8 +35,14 @@ import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.library.ZLibraryNodeConfig
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeChild
+import com.example.ui.components.liquidGlass
+import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.filmGrain
+import com.example.ui.components.iridescentBorder
+import com.example.ui.components.rememberIridescentColors
+import com.example.ui.components.rememberThemedGlassBackdrop
+import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.DialogLiquidGlass
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +54,8 @@ fun ZLibraryLoginDialog(
     hazeState: HazeState? = null
 ) {
     val context = LocalContext.current
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val blurPx = with(androidx.compose.ui.platform.LocalDensity.current) { 18.dp.toPx() }
     val scope = rememberCoroutineScope()
     val isJsSource = source.id.startsWith("js_")
     var loginModeTab by remember { mutableStateOf(0) } // 0: 账号密码, 1: Cookie
@@ -63,64 +71,71 @@ fun ZLibraryLoginDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        var appear by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { appear = true }
+        DialogLiquidGlass {
+            GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
+            var appear by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { appear = true }
 
-        val panelScale by animateFloatAsState(
-            targetValue = if (appear) 1f else 0.85f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            ),
-            label = "loginPanelSpring"
-        )
-        val panelAlpha by animateFloatAsState(
-            targetValue = if (appear) 1f else 0f,
-            animationSpec = tween(220),
-            label = "loginPanelFade"
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
+            val panelScale by animateFloatAsState(
+                targetValue = if (appear) 1f else 0.85f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
                 ),
-            contentAlignment = Alignment.Center
-        ) {
-            val cardShape = RoundedCornerShape(28.dp)
-            var baseModifier = Modifier
-                .fillMaxWidth(0.9f)
-                .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                )
-                .graphicsLayer {
-                    scaleX = panelScale
-                    scaleY = panelScale
-                    alpha = panelAlpha
-                }
-                .shadow(32.dp, cardShape, spotColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))
-                .clip(cardShape)
-
-            if (hazeState != null) {
-                baseModifier = baseModifier.hazeChild(state = hazeState, style = HazeStyle(backgroundColor = MaterialTheme.colorScheme.surface, tint = null))
-            }
+                label = "loginPanelSpring"
+            )
+            val panelAlpha by animateFloatAsState(
+                targetValue = if (appear) 1f else 0f,
+                animationSpec = tween(220),
+                label = "loginPanelFade"
+            )
 
             Box(
-                modifier = baseModifier
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
-                        cardShape
-                    )
-                    .padding(24.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                val cardShape = RoundedCornerShape(28.dp)
+                val dialogBackdrop = rememberThemedGlassBackdrop()
+                val iridescent = rememberIridescentColors()
+                val baseModifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .graphicsLayer {
+                        scaleX = panelScale
+                        scaleY = panelScale
+                        alpha = panelAlpha
+                    }
+                    .liquidGlass(
+                        backdrop = dialogBackdrop,
+                        shape = cardShape,
+                        surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                        blurRadius = 22.dp,
+                        refraction = true
+                    )
+                    .clip(cardShape)
+                    .filmGrain(alpha = 0.04f)
+                    .iridescentBorder(
+                        shape = cardShape,
+                        colors = iridescent,
+                        width = 2.dp,
+                        alpha = 0.22f
+                    )
+
+                Box(
+                    modifier = baseModifier
+                        .padding(24.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -226,7 +241,8 @@ fun ZLibraryLoginDialog(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Button(
+                    AppLiquidButton(
+                        text = if (isLoading) "登录中" else "确认登录",
                         enabled = !isLoading,
                         onClick = {
                             scope.launch {
@@ -254,14 +270,8 @@ fun ZLibraryLoginDialog(
                                 isLoading = false
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text("确认登录", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -289,6 +299,7 @@ fun ZLibraryLoginDialog(
                     }
                 }
             }
+        }
         }
     }
 }

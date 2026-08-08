@@ -325,6 +325,10 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         bookDao.deleteBook(book)
     }
 
+    suspend fun deleteReadingRecord(id: Int) {
+        bookDao.deleteReadingRecord(id)
+    }
+
     fun getChaptersForBook(bookId: Int) = bookDao.getChaptersForBook(bookId)
 
     fun getBookmarksForBook(bookId: Int) = bookDao.getBookmarksForBook(bookId)

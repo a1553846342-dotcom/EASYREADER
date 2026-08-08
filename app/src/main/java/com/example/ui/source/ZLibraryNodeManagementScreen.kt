@@ -37,6 +37,10 @@ import androidx.compose.ui.unit.sp
 import com.example.library.ZLibraryNodeManager
 import com.example.source.SearchBook
 import com.example.source.zlibrary.parser.ZLibraryParserManager
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
 import org.json.JSONTokener
@@ -223,7 +227,8 @@ fun ZLibraryNodeManagementScreen(
                                     fontSize = 14.sp
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(
+                                AppActionButton(
+                                    text = if (scraping) "扒取中…" else "扒取节点",
                                     onClick = {
                                         scope.launch {
                                             scraping = true
@@ -237,22 +242,12 @@ fun ZLibraryNodeManagementScreen(
                                             }
                                         }
                                     },
+                                    variant = AppButtonVariant.Primary,
+                                    buttonSize = AppButtonSize.Medium,
+                                    icon = Icons.Default.Refresh,
                                     enabled = !scraping,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                                ) {
-                                    if (scraping) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (scraping) "扒取中…" else "扒取节点")
-                                }
+                                    loading = scraping
+                                )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
@@ -343,7 +338,8 @@ fun ZLibraryNodeManagementScreen(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         )
-                        Button(
+                                                AppActionButton(
+                            text = "添加",
                             onClick = {
                                 if (ZLibraryNodeManager.addCustomNode(context, customInput)) {
                                     customNodes = ZLibraryNodeManager.getCustomNodes(context)
@@ -353,13 +349,10 @@ fun ZLibraryNodeManagementScreen(
                                     Toast.makeText(context, "请输入有效的域名", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("添加")
-                        }
+                            variant = AppButtonVariant.Secondary,
+                            buttonSize = AppButtonSize.Small,
+                            icon = Icons.Default.Add
+                        )
                     }
                 }
             }
@@ -379,16 +372,18 @@ fun ZLibraryNodeManagementScreen(
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        ZLibraryNodeManager.saveScrapedNodes(context, foundNodes)
-                        scrapedNodes = ZLibraryNodeManager.getScrapedNodes(context)
-                        showReplaceDialog = false
-                        Toast.makeText(context, "已替换节点", Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                ) {
-                    Text("替换")
+                DialogLiquidGlass(fillMaxSize = false) {
+                    AppActionButton(
+                        text = "替换",
+                        onClick = {
+                            ZLibraryNodeManager.saveScrapedNodes(context, foundNodes)
+                            scrapedNodes = ZLibraryNodeManager.getScrapedNodes(context)
+                            showReplaceDialog = false
+                            Toast.makeText(context, "已替换节点", Toast.LENGTH_SHORT).show()
+                        },
+                        variant = AppButtonVariant.Primary,
+                        buttonSize = AppButtonSize.Small
+                    )
                 }
             },
             dismissButton = {
@@ -469,24 +464,20 @@ private fun NodeCard(
             }
             Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                                AppActionButton(
+                    text = "检测",
                     onClick = onTest,
                     enabled = !isTesting,
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.height(36.dp)
-                ) {
-                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("检测")
-                }
-                OutlinedButton(
+                    variant = AppButtonVariant.Secondary,
+                    buttonSize = AppButtonSize.Small,
+                    icon = Icons.Default.PlayArrow
+                )
+                                AppActionButton(
+                    text = if (isSelected) "使用中" else "使用",
                     onClick = onSelect,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.height(36.dp)
-                ) {
-                    Text(if (isSelected) "使用中" else "使用")
-                }
+                    variant = AppButtonVariant.Secondary,
+                    buttonSize = AppButtonSize.Small
+                )
                 if (canDelete) {
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(onClick = onDelete) {

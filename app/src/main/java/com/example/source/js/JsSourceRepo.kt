@@ -54,6 +54,13 @@ object JsSourceRepo {
         .followRedirects(true)
         .build()
 
+    /** 默认 jsDelivr 不通时依次尝试的镜像（国内/代理环境可达性不同）。 */
+    private val INDEX_MIRRORS = listOf(
+        "https://fastly.jsdelivr.net/gh/venera-app/venera-configs@main/index.json",
+        "https://gcore.jsdelivr.net/gh/venera-app/venera-configs@main/index.json",
+        "https://raw.githubusercontent.com/venera-app/venera-configs/main/index.json"
+    )
+
     data class SourceMeta(
         val key: String,
         val name: String,
@@ -154,21 +161,22 @@ object JsSourceRepo {
     ): List<JsComicSource> = withContext(Dispatchers.IO) {
         try {
             onStatus("正在获取源仓库列表…")
-            val indexJson = fetch(repoUrl)
-            if (indexJson == null) {
+            val indexEntry = fetchIndex(repoUrl)
+            if (indexEntry == null) {
                 Log.w("JsRepo", "fetch index failed: $repoUrl")
                 return@withContext emptyList()
             }
+            val (indexUrl, indexJson) = indexEntry
             val metas = parseIndex(indexJson).filter { includeAdult || !it.adult }
             Log.i("JsRepo", "index ok, metas=${metas.size}")
-            val baseUrl = repoUrl.substringBeforeLast('/', repoUrl)
+            val baseUrl = indexUrl.substringBeforeLast('/', indexUrl)
             val semaphore = Semaphore(4)
             val results = coroutineScope {
                 metas.map { meta ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
                             try {
-                                val script = fetch("$baseUrl/${meta.fileName}")
+                                val script = fetchScript(baseUrl, meta.fileName)
                                 if (script != null) {
                                     val patched = patchScript(meta.key, script)
                                     File(dir(context), meta.fileName).writeText(patched)
@@ -205,6 +213,32 @@ object JsSourceRepo {
             Log.w("JsRepo", "install failed", e)
             emptyList()
         }
+    }
+
+    /** 依次尝试配置仓库与镜像，返回（成功 URL，index 内容）。 */
+    private fun fetchIndex(repoUrl: String): Pair<String, String>? {
+        val candidates = listOf(repoUrl) + INDEX_MIRRORS
+        for (url in candidates) {
+            val body = fetch(url)
+            if (body != null) {
+                Log.i("JsRepo", "index fetched from: $url")
+                return url to body
+            }
+            Log.w("JsRepo", "index mirror failed: $url")
+        }
+        return null
+    }
+
+    /** 脚本优先从 index 成功的那条链路下载，失败时再试其它镜像的对应路径。 */
+    private fun fetchScript(baseUrl: String, fileName: String): String? {
+        val candidates = listOf("$baseUrl/$fileName") + INDEX_MIRRORS.map {
+            "${it.substringBeforeLast('/', it)}/$fileName"
+        }
+        for (url in candidates) {
+            val body = fetch(url)
+            if (body != null) return body
+        }
+        return null
     }
 
     private fun parseIndex(json: String): List<SourceMeta> {

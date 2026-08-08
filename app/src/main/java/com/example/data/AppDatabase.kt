@@ -89,6 +89,9 @@ interface BookDao {
     @Query("UPDATE reading_records SET bookId = NULL WHERE bookId = :bookId")
     suspend fun nullifyBookIdInReadingRecords(bookId: Int)
 
+    @Query("DELETE FROM reading_records WHERE id = :id")
+    suspend fun deleteReadingRecord(id: Int)
+
     @Query("SELECT * FROM reading_records ORDER BY dateStr DESC")
     fun getAllReadingRecordsFlow(): Flow<List<ReadingRecord>>
 }

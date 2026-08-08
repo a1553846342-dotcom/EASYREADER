@@ -11,15 +11,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +41,12 @@ import com.example.source.ComicChapter
 import com.example.source.SearchBook
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.ChasingDots
+import com.example.ui.components.GradientActionButton
+import com.example.ui.components.PlayPauseMorphButton
+import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.MintPrimary
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,11 +63,14 @@ fun ComicChaptersScreen(
     onRetry: () -> Unit,
     onChapterClick: (ComicChapter) -> Unit,
     onDownloadChapter: (ComicChapter) -> Unit,
+    onDownloadAll: () -> Unit,
     onPauseDownload: (ComicChapter) -> Unit,
     onResumeDownload: (ComicChapter) -> Unit,
     onCancelDownload: (ComicChapter) -> Unit
 ) {
     val context = LocalContext.current
+    var selectionMode by remember { mutableStateOf(false) }
+    val selectedChapterIds = remember { mutableStateListOf<String>() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -113,9 +132,10 @@ fun ComicChaptersScreen(
                             fontSize = 14.sp
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)) {
-                            Text("重试")
-                        }
+                        AppLiquidButton(
+                            text = "重试",
+                            onClick = onRetry
+                        )
                     }
                 }
             }
@@ -128,11 +148,40 @@ fun ComicChaptersScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     item(key = "header") {
-                        ComicHeader(book, chapters.size)
+                        ComicHeader(
+                            book = book,
+                            chapterCount = chapters.size,
+                            onReadFirst = {
+                                chapters.firstOrNull()?.let(onChapterClick)
+                            },
+                            selectionMode = selectionMode,
+                            selectedCount = selectedChapterIds.size,
+                            onEnterSelection = { selectionMode = true },
+                            onDownloadSelected = {
+                                chapters
+                                    .filter { it.id in selectedChapterIds }
+                                    .forEach(onDownloadChapter)
+                                selectedChapterIds.clear()
+                                selectionMode = false
+                            },
+                            onCancelSelection = {
+                                selectedChapterIds.clear()
+                                selectionMode = false
+                            }
+                        )
                     }
                     items(chapters, key = { it.id }) { chapter ->
                         ChapterItem(
                             chapter = chapter,
+                            selectionMode = selectionMode,
+                            selected = chapter.id in selectedChapterIds,
+                            onToggleSelect = {
+                                if (chapter.id in selectedChapterIds) {
+                                    selectedChapterIds.remove(chapter.id)
+                                } else {
+                                    selectedChapterIds.add(chapter.id)
+                                }
+                            },
                             downloading = downloadingChapters.contains(chapter.id),
                             paused = pausedChapters.contains(chapter.id),
                             progress = downloadProgress[chapter.id] ?: 0f,
@@ -237,25 +286,12 @@ private fun DownloadProgressOverlay(
                     )
                 }
                 Spacer(modifier = Modifier.width(6.dp))
-                if (paused) {
-                    AppIconButton(onClick = onResume, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "继续下载",
-                            tint = MintPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                } else {
-                    AppIconButton(onClick = onPause, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Pause,
-                            contentDescription = "暂停下载",
-                            tint = MintPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                // 同一槽位：暂停↔继续时形变动画不重置
+                PlayPauseMorphButton(
+                    isPlaying = !paused,
+                    onClick = if (paused) onResume else onPause,
+                    sizeDp = 36
+                )
                 AppIconButton(onClick = onCancel, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -270,50 +306,220 @@ private fun DownloadProgressOverlay(
 }
 
 @Composable
-private fun ComicHeader(book: SearchBook?, chapterCount: Int) {
+private fun ComicHeader(
+    book: SearchBook?,
+    chapterCount: Int,
+    onReadFirst: () -> Unit,
+    selectionMode: Boolean,
+    selectedCount: Int,
+    onEnterSelection: () -> Unit,
+    onDownloadSelected: () -> Unit,
+    onCancelSelection: () -> Unit
+) {
     if (book == null) return
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AsyncImage(
-            model = book.cover,
-            contentDescription = book.title,
-            contentScale = ContentScale.Crop,
+    var descriptionExpanded by remember { mutableStateOf(false) }
+    val desc = book.description?.takeIf { it.isNotBlank() }
+    val formatBadge = remember(book) {
+        listOfNotNull(
+            book.comicId?.takeIf { it.isNotBlank() }?.let { "#$it" },
+            book.format?.takeIf { it.isNotBlank() && !it.equals("epub", true) }?.uppercase()
+        ).firstOrNull() ?: "漫画"
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 顶部视觉：封面模糊铺满做背景 + 清晰封面浮在上层（Apple Music 专辑页结构）
+        Box(
             modifier = Modifier
-                .width(72.dp)
-                .height(100.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = book.title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+        ) {
+            if (!book.cover.isNullOrBlank()) {
+                AsyncImage(
+                    model = book.cover,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .graphicsLayer {
+                            renderEffect = android.graphics.RenderEffect
+                                .createBlurEffect(
+                                    30f,
+                                    30f,
+                                    android.graphics.Shader.TileMode.CLAMP
+                                )
+                                .asComposeRenderEffect()
+                        }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f)
+                                )
+                            )
+                        )
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.45f),
+                                Color.Black.copy(alpha = 0.82f)
+                            )
+                        )
+                    )
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(170.dp)
+                        .shadow(12.dp, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Gray.copy(alpha = 0.3f))
+                ) {
+                    if (!book.cover.isNullOrBlank()) {
+                        AsyncImage(
+                            model = book.cover,
+                            contentDescription = book.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.MenuBook,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = book.title,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.18f)
+                    ) {
+                        Text(
+                            text = formatBadge,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                    if (book.author.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "作者：${book.author}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // 简介：默认 3 行，可展开
+        if (desc != null) {
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = book.author,
-                fontSize = 12.sp,
+                text = desc,
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = if (descriptionExpanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            if (desc.length > 60) {
+                TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                    Text(if (descriptionExpanded) "收起" else "展开")
+                }
+            }
+        }
+
+        // 元信息条
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
-                text = "共 $chapterCount 话可用 · 在线漫画",
+                text = "来源：${book.sourceId}",
                 fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "语言：${book.language ?: "未知"}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "共 $chapterCount 话",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
                 color = MintPrimary
             )
+        }
+
+        // 主操作：开始阅读 + 批量下载（进入选择模式后改为“下载选中”）
+        Spacer(modifier = Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (selectionMode) {
+                GradientActionButton(
+                    text = if (selectedCount > 0) "下载选中（$selectedCount）" else "请选择章节",
+                    onClick = onDownloadSelected,
+                    enabled = selectedCount > 0,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                                AppActionButton(
+                    text = "取消",
+                    onClick = onCancelSelection,
+                    variant = AppButtonVariant.Secondary,
+                    buttonSize = AppButtonSize.Small
+                )
+            } else {
+                GradientActionButton(
+                    text = "开始阅读",
+                    onClick = onReadFirst,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                                AppActionButton(
+                    text = "批量下载",
+                    onClick = onEnterSelection,
+                    variant = AppButtonVariant.Secondary,
+                    buttonSize = AppButtonSize.Small,
+                    icon = Icons.Filled.Download
+                )
+            }
         }
     }
 }
@@ -321,6 +527,9 @@ private fun ComicHeader(book: SearchBook?, chapterCount: Int) {
 @Composable
 private fun ChapterItem(
     chapter: ComicChapter,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
     downloading: Boolean,
     paused: Boolean,
     progress: Float,
@@ -333,7 +542,7 @@ private fun ChapterItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = if (selectionMode) onToggleSelect else onClick),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -344,6 +553,13 @@ private fun ChapterItem(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onToggleSelect() }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             Text(
                 text = chapter.title,
                 fontSize = 14.sp,
@@ -363,33 +579,22 @@ private fun ChapterItem(
                 )
             }
             Spacer(modifier = Modifier.width(4.dp))
-            when {
+            if (!selectionMode) when {
                 downloading -> {
-                    if (paused) {
-                        AppIconButton(onClick = onResume, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "继续下载",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    } else {
+                    if (!paused) {
                         CircularProgressIndicator(
                             progress = { progress },
                             modifier = Modifier.size(22.dp),
                             strokeWidth = 2.dp,
                             color = MintPrimary
                         )
-                        AppIconButton(onClick = onPause, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.Pause,
-                                contentDescription = "暂停下载",
-                                tint = MintPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
                     }
+                    // 同一槽位：暂停↔继续时形变动画不重置
+                    PlayPauseMorphButton(
+                        isPlaying = !paused,
+                        onClick = if (paused) onResume else onPause,
+                        sizeDp = 32
+                    )
                     AppIconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Default.Close,

@@ -3,11 +3,19 @@ package com.example.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +42,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.CubicBezierEasing
@@ -52,6 +62,7 @@ import dev.chrisbanes.haze.haze
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
@@ -64,22 +75,41 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import kotlin.math.roundToInt
 import coil.ImageLoader
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import android.webkit.CookieManager
+import android.app.Activity
 import com.example.download.DownloadState
 import com.example.source.SearchBook
 import com.example.source.BookSource
 import com.example.source.ComicSource
-import com.example.ui.theme.MintPrimary
-import com.example.ui.theme.MintSecondary
+import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.AcrylicBottomOverlay
+import com.example.ui.components.PlayPauseMorphButton
+import com.example.ui.components.filmGrain
+import com.example.ui.components.iridescentBorder
+import com.example.ui.components.liquidGlass
+import com.example.ui.components.radialGlassScrim
+import com.example.ui.components.rememberGlassPanelBackdrop
+import com.example.ui.components.rememberIridescentColors
+import com.example.ui.components.rememberThemedGlassBackdrop
+import com.example.ui.components.SourceAvatar
+import com.example.ui.components.ShimmerBox
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.source.ZLibraryLoginDialog
@@ -227,13 +257,23 @@ fun LibraryScreen(
     var loginDialogSource by remember { mutableStateOf<BookSource?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var searchFieldFocused by remember { mutableStateOf(false) }
-    var sourceDropdownExpanded by remember { mutableStateOf(false) }
+    var showSourceSheet by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
+    val staggeredGridState = rememberLazyStaggeredGridState()
 
     // 页面滚动时同步收起搜索历史面板
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling && searchFieldFocused) {
+                    searchFieldFocused = false
+                    focusManager.clearFocus()
+                }
+            }
+    }
+    LaunchedEffect(staggeredGridState) {
+        snapshotFlow { staggeredGridState.isScrollInProgress }
             .collect { scrolling ->
                 if (scrolling && searchFieldFocused) {
                     searchFieldFocused = false
@@ -370,7 +410,7 @@ fun LibraryScreen(
                         Box {
                             FilterChip(
                                 selected = true,
-                                onClick = { sourceDropdownExpanded = true },
+                                onClick = { showSourceSheet = true },
                                 label = {
                                     Text(
                                         if (aggregateMode) "聚合漫画（全部）"
@@ -384,67 +424,47 @@ fun LibraryScreen(
                                     )
                                 }
                             )
-
-                            DropdownMenu(
-                                expanded = sourceDropdownExpanded,
-                                onDismissRequest = { sourceDropdownExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("聚合漫画（全部）") },
-                                    onClick = {
-                                        viewModel.setAggregateMode(true)
-                                        sourceDropdownExpanded = false
-                                    },
-                                    trailingIcon = if (aggregateMode) {
-                                        { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
-                                    } else null
-                                )
-                                HorizontalDivider()
-                                visibleSources.forEach { source ->
-                                    DropdownMenuItem(
-                                        text = { Text(source.name) },
-                                        onClick = {
-                                            viewModel.selectSource(source.id)
-                                            sourceDropdownExpanded = false
-                                        },
-                                        trailingIcon = if (!aggregateMode && currentSource?.id == source.id) {
-                                            { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
-                                        } else null
-                                    )
-                                }
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text("管理书源...") },
-                                    onClick = {
-                                        sourceDropdownExpanded = false
-                                        onOpenSourceManagement()
-                                    }
-                                )
-                            }
                         }
                     }
 
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("搜索书名或作者") },
-                        trailingIcon = {
-                            IconButton(onClick = { performSearch(searchQuery) }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search")
-                            }
+                    SearchBar(
+                        expanded = false,
+                        onExpandedChange = { searchFieldFocused = it },
+                        inputField = {
+                            SearchBarDefaults.InputField(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                onSearch = { performSearch(searchQuery) },
+                                expanded = false,
+                                onExpandedChange = { searchFieldFocused = it },
+                                placeholder = { Text("搜索书名或作者") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "搜索"
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (searchQuery.isNotBlank()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "清空"
+                                            )
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onSearch = { performSearch(searchQuery) }
-                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { searchFieldFocused = it.isFocused },
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
-                    )
+                        shape = RoundedCornerShape(22.dp),
+                        tonalElevation = 0.dp
+                    ) {
+                        // 历史面板由下方独立的 Liquid Glass 浮层承载
+                    }
 
                     if (errorMessage != null) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -489,15 +509,17 @@ fun LibraryScreen(
                         animationSpec = tween(240, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     )
                 ) {
-                    Card(
+                    val historyBackdrop = rememberThemedGlassBackdrop()
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        )
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .liquidGlass(
+                                backdrop = historyBackdrop,
+                                shape = RoundedCornerShape(20.dp),
+                                surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                blurRadius = 20.dp
+                            )
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
                             Row(
@@ -549,72 +571,66 @@ fun LibraryScreen(
 
                 if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
                     val agg = uiState as LibraryUiState.AggregateResults
-                    LazyColumn(
-                        state = listState,
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(2),
+                        state = staggeredGridState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            top = 12.dp,
+                            end = 16.dp,
+                            bottom = 16.dp + extraBottomPadding
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalItemSpacing = 10.dp
                     ) {
                         agg.groups.forEach { group ->
-                            item(key = "agg_group_header_${group.sourceId}") {
+                            item(
+                                key = "agg_group_header_${group.sourceId}",
+                                span = StaggeredGridItemSpan.FullLine
+                            ) {
                                 AggregateSourceHeader(
                                     name = group.sourceName,
                                     loading = group.loading,
-                                    resultCount = group.books.size,
-                                    modifier = Modifier.padding(top = 4.dp)
+                                    resultCount = group.books.size
                                 )
                             }
                             if (group.loading) {
-                                item(key = "agg_group_loading_${group.sourceId}") {
-                                    Box(
+                                items(4, key = { "agg_loading_${group.sourceId}_$it" }) {
+                                    ShimmerBox(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 18.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            ChasingDots(size = 30.dp, color = MintPrimary)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(
-                                                text = "正在搜索…",
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
+                                            .aspectRatio(3f / 4f)
+                                    )
                                 }
                             } else if (group.books.isNotEmpty()) {
                                 items(group.books, key = { "${group.sourceId}_${it.id}" }) { book ->
-                                    val st by remember(book.id) {
-                                        derivedStateOf {
-                                            downloadStatesState.value[book.id] ?: DownloadState.Idle
-                                        }
-                                    }
-                                    LibraryBookCard(
+                                    StaggeredComicCard(
                                         book = book,
-                                        downloadState = st,
                                         imageLoader = imageLoader,
                                         coverHeaders = rememberCoverHeaders(book, availableSources),
-                                        comicMode = true,
-                                        onStartDownload = { onOpenComic(book) },
-                                        onPauseDownload = { viewModel.pauseDownload(book.id) },
-                                        onResumeDownload = { viewModel.resumeDownload(book.id) },
-                                        onCancelDownload = { viewModel.cancelDownload(book.id) }
+                                        sourceName = group.sourceName,
+                                        onClick = { onOpenComic(book) }
                                     )
                                 }
                             } else {
-                                item(key = "agg_group_error_${group.sourceId}") {
+                                item(
+                                    key = "agg_group_error_${group.sourceId}",
+                                    span = StaggeredGridItemSpan.FullLine
+                                ) {
                                     AggregateSourceError(
-                                        error = group.error,
-                                        modifier = Modifier.padding(vertical = 6.dp)
+                                        error = group.error
                                     )
                                 }
                             }
                         }
                         if (!agg.running && agg.groups.none { it.books.isNotEmpty() }) {
-                            item(key = "agg_empty") {
+                            item(
+                                key = "agg_empty",
+                                span = StaggeredGridItemSpan.FullLine
+                            ) {
                                 com.example.ui.components.MascotEmptyState(
                                     mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
                                     title = "未找到结果",
@@ -833,14 +849,9 @@ fun LibraryScreen(
             }
         }
 
-        // Overlay Box for Download Panel
+        // 下载管理中心：亚克力底部面板（Dialog + decorView 实时模糊 + 径向遮罩）
         if (showDownloadPanel) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { showDownloadPanel = false },
-                contentAlignment = Alignment.Center
-            ) {
+            AcrylicBottomOverlay(onDismissRequest = { showDownloadPanel = false }) {
                 var appear by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) { appear = true }
                 val panelScale by animateFloatAsState(
@@ -861,13 +872,13 @@ fun LibraryScreen(
                 val comicTasks = comicDownloadTasks.values.toList()
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.92f)
+                        .fillMaxWidth()
+                        .padding(20.dp)
                         .graphicsLayer {
                             scaleX = panelScale
                             scaleY = panelScale
                             alpha = panelAlpha
                         }
-                        .clickable(enabled = false) {} // Prevent clicks from passing through
                 ) {
                     if (comicTasks.isNotEmpty()) {
                         ComicDownloadGlassCard(
@@ -898,8 +909,385 @@ fun LibraryScreen(
                 }
             }
         }
+
+        // 书源选择 Liquid Glass 底部弹层
+        if (showSourceSheet) {
+            SourcePickerSheet(
+                aggregateMode = aggregateMode,
+                currentSource = currentSource,
+                visibleSources = visibleSources,
+                onSelectAggregate = {
+                    viewModel.setAggregateMode(true)
+                    showSourceSheet = false
+                },
+                onSelectSource = { id ->
+                    viewModel.selectSource(id)
+                    showSourceSheet = false
+                },
+                onManageSources = {
+                    showSourceSheet = false
+                    onOpenSourceManagement()
+                },
+                onDismiss = { showSourceSheet = false }
+            )
+        }
     }
 }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SourcePickerSheet(
+    aggregateMode: Boolean,
+    currentSource: BookSource?,
+    visibleSources: List<BookSource>,
+    onSelectAggregate: () -> Unit,
+    onSelectSource: (String) -> Unit,
+    onManageSources: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val activity = androidx.compose.ui.platform.LocalContext.current as? Activity
+    var visible by remember { mutableStateOf(false) }
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val dismiss = {
+        if (!dismissed) {
+            dismissed = true
+            visible = false
+        }
+    }
+    LaunchedEffect(dismissed) {
+        if (dismissed) {
+            kotlinx.coroutines.delay(280)
+            onDismiss()
+        }
+    }
+
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val backdrop = rememberGlassPanelBackdrop()
+    val iridescentColors = rememberIridescentColors()
+    val blurPx = with(density) { 18.dp.toPx() }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    // 系统"减少透明度/关闭动画"开启时降级：不再用折射等重效果，面板更实
+    val sheetContext = androidx.compose.ui.platform.LocalContext.current
+    val reduceEffects = remember {
+        val resolver = sheetContext.contentResolver
+        val reduceTransparency = try {
+            android.provider.Settings.Global.getInt(resolver, "reduce_transparency", 0) == 1
+        } catch (_: Exception) {
+            false
+        }
+        val animationsOff = try {
+            android.provider.Settings.Global.getFloat(
+                resolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (_: Exception) {
+            false
+        }
+        reduceTransparency || animationsOff
+    }
+
+    Dialog(
+        onDismissRequest = dismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+    ) {
+        // 透明窗口 + 实时模糊宿主窗口（decorView RenderEffect）
+        GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(160)) +
+                slideInVertically(tween(340), initialOffsetY = { it }),
+            exit = fadeOut(tween(150)) +
+                slideOutVertically(tween(260), targetOffsetY = { it })
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // 径向渐变遮罩：中心亮、四周暗，聚光灯打在立牌上
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .radialGlassScrim()
+                )
+                // 点击空白处关闭
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = dismiss
+                        )
+                )
+                // 液态玻璃弹窗本体：半透明 + 折射 + 高光 + 投影
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .zIndex(1f)
+                        // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
+                        .shadow(
+                            elevation = 32.dp,
+                            shape = sheetShape,
+                            ambientColor = iridescentColors.first().copy(alpha = 0.12f),
+                            spotColor = iridescentColors.first().copy(alpha = 0.12f)
+                        )
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = sheetShape,
+                            ambientColor = Color.Black.copy(alpha = 0.20f),
+                            spotColor = Color.Black.copy(alpha = 0.20f)
+                        )
+                        .liquidGlass(
+                            backdrop = backdrop,
+                            shape = sheetShape,
+                            surfaceColor = MaterialTheme.colorScheme.surface.copy(
+                                alpha = if (reduceEffects) 0.72f else 0.58f
+                            ),
+                            blurRadius = 12.dp,
+                            refraction = !reduceEffects
+                        )
+                        .clip(sheetShape)
+                        .filmGrain(alpha = 0.04f)
+                        .iridescentBorder(
+                            shape = sheetShape,
+                            colors = iridescentColors,
+                            width = 2.dp,
+                            alpha = 0.22f
+                        )
+                        .navigationBarsPadding()
+                ) {
+                    // 拖拽手柄（弹窗内容最顶部）
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp, bottom = 6.dp)
+                            .pointerInput(Unit) {
+                                val dismissThreshold = with(density) { 120.dp.toPx() }
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        if (dragOffsetY > dismissThreshold) {
+                                            dismiss()
+                                        } else {
+                                            dragOffsetY = 0f
+                                        }
+                                    },
+                                    onDragCancel = { dragOffsetY = 0f },
+                                    onVerticalDrag = { _, dragAmount ->
+                                        dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFFB9B9BE))
+                        )
+                    }
+                    Text(
+                        text = "选择书源",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(420.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        item {
+                            val interaction = remember { MutableInteractionSource() }
+                            val pressed by interaction.collectIsPressedAsState()
+                            val pressScale by animateFloatAsState(
+                                targetValue = if (pressed) 0.97f else 1f,
+                                label = "press"
+                            )
+                            ListItem(
+                                headlineContent = { Text("管理书源", color = MaterialTheme.colorScheme.primary) },
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                ),
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = pressScale
+                                        scaleY = pressScale
+                                    }
+                                    .clickable(
+                                        interactionSource = interaction,
+                                        indication = null,
+                                        onClick = onManageSources
+                                    )
+                            )
+                        }
+                        item {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
+                            )
+                        }
+                        item {
+                            val interaction = remember { MutableInteractionSource() }
+                            val pressed by interaction.collectIsPressedAsState()
+                            val pressScale by animateFloatAsState(
+                                targetValue = if (pressed) 0.97f else 1f,
+                                label = "press"
+                            )
+                            val checkScale by animateFloatAsState(
+                                targetValue = if (aggregateMode) 1f else 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "check"
+                            )
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = "聚合漫画（全部）",
+                                        fontWeight = if (aggregateMode) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                supportingContent = { Text("同时搜索所有已启用的漫画源") },
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.MenuBook,
+                                        contentDescription = null,
+                                        tint = if (aggregateMode) MaterialTheme.colorScheme.secondary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingContent = {
+                                    if (aggregateMode) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "当前选择",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier
+                                                .size(22.dp)
+                                                .graphicsLayer {
+                                                    scaleX = checkScale
+                                                    scaleY = checkScale
+                                                }
+                                        )
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                ),
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = pressScale
+                                        scaleY = pressScale
+                                    }
+                                    .clickable(
+                                        interactionSource = interaction,
+                                        indication = null,
+                                        onClick = onSelectAggregate
+                                    )
+                            )
+                        }
+                        item {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
+                            )
+                        }
+                        items(visibleSources, key = { it.id }) { source ->
+                            val selected = !aggregateMode && currentSource?.id == source.id
+                            val interaction = remember { MutableInteractionSource() }
+                            val pressed by interaction.collectIsPressedAsState()
+                            val pressScale by animateFloatAsState(
+                                targetValue = if (pressed) 0.97f else 1f,
+                                label = "press"
+                            )
+                            val checkScale by animateFloatAsState(
+                                targetValue = if (selected) 1f else 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "check"
+                            )
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = source.name,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        text = source.id,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                leadingContent = {
+                                    SourceAvatar(
+                                        sourceId = source.id,
+                                        sourceName = source.name,
+                                        size = 32.dp
+                                    )
+                                },
+                                trailingContent = {
+                                    if (selected) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "当前使用",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier
+                                                .size(22.dp)
+                                                .graphicsLayer {
+                                                    scaleX = checkScale
+                                                    scaleY = checkScale
+                                                }
+                                        )
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                ),
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = pressScale
+                                        scaleY = pressScale
+                                    }
+                                    .clickable(
+                                        interactionSource = interaction,
+                                        indication = null
+                                    ) {
+                                        onSelectSource(source.id)
+                                    }
+                            )
+                        }
+                        item {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -914,10 +1302,8 @@ private fun ComicDownloadGlassCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -982,7 +1368,7 @@ private fun ComicDownloadTaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -991,7 +1377,7 @@ private fun ComicDownloadTaskRow(
         ) {
             Text(
                 text = task.chapter.title.ifBlank { "漫画章节" },
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -1003,56 +1389,57 @@ private fun ComicDownloadTaskRow(
                 ComicDownloadStatus.DOWNLOADING -> {
                     Text(
                         text = "${(task.progress.coerceIn(0f, 1f) * 100).toInt()}%",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = MintPrimary
                     )
-                    AppIconButton(onClick = { onPause(task.chapterId) }, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.Pause,
-                            contentDescription = "暂停下载",
-                            tint = MintPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
                 }
                 ComicDownloadStatus.PAUSED -> {
-                    Text("已暂停", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    AppIconButton(onClick = { onResume(task.chapterId) }, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "继续下载",
-                            tint = MintPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Text("已暂停", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 ComicDownloadStatus.FAILED -> {
-                    Text("失败", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                    AppIconButton(onClick = { onRetry(task.chapterId) }, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "重新下载",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Text("失败", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                 }
                 ComicDownloadStatus.SUCCESS -> {
                     Text(
                         "已完成",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
-            AppIconButton(onClick = { onCancel(task.chapterId) }, modifier = Modifier.size(28.dp)) {
+            // 同一槽位的播放/暂停形态按钮：状态切换时形变动画不重置
+            if (task.status == ComicDownloadStatus.DOWNLOADING || task.status == ComicDownloadStatus.PAUSED) {
+                Spacer(modifier = Modifier.width(8.dp))
+                PlayPauseMorphButton(
+                    isPlaying = task.status == ComicDownloadStatus.DOWNLOADING,
+                    onClick = if (task.status == ComicDownloadStatus.DOWNLOADING) {
+                        { onPause(task.chapterId) }
+                    } else {
+                        { onResume(task.chapterId) }
+                    },
+                    sizeDp = 36
+                )
+            }
+            if (task.status == ComicDownloadStatus.FAILED) {
+                Spacer(modifier = Modifier.width(8.dp))
+                AppIconButton(onClick = { onRetry(task.chapterId) }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "重新下载",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            AppIconButton(onClick = { onCancel(task.chapterId) }, modifier = Modifier.size(32.dp)) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = "取消任务",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -1351,40 +1738,28 @@ fun LibraryBookCard(
                 ) { state ->
                     when (state) {
                         is DownloadState.Idle -> {
-                            Button(
+                            AppActionButton(
+                                text = if (comicMode) "阅读" else "下载",
                                 onClick = onStartDownload,
-                                shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                modifier = Modifier.height(32.dp).testTag("download_button_idle")
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        if (comicMode) Icons.Filled.MenuBook else Icons.Default.Download,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (comicMode) "阅读" else "下载", fontSize = 12.sp)
-                                }
-                            }
+                                variant = AppButtonVariant.Primary,
+                                buttonSize = AppButtonSize.Small,
+                                icon = if (comicMode) Icons.Filled.MenuBook else Icons.Default.Download,
+                                modifier = Modifier.testTag("download_button_idle")
+                            )
                         }
                         is DownloadState.Error -> {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Button(
+                                AppActionButton(
+                                    text = "重试",
                                     onClick = onStartDownload,
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                    modifier = Modifier.height(32.dp).testTag("download_button_retry")
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("重试", fontSize = 12.sp)
-                                    }
-                                }
+                                    variant = AppButtonVariant.Primary,
+                                    buttonSize = AppButtonSize.Small,
+                                    icon = Icons.Default.Refresh,
+                                    modifier = Modifier.testTag("download_button_retry")
+                                )
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
@@ -1428,7 +1803,8 @@ fun LibraryBookCard(
                                 }
                             }
                         }
-                        is DownloadState.Downloading -> {
+                        is DownloadState.Downloading, is DownloadState.Paused -> {
+                            val isPaused = state is DownloadState.Paused
                             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1436,54 +1812,51 @@ fun LibraryBookCard(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(
-                                            progress = { state.progress },
-                                            modifier = Modifier.size(14.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
+                                        if (isPaused) {
+                                            Icon(Icons.Default.Pause, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                        } else {
+                                            CircularProgressIndicator(
+                                                progress = {
+                                                    (state as? DownloadState.Downloading)?.progress ?: 0f
+                                                },
+                                                modifier = Modifier.size(14.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.secondary
+                                            )
+                                        }
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "下载中: ${(state.progress * 100).toInt()}%",
-                                            fontSize = 12.sp,
+                                            text = if (isPaused) "已暂停" else {
+                                                val p = (state as? DownloadState.Downloading)?.progress ?: 0f
+                                                "下载中: ${(p * 100).toInt()}%"
+                                            },
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.secondary
+                                            color = if (isPaused) Color.Gray else MaterialTheme.colorScheme.secondary
                                         )
                                     }
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        AppIconButton(onClick = onPauseDownload, modifier = Modifier.size(24.dp)) {
-                                            Icon(Icons.Default.Pause, contentDescription = "暂停", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                                        }
-                                        AppIconButton(onClick = onCancelDownload, modifier = Modifier.size(24.dp)) {
-                                            Icon(Icons.Default.Close, contentDescription = "取消", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                        // 同一槽位：暂停↔继续时形变动画不重置
+                                        PlayPauseMorphButton(
+                                            isPlaying = !isPaused,
+                                            onClick = if (isPaused) onResumeDownload else onPauseDownload,
+                                            sizeDp = 30
+                                        )
+                                        AppIconButton(onClick = onCancelDownload, modifier = Modifier.size(30.dp)) {
+                                            Icon(Icons.Default.Close, contentDescription = "取消", tint = Color.Gray, modifier = Modifier.size(16.dp))
                                         }
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = { state.progress },
-                                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
-                                )
-                            }
-                        }
-                        is DownloadState.Paused -> {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(Color.Gray.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Pause, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("已暂停", fontSize = 12.sp, color = Color.Gray)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                AppIconButton(onClick = onResumeDownload, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "继续", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                                }
-                                AppIconButton(onClick = onCancelDownload, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.Close, contentDescription = "取消", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                if (!isPaused) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    LinearProgressIndicator(
+                                        progress = {
+                                            (state as? DownloadState.Downloading)?.progress ?: 0f
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        trackColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+                                    )
                                 }
                             }
                         }
@@ -1564,6 +1937,156 @@ private fun SearchBook.displayFormat(): String {
 }
 
 @Composable
+private fun StaggeredComicCard(
+    book: SearchBook,
+    imageLoader: ImageLoader,
+    coverHeaders: Map<String, String>,
+    sourceName: String,
+    onClick: () -> Unit
+) {
+    var coverRatio by remember(book.cover) { mutableStateOf(3f / 4f) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = tween(120),
+        label = "gridPress"
+    )
+    val cardShape = RoundedCornerShape(14.dp)
+    val formatBadge = remember(book) {
+        listOfNotNull(
+            book.comicId?.takeIf { it.isNotBlank() }?.let { "#$it" },
+            book.format?.takeIf { it.isNotBlank() && !it.equals("epub", true) }?.uppercase()
+        ).firstOrNull() ?: "漫画"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .shadow(
+                elevation = 8.dp,
+                shape = cardShape,
+                ambientColor = Color.Black.copy(alpha = 0.12f),
+                spotColor = Color.Black.copy(alpha = 0.12f)
+            )
+            .clip(cardShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(coverRatio)
+                .clip(cardShape)
+                .background(Color.Gray.copy(alpha = 0.15f))
+        ) {
+            if (book.cover.isNullOrBlank()) {
+                BookCoverPlaceholder(book)
+            } else {
+                val coverModel: Any = if (coverHeaders.isEmpty()) {
+                    book.cover
+                } else {
+                    ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                        .data(book.cover)
+                        .apply { coverHeaders.forEach { (k, v) -> addHeader(k, v) } }
+                        .build()
+                }
+                SubcomposeAsyncImage(
+                    model = coverModel,
+                    imageLoader = imageLoader,
+                    contentDescription = book.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    when (painter.state) {
+                        is AsyncImagePainter.State.Success -> {
+                            val s = painter.intrinsicSize
+                            LaunchedEffect(s) {
+                                if (s.width > 0f && s.height > 0f) {
+                                    val r = s.width / s.height
+                                    if (r in 0.45f..2.2f) coverRatio = r
+                                }
+                            }
+                            SubcomposeAsyncImageContent()
+                        }
+                        else -> BookCoverPlaceholder(book)
+                    }
+                }
+            }
+            // 底部渐变遮罩（黑→透明，占封面 40%），标题永远可读
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.40f)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        )
+                    )
+            )
+            // 标题 + 作者压在遮罩上
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = book.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.shadow(2.dp, RoundedCornerShape(4.dp))
+                )
+                if (book.author.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = book.author,
+                        color = Color.White.copy(alpha = 0.70f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            // 格式角标（右上）
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+                shape = RoundedCornerShape(6.dp),
+                color = Color.Black.copy(alpha = 0.55f)
+            ) {
+                Text(
+                    text = formatBadge,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            // 来源角标（左上，16dp 圆形头像）
+            SourceAvatar(
+                sourceId = book.sourceId,
+                sourceName = sourceName,
+                size = 16.dp,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun AggregateSourceHeader(
     name: String,
     loading: Boolean,
@@ -1573,45 +2096,54 @@ private fun AggregateSourceHeader(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .clip(RoundedCornerShape(26.dp))
+            .height(40.dp)
+            .clip(RoundedCornerShape(20.dp))
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.22f),
-                shape = RoundedCornerShape(26.dp)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(20.dp)
             )
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        MintPrimary.copy(alpha = 0.16f),
-                        MintSecondary.copy(alpha = 0.32f),
-                        MintPrimary.copy(alpha = 0.16f)
-                    )
-                )
-            ),
+            .background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) {
+            // 24dp 圆形源头像（哈希取色 + 首字母）
+            SourceAvatar(
+                sourceId = "agg_$name",
+                sourceName = name,
+                size = 24.dp
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             if (loading) {
                 ChasingDots(size = 18.dp, color = MintPrimary)
                 Spacer(modifier = Modifier.width(10.dp))
             }
             Text(
                 text = name,
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
             if (!loading && resultCount > 0) {
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "· $resultCount",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MintPrimary
-                )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MintPrimary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "$resultCount",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MintPrimary,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
     }

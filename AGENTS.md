@@ -4,20 +4,35 @@
 
 ---
 
+## 〇、当前版本与近期变更（v0.72）
+
+- **版本**：v0.72（versionCode 147）
+- **UI 组件约定**：
+  - 按钮一律使用 `AppActionButton`（四变体 Primary / Secondary / Tertiary / Destructive），颜色取自 `LocalAppButtonColors` / MaterialTheme token，禁止组件内硬编码主题色；`GradientActionButton` / `AppLiquidButton` 为兼容入口。
+  - 开关统一使用 `AppLiquidSwitch` / `JellySwitch`（书源管理与设置页一致）。
+  - 底部导航栏使用 `AppBottomTabBar`（悬浮液态玻璃胶囊，滚动收缩 + 主题色过渡）。
+  - 弹窗内玻璃元素必须使用 `DialogLiquidGlass` 创建该窗口自己的 LiquidGlass Provider，禁止复用主窗口 Provider，否则会抛 “layouts are not part of the same hierarchy” 闪退。
+- **构建体积**：release APK 约 7.6MB（原生库压缩 + R8 full mode + 资源收缩 + 仅 arm64-v8a）。
+- **部署**：编译安装走 `android-adb-deploy` skill（build_apk.ps1 / install_apk.ps1），版本号必须递增，华为安装弹窗由脚本自动处理。
+
+---
+
 ## 一、项目整体介绍
 
 ### 1.1 项目概况
 - **项目名称**：Modern E-Book Reader (Android 电子书与漫画阅读器 & 多源书库)
-- **开发语言**：Kotlin 1.9+
+- **开发语言**：Kotlin 2.0.21
 - **UI 框架**：Jetpack Compose (Material Design 3)
-- **最低 SDK 版本**：Android 8.0 (API 26)
-- **目标 SDK 版本**：Android 14 (API 34)
+- **最低 SDK 版本**：Android 7.0 (API 24)
+- **目标 SDK 版本**：Android 15 (API 35)
 - **核心依赖**：
   - **网络层**：OkHttp 4.12.0 + kotlinx-coroutines
-  - **解析层**：Jsoup 1.17.2 (HTML 抓取解析)
+  - **解析层**：Jsoup 1.18.3 (HTML 抓取解析)
   - **数据库**：Room 2.6.1 + KSP
-  - **图片加载**：Coil Compose 2.6.0
+  - **图片加载**：Coil Compose 2.7.0
   - **异步流**：Kotlin Flow / StateFlow / ViewModel
+  - **液态玻璃**：Abdullajon1881/LiquidGlass + KMPLiquidGlass（backdrop 模块）
+  - **底部弹窗**：skydoves/FlexibleBottomSheet；**动效**：skydoves/compose-animations、commandiron/ComposeLoading
 
 ### 1.2 目录结构全景
 

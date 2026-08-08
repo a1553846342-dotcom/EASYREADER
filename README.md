@@ -2,8 +2,7 @@
 
 > 一个基于 Kotlin + Jetpack Compose 的现代 Android 电子书阅读器。
 > 支持 TXT / EPUB / 漫画阅读、多源在线书库搜索、断点续传下载与书架管理。
-
-当前版本：**v0.35**
+> 当前版本：**v0.72**
 
 ---
 
@@ -14,62 +13,66 @@
   - CBZ / CBR 漫画阅读
   - 3D / 2.5D 仿生翻页动画
   - 阅读进度保存、书签、夜间模式、TTS 朗读
+  - 在线/本地漫画阅读器：双指捏合缩放、双击放大还原、一指控缩放
 - **在线书库**
   - Z-Library 原生搜索（隐藏 WebView 会话，可过 DiamWall 验证）、登录 / Cookie 管理
   - 节点管理：默认节点 + 官网 / 备用入口自动扒取 + 自定义节点 + 一键检测切换
   - MangaDex 漫画源
   - ehentai 漫画源：图片页直抓 + H@H 图床 Cronet 加载与本地缓存，失败自动重试
-  - Venera JS 漫画源：拷贝漫画、comick、漫蛙吧、GoDa、漫画人、MYCOMIC 等
+  - Venera JS 漫画源：拷贝漫画、comick、漫蛙吧、goDa、漫画人、MYCOMIC 等
   - 聚合搜索：每出一个源立即展示，渐变毛玻璃胶囊分隔，失败显示“链接超时 / 无结果”
-  - 搜索历史（点击搜索框展开 / 收起）
+  - 搜索历史（点击搜索框展开 / 收起，窗帘式动画）
   - 自定义 JSON 书源：粘贴 / 文件导入，兼容 Legado 规则与 JSON API
-  - 搜索结果卡片显示真实作者、作品编号（#jm号 / ehentai gid / nhentai id）与语言
+  - 搜索卡片显示真实作者、作品编号（#jm号 / ehentai gid / nhentai id）与语言
 - **下载与书架**
-  - 漫画下载由应用级任务中心管理：切页面不中断，失败保留可重试，3 路并发下载
+  - 漫画下载由应用级任务中心管理：切换页面不中断，失败保留可重试，3 路并发下载
   - 下载断点续传，支持暂停 / 继续 / 取消
   - 毛玻璃下载卡片：封面、书名、进度、速度、剩余大小
-  - 下载完成自动校验并导入书架
-- **漫画阅读体验**
-  - 在线与本地阅读器：双指捏合缩放、双击放大 / 还原、一指缩放（双击按住拖动）
-  - 横向逐页缩放，纵向整列缩放
-- **体验**
-  - 深色 / 护眼 / 自定义主题配色
+  - 下载完成自动校验并入库书架
+- **UI / 体验**
+  - 全局四变体液态玻璃按钮：Primary（实心渐变+玻璃高光+gel-press）/ Secondary（色调填充）/ Tertiary（幽灵描边）/ Destructive（语义色）
+  - 液态玻璃开关（书源管理、设置页统一）
+  - 悬浮收缩玻璃底部导航栏：滚动时隐藏文字标签并收缩，图标永远可点，选中指示器弹簧位移，颜色跟随主题主色调平滑过渡
+  - 亚克力立牌质感弹窗（径向遮罩 + 虹彩描边 + 颗粒噪点 + 双层阴影）
+  - 主题配色方案（主色 / 强调色实时联动，Color State Morph 过渡）
   - 吉祥物动画、开屏海报、阅读统计图表
   - 帮助手册与书源管理
 
 ---
 
-## v0.30 → v0.35 主要更新
+## v0.35 → v0.72 主要更新
 
-### 漫画源与阅读
-- ehentai 全链路修复：详情页改用 `hc=1&nw=session` + Referer，取图直接抓图片页 `#img`（参考 delta-comic 实现），不再依赖 api.e-hentai.org
-- H@H 图床图片改用 Cronet（Chromium 网络栈）下载并本地缓存，规避 OkHttp 握手不兼容；阅读器按页懒加载，翻页秒开
-- 图片加载失败自动重试（最多 3 次，自动换新 keystamp 链接）；源初始化后台预热连接，缓解代理冷启动超时
-- 修复脚本显式 Cookie 被本地 CookieJar 覆盖的底层 bug
-- picacg 登录持久化与搜索全链路修复；禁漫天堂 CDN 节点自动切换 + gzip 解压修复；hitomi AVIF → WebP 回退
-- 全部 JS 源网络错误自动重试；阅读器黑屏替换为加载动画 + 失败重试按钮
-- 搜索卡片显示真实作者（artist / cosplayer / group 标签提取）、作品编号与语言
+### 全局 UI 现代化
+- 新增统一按钮系统 `AppActionButton`：四变体结构分层（渐变 / 色调填充 / 描边 / 语义色），全部颜色取自主题 token，disabled 统一 0.4 透明度，内置 loading 转圈与 gel-press 按压动效
+- 所有操作按钮迁移：书源管理、节点管理、章节页、登录弹窗、下载中心、引导页、书架、设置页
+- 底部导航栏重做：悬浮液态玻璃胶囊、滚动收缩（68dp→52dp、隐藏文字、左右留白增大）、选中指示器弹簧追踪、Tab 栏颜色跟随设置主色调平滑过渡
+- 设置页开关（纯净模式 / 夜间模式 / 护眼滤镜 / 高级内容）统一为液态玻璃开关
+- 亚克力立牌弹窗体系：新建分类、选择分类、阅读统计长按、下载管理、登录弹窗等统一质感
+- 搜索历史窗帘式展开/收起动画；ChasingDots 加载动画随强调色变化
+- Play / Pause Morph 应用于漫画下载暂停/继续；Color State Morph 应用于主题色选择与实时联动
 
-### 漫画下载
-- 重构为应用级下载中心 ComicDownloadManager：切换页面 / 重建界面不中断下载
-- 下载失败任务保留在下载卡片中，显示失败原因 + 重试按钮（断点续传）
-- 支持暂停 / 继续 / 取消，3 路并发下载，大章节速度明显提升
-- 本地缓存复用：在线阅读过的图片下载时直接复用，不重复拉取
+### 稳定性修复
+- 修复液态玻璃跨窗口闪退：每个 Dialog / 底部弹层使用独立 LiquidGlass Provider（`DialogLiquidGlass`），不再复用主窗口 Provider，彻底解决 “layouts are not part of the same hierarchy” 崩溃
+- Z-Library 节点管理“扒取节点”闪退修复（替换弹窗内玻璃按钮跨窗口问题）
+- 阅读器黑屏替换为加载动画 + 失败重试；本地缓存图片 file:// 闪退修复
+- 书源切换、聚合搜索、下载任务稳定性优化
 
-### 阅读器与体验
-- 修复本地缓存图片 file:// 加载导致的闪退
-- 图片加载统一 HTTP/1.1 + 多次重试
-- 书架“我的书架”头部无用图标清理
+### 性能与体积
+- 原生库压缩打包（`useLegacyPackaging`），cronet/quickjs 从 10.7MB → 7.6MB
+- R8 full mode + 资源收缩 + 仅 arm64-v8a ABI + 中英文资源裁剪
+- 清理临时文件、调试产物与无用缓存
 
 ---
 
 ## 技术栈
 
-- Kotlin + Jetpack Compose（Material 3）
+- Kotlin 2.0.21 + Jetpack Compose（Material 3）
 - OkHttp + Jsoup + Moshi + Coil
-- Room + WorkManager
+- Room + WorkManager + DataStore 偏好
 - Navigation Compose + Haze（毛玻璃）
-- QuickJS（Venera JS 漫画源）+ Cronet（浏览器级 TLS）
+- QuickJS（Venera JS 漫画源）+ Cronet（浏览器级 TLS / H@H）
+- KMPLiquidGlass（backdrop）+ Abdullajon1881/LiquidGlass（液态玻璃按钮/开关）
+- FlexibleBottomSheet + compose-animations（Morph 动效）
 
 ## 构建
 
@@ -77,13 +80,13 @@
 - Android Studio（或命令行 Gradle）
 - JDK 17+、Android SDK（compileSdk 35 / minSdk 24 / targetSdk 35）
 
-正式版构建（R8 混淆 + 资源压缩）：
+正式版构建（R8 混淆 + 资源压缩 + 原生库压缩）：
 
 ```bash
 gradle :app:assembleRelease
 ```
 
-APK 输出：`app/build/outputs/apk/release/app-release.apk`
+APK 输出：`app/build/outputs/apk/release/app-release.apk`（约 7.6MB）
 
 调试版构建：
 
@@ -91,9 +94,7 @@ APK 输出：`app/build/outputs/apk/release/app-release.apk`
 gradle :app:assembleDebug
 ```
 
-> 注意：v0.35 的 release APK 仅包含 `arm64-v8a` 原生库以极致瘦身。
-> 如需兼容其它 ABI，请移除 `app/build.gradle.kts` 中 `defaultConfig.ndk.abiFilters` 配置。
-> 首次构建请确认 `local.properties` 中已配置 `sdk.dir`（该文件不参与版本管理）。
+> 注意：release APK 仅包含 `arm64-v8a` 原生库以极致瘦身；如需兼容其它 ABI，请调整 `app/build.gradle.kts` 中 `defaultConfig.ndk.abiFilters`。首次构建请确认 `local.properties` 中已配置 `sdk.dir`（该文件不参与版本管理）。
 
 ## 目录结构
 
@@ -113,11 +114,12 @@ app/src/main/java/com/example/
 └── net/engawapg/lib/zoomable/  # GitHub usuiat/Zoomable 完整源码（Apache-2.0）
 ```
 
----
-
 ## 致谢
 
 - 翻页与卷角效果参考 GitHub `pagecurl`、`PTQFlipper`
 - 缩放组件完整引入 [usuiat/Zoomable](https://github.com/usuiat/Zoomable)（Apache-2.0）
 - Venera JS 运行时与社区漫画源来自 [venera-app/venera-configs](https://github.com/venera-app/venera-configs)（GPL-3.0）
-- ehentai 取图思路参考 [delta-comic/delta-comic-plugin-ehentai](https://github.com/delta-comic/delta-comic-plugin-ehentai)（AGPL-3.0）
+- ehentai 取图思路参考 [delta-comic/delta-comic-plugin-ehentai](https://github.com/delta-comic/delta-comic-plugin-ehentai)（GPL-3.0）
+- 液态玻璃引擎：[Abdullajon1881/LiquidGlass](https://github.com/Abdullajon1881/LiquidGlass)、[Kashif-E/KMPLiquidGlass](https://github.com/Kashif-E/KMPLiquidGlass)
+- 底部弹窗：[skydoves/FlexibleBottomSheet](https://github.com/skydoves/FlexibleBottomSheet)
+- 动效参考：[skydoves/compose-animations](https://github.com/skydoves/compose-animations)、[commandiron/ComposeLoading](https://github.com/commandiron/ComposeLoading)

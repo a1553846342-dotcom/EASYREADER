@@ -1,7 +1,9 @@
-package com.example.ui
+﻿package com.example.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
@@ -9,13 +11,16 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,12 +38,23 @@ fun StatisticsScreen(
     books: List<Book>,
     totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
     readingRecords: List<ReadingRecord> = emptyList(),
-    onGoToShelf: () -> Unit = {}
+    onGoToShelf: () -> Unit = {},
+    onDeleteRecord: (ReadingRecord) -> Unit = {},
+    recordCovers: Map<Int, String> = emptyMap(),
+    recordBooks: Map<Int, com.example.source.SearchBook> = emptyMap(),
+    onResolveRecordCovers: (List<ReadingRecord>) -> Unit = {},
+    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit = {},
+    onOpenBook: (Book) -> Unit = {}
 ) {
     val totalReadTimeSeconds by totalReadTimeSecondsFlow.collectAsState()
     val totalHours = totalReadTimeSeconds / 3600
     val totalMins = (totalReadTimeSeconds % 3600) / 60
     val finishedCount = books.count { it.isFinished }
+
+    // 已删除书籍的封面补抓（去原书库书籍页搜索一次并缓存）
+    LaunchedEffect(readingRecords) {
+        onResolveRecordCovers(readingRecords)
+    }
 
     Box(
         modifier = Modifier
@@ -64,7 +80,8 @@ fun StatisticsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Card(
@@ -191,6 +208,15 @@ fun StatisticsScreen(
                     }
                 }
 
+                // 每天阅读的漫画记录（供周几封面轮播使用）
+                val dayRecords = remember(readingRecords, weekDates) {
+                    weekDates.map { date ->
+                        readingRecords
+                            .filter { it.dateStr == date }
+                            .sortedByDescending { it.id }
+                    }
+                }
+
                 if (totalReadTimeSeconds == 0L) {
                     com.example.ui.components.MascotEmptyState(
                         mascotResId = com.example.ui.mascot.MascotSpriteSheet.idleDrawable,
@@ -204,7 +230,14 @@ fun StatisticsScreen(
                     WeeklyReadingChart(
                         minutesPerDay = minutesList,
                         bookTitlesPerDay = booksList,
-                        todayIndex = todayIdx
+                        todayIndex = todayIdx,
+                        dayRecords = dayRecords,
+                        books = books,
+                        recordCovers = recordCovers,
+                        recordBooks = recordBooks,
+                        onDeleteRecord = onDeleteRecord,
+                        onOpenRecordDetail = onOpenRecordDetail,
+                        onOpenBook = onOpenBook
                     )
                 }
             }

@@ -119,20 +119,13 @@ fun MascotEmptyState(
 
             if (actionLabel != null && onActionClick != null) {
                 Spacer(modifier = Modifier.height(24.dp))
-                AppButton(
+                AppActionButton(
+                    text = actionLabel,
                     onClick = onActionClick,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .testTag("${testTagPrefix}_action_button"),
-                    containerColor = MintPrimary,
-                ) {
-                    Text(
-                        text = actionLabel,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
+                    variant = AppButtonVariant.Primary,
+                    buttonSize = AppButtonSize.Medium,
+                    modifier = Modifier.testTag("${testTagPrefix}_action_button")
+                )
             }
         }
     }

@@ -17,12 +17,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.alpha
@@ -39,6 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -49,18 +57,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.Book
 import com.example.data.CategoryEntity
 import com.example.ui.components.AppButton
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.StarryNightBackground
+import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.filmGrain
+import com.example.ui.components.iridescentBorder
+import com.example.ui.components.liquidGlass
+import com.example.ui.components.radialGlassScrim
+import com.example.ui.components.rememberGlassPanelBackdrop
+import com.example.ui.components.rememberIridescentColors
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -97,9 +118,9 @@ fun HomeScreen(
     var selectedCategory by remember { mutableStateOf("全部") }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToMove by remember { mutableStateOf<Book?>(null) }
+    var longPressBook by remember { mutableStateOf<Book?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
-
     // 书架呼吸动画：30fps 自定义驱动（4 秒周期），视觉与 60fps 一致但绘制开销减半；
     // 无书时不启动，避免动画时钟空转。
     val hasBreathingBooks = books.isNotEmpty()
@@ -126,14 +147,17 @@ fun HomeScreen(
 
     // Move dialog
     if (bookToMove != null) {
-        AlertDialog(
+        AcrylicDialog(
             onDismissRequest = { bookToMove = null },
-            title = { Text("选择目标分类", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("选择目标分类", fontWeight = FontWeight.Bold) },
             text = {
                 androidx.compose.foundation.layout.Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     val availableCategories = categories.filter { it.name != bookToMove?.category }
                     if (availableCategories.isEmpty()) {
-                        Text("没有其他可用的分类。", color = Color.White.copy(alpha = 0.8f))
+                        Text(
+                            "没有其他可用的分类。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
                         availableCategories.forEach { cat ->
                             TextButton(
@@ -143,7 +167,7 @@ fun HomeScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(cat.name, color = Color.White)
+                                Text(cat.name)
                             }
                         }
                     }
@@ -152,22 +176,23 @@ fun HomeScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { bookToMove = null }) {
-                    Text("取消", color = Color.Gray)
+                    Text("取消")
                 }
-            },
-            containerColor = Color(0xFF1B143F),
-            shape = RoundedCornerShape(24.dp)
+            }
         )
     }
 
     // Delete dialog
     if (bookToDelete != null) {
-        AlertDialog(
+        AcrylicDialog(
             onDismissRequest = { bookToDelete = null },
-            title = { Text("移出此书", fontWeight = FontWeight.Bold, color = Color.White) },
-            text = { Text("确认要将《${bookToDelete?.title}》从书架中移出吗？", color = Color.White.copy(alpha = 0.8f)) },
-            containerColor = Color(0xFF1B143F),
-            shape = RoundedCornerShape(24.dp),
+            title = { Text("移出此书", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "确认要将《${bookToDelete?.title}》从书架中移出吗？",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -175,12 +200,12 @@ fun HomeScreen(
                         bookToDelete = null
                     }
                 ) {
-                    Text("确认移出", color = Color(0xFFFF5E7E), fontWeight = FontWeight.Bold)
+                    Text("确认移出", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { bookToDelete = null }) {
-                    Text("取消", color = Color.Gray)
+                    Text("取消")
                 }
             }
         )
@@ -188,22 +213,22 @@ fun HomeScreen(
 
     // New Category Dialog
     if (showAddCategoryDialog) {
-        AlertDialog(
+        AcrylicDialog(
             onDismissRequest = { showAddCategoryDialog = false },
-            title = { Text("新建分类", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("新建分类", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = newCategoryText,
                     onValueChange = { newCategoryText = it },
-                    label = { Text("名称", color = Color.White.copy(alpha = 0.6f)) },
+                    label = { Text("名称", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                         focusedLabelColor = MintPrimary,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         focusedIndicatorColor = MintPrimary,
-                        unfocusedIndicatorColor = Color.White.copy(alpha = 0.4f),
+                        unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                         cursorColor = MintPrimary,
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent
@@ -211,8 +236,6 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             },
-            containerColor = Color(0xFF1B143F),
-            shape = RoundedCornerShape(24.dp),
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -228,7 +251,7 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddCategoryDialog = false }) {
-                    Text("取消", color = Color.Gray)
+                    Text("取消")
                 }
             }
         )
@@ -567,14 +590,13 @@ fun HomeScreen(
 
                                         Spacer(modifier = Modifier.height(16.dp))
 
-                                        AppButton(
+                                        AppActionButton(
+                                            text = "继续阅读",
                                             onClick = { onBookClick(currentlyReading) },
-                                            containerColor = MintPrimary,
-                                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                                            variant = AppButtonVariant.Primary,
+                                            buttonSize = AppButtonSize.Small,
                                             modifier = Modifier.align(Alignment.End)
-                                        ) {
-                                            Text("继续阅读", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -714,7 +736,6 @@ fun HomeScreen(
 
                             var isPressed by remember { mutableStateOf(false) }
                             var isLongPressed by remember { mutableStateOf(false) }
-                            var showMenu by remember { mutableStateOf(false) }
 
                             val scaleAnim by animateFloatAsState(
                                 targetValue = if (isLongPressed) 1.05f else 1f,
@@ -728,33 +749,6 @@ fun HomeScreen(
                             )
 
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = {
-                                        showMenu = false
-                                        isLongPressed = false
-                                    }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("移动到其他书架") },
-                                        onClick = {
-                                            showMenu = false
-                                            isLongPressed = false
-                                            bookToMove = book
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("删除图书", color = MaterialTheme.colorScheme.error) },
-                                        onClick = {
-                                            showMenu = false
-                                            isLongPressed = false
-                                            // Set bookToDelete to trigger the delete confirmation dialog (or delete directly if required)
-                                            // Requirements: "如果'删除图书'这个菜单项本身还需要二次确认(防误删),可以保留一个简洁的二次确认,但必须先经过长按菜单"
-                                            bookToDelete = book
-                                        }
-                                    )
-                                }
-
                                 Column(
                                     modifier = Modifier
                                         .graphicsLayer {
@@ -777,7 +771,7 @@ fun HomeScreen(
                                                 },
                                                 onLongPress = {
                                                     isLongPressed = true
-                                                    showMenu = true
+                                                    longPressBook = book
                                                 },
                                                 onTap = { onBookClick(book) }
                                             )
@@ -972,6 +966,25 @@ fun HomeScreen(
                 }
             }
         }
+
+        longPressBook?.let { book ->
+            BookActionSheet(
+                book = book,
+                onDismiss = { longPressBook = null },
+                onOpenDetail = {
+                    longPressBook = null
+                    onBookClick(book)
+                },
+                onMove = {
+                    longPressBook = null
+                    bookToMove = book
+                },
+                onDelete = {
+                    longPressBook = null
+                    bookToDelete = book
+                }
+            )
+        }
     }
 
 @Composable
@@ -985,4 +998,290 @@ private fun TodayReadTimeText(totalReadTimeFlow: kotlinx.coroutines.flow.StateFl
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BookActionSheet(
+    book: Book,
+    onDismiss: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val backdrop = rememberGlassPanelBackdrop()
+    val iridescentColors = rememberIridescentColors()
+
+    val coverData = remember(book.coverUri, book.isCoverValid) {
+        if (book.coverUri.isNullOrEmpty()) {
+            null
+        } else if (book.coverUri!!.startsWith("content://")) {
+            android.net.Uri.parse(book.coverUri!!)
+        } else if (book.isCoverValid) {
+            val path = if (book.coverUri!!.startsWith("file://")) {
+                book.coverUri!!.substring(7)
+            } else {
+                book.coverUri!!
+            }
+            java.io.File(path)
+        } else {
+            null
+        }
+    }
+    val imageRequest = remember(book.coverUri, coverData) {
+        if (coverData == null) {
+            null
+        } else {
+            coil.request.ImageRequest.Builder(context)
+                .data(coverData)
+                .memoryCacheKey(book.coverUri)
+                .diskCacheKey(book.coverUri)
+                .crossfade(true)
+                .build()
+        }
+    }
+
+    var visible by remember { mutableStateOf(false) }
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val dismiss = {
+        if (!dismissed) {
+            dismissed = true
+            visible = false
+        }
+    }
+    LaunchedEffect(dismissed) {
+        if (dismissed) {
+            kotlinx.coroutines.delay(280)
+            onDismiss()
+        }
+    }
+
+    val blurPx = with(androidx.compose.ui.platform.LocalDensity.current) { 18.dp.toPx() }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val sheetContext = androidx.compose.ui.platform.LocalContext.current
+    val sheetDensity = androidx.compose.ui.platform.LocalDensity.current
+    val reduceEffects = remember {
+        val resolver = sheetContext.contentResolver
+        val reduceTransparency = try {
+            android.provider.Settings.Global.getInt(resolver, "reduce_transparency", 0) == 1
+        } catch (_: Exception) {
+            false
+        }
+        val animationsOff = try {
+            android.provider.Settings.Global.getFloat(
+                resolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (_: Exception) {
+            false
+        }
+        reduceTransparency || animationsOff
+    }
+
+    Dialog(
+        onDismissRequest = dismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+    ) {
+        // 透明窗口 + 实时模糊宿主窗口（decorView RenderEffect）
+        GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(160)) +
+                slideInVertically(tween(340), initialOffsetY = { it }),
+            exit = fadeOut(tween(150)) +
+                slideOutVertically(tween(260), targetOffsetY = { it })
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // 径向渐变遮罩：中心亮、四周暗，聚光灯打在立牌上
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .radialGlassScrim()
+                )
+                // 点击空白处关闭
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = dismiss
+                        )
+                )
+                // 液态玻璃弹窗本体
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+                        .zIndex(1f)
+                        // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
+                        .shadow(
+                            elevation = 32.dp,
+                            shape = sheetShape,
+                            ambientColor = iridescentColors.first().copy(alpha = 0.12f),
+                            spotColor = iridescentColors.first().copy(alpha = 0.12f)
+                        )
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = sheetShape,
+                            ambientColor = Color.Black.copy(alpha = 0.20f),
+                            spotColor = Color.Black.copy(alpha = 0.20f)
+                        )
+                        .liquidGlass(
+                            backdrop = backdrop,
+                            shape = sheetShape,
+                            surfaceColor = MaterialTheme.colorScheme.surface.copy(
+                                alpha = if (reduceEffects) 0.72f else 0.58f
+                            ),
+                            blurRadius = 12.dp,
+                            refraction = !reduceEffects
+                        )
+                        .clip(sheetShape)
+                        .filmGrain(alpha = 0.04f)
+                        .iridescentBorder(
+                            shape = sheetShape,
+                            colors = iridescentColors,
+                            width = 2.dp,
+                            alpha = 0.22f
+                        )
+                        .navigationBarsPadding()
+                ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, bottom = 6.dp)
+                .pointerInput(Unit) {
+                    val dismissThreshold = with(sheetDensity) { 120.dp.toPx() }
+                    detectVerticalDragGestures(
+                        onDragEnd = {
+                            if (dragOffsetY > dismissThreshold) {
+                                dismiss()
+                            } else {
+                                dragOffsetY = 0f
+                            }
+                        },
+                        onDragCancel = { dragOffsetY = 0f },
+                        onVerticalDrag = { _, dragAmount ->
+                            dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFFB9B9BE))
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(56.dp)
+                    .height(78.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Gray.copy(alpha = 0.2f))
+            ) {
+                if (imageRequest != null) {
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = book.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = book.title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = book.author,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        HorizontalDivider(
+            thickness = 1.dp,
+            color = Color.White.copy(alpha = 0.12f),
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+
+        val primary = MaterialTheme.colorScheme.primary
+        val error = MaterialTheme.colorScheme.error
+        val onSurface = MaterialTheme.colorScheme.onSurface
+        listOf(
+            Triple("打开详情", Icons.Default.MenuBook, primary),
+            Triple("移动到其他书架", Icons.Default.Folder, primary),
+            Triple("删除图书", Icons.Default.Delete, error)
+        ).forEach { (label, icon, tint) ->
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            val pressScale by animateFloatAsState(
+                targetValue = if (pressed) 0.97f else 1f,
+                label = "press"
+            )
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = label,
+                        fontWeight = FontWeight.Medium,
+                        color = if (label == "删除图书") tint else onSurface
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tint
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.White.copy(alpha = 0.06f)
+                ),
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = pressScale
+                        scaleY = pressScale
+                    }
+                    .clickable(
+                        interactionSource = interaction,
+                        indication = null
+                    ) {
+                        when (label) {
+                            "打开详情" -> onOpenDetail()
+                            "移动到其他书架" -> onMove()
+                            else -> onDelete()
+                        }
+                    }
+            )
+        }
+        Spacer(modifier = Modifier.navigationBarsPadding())
+            }
+        }
+    }
+    }
 }

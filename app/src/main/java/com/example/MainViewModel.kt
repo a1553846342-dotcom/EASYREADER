@@ -316,6 +316,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteReadingRecord(id: Int) {
+        viewModelScope.launch {
+            repository.deleteReadingRecord(id)
+            getApplication<Application>()
+                .getSharedPreferences("record_cover_cache", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .remove(id.toString())
+                .apply()
+        }
+    }
+
     fun addBookmark(bookId: Int, chapterIndex: Int, scrollOffset: Int, title: String, snippet: String) {
         viewModelScope.launch {
             val existing = _bookmarks.value.find { (it.bookId == bookId || it.bookId == 0) && it.chapterIndex == chapterIndex }
@@ -387,7 +398,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun recordTime(seconds: Long) {
+    fun recordTime(seconds: Long, title: String? = null) {
         if (seconds <= 0) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             prefs.totalReadTimeSeconds += seconds
@@ -402,11 +413,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Also record to reading_records database table
         val currentBook = _selectedBook.value
-        if (currentBook != null) {
+        val recordTitle = currentBook?.title ?: title
+        if (recordTitle != null) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-                    val record = database.bookDao().getReadingRecordForBookAndDate(currentBook.id, todayStr)
+                    val record = if (currentBook != null) {
+                        database.bookDao().getReadingRecordForBookAndDate(currentBook.id, todayStr)
+                    } else {
+                        null
+                    }
                     if (record != null) {
                         database.bookDao().insertReadingRecord(
                             record.copy(durationSeconds = record.durationSeconds + seconds)
@@ -414,8 +430,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         database.bookDao().insertReadingRecord(
                             ReadingRecord(
-                                bookId = currentBook.id,
-                                bookTitle = currentBook.title,
+                                bookId = currentBook?.id,
+                                bookTitle = recordTitle,
                                 dateStr = todayStr,
                                 durationSeconds = seconds
                             )

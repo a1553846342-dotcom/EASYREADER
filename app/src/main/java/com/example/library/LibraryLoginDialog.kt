@@ -33,8 +33,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeChild
+import com.example.ui.components.liquidGlass
+import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.filmGrain
+import com.example.ui.components.iridescentBorder
+import com.example.ui.components.rememberIridescentColors
+import com.example.ui.components.rememberThemedGlassBackdrop
+import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.DialogLiquidGlass
 
 /**
  * 居中毛玻璃登录卡片：复用玻璃拟态半透明卡片 + Spring 弹性入场动画，
@@ -50,6 +56,8 @@ fun LibraryLoginDialog(
     hazeState: HazeState? = null
 ) {
     val context = LocalContext.current
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val blurPx = with(androidx.compose.ui.platform.LocalDensity.current) { 18.dp.toPx() }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
@@ -60,64 +68,71 @@ fun LibraryLoginDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        var appear by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { appear = true }
+        DialogLiquidGlass {
+            GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
+            var appear by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { appear = true }
 
-        val panelScale by animateFloatAsState(
-            targetValue = if (appear) 1f else 0.82f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            ),
-            label = "libraryLoginPanelSpring"
-        )
-        val panelAlpha by animateFloatAsState(
-            targetValue = if (appear) 1f else 0f,
-            animationSpec = tween(220),
-            label = "libraryLoginPanelFade"
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { if (!loading) onDismiss() }
+            val panelScale by animateFloatAsState(
+                targetValue = if (appear) 1f else 0.82f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
                 ),
-            contentAlignment = Alignment.Center
-        ) {
-            val cardShape = RoundedCornerShape(28.dp)
-            var baseModifier = Modifier
-                .fillMaxWidth(0.92f)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                )
-                .graphicsLayer {
-                    scaleX = panelScale
-                    scaleY = panelScale
-                    alpha = panelAlpha
-                }
-                .shadow(32.dp, cardShape, spotColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
-                .clip(cardShape)
-
-            if (hazeState != null) {
-                baseModifier = baseModifier.hazeChild(state = hazeState, style = HazeStyle(backgroundColor = MaterialTheme.colorScheme.surface, tint = null))
-            }
+                label = "libraryLoginPanelSpring"
+            )
+            val panelAlpha by animateFloatAsState(
+                targetValue = if (appear) 1f else 0f,
+                animationSpec = tween(220),
+                label = "libraryLoginPanelFade"
+            )
 
             Box(
-                modifier = baseModifier
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f),
-                        cardShape
-                    )
-                    .padding(24.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { if (!loading) onDismiss() }
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                val cardShape = RoundedCornerShape(28.dp)
+                val dialogBackdrop = rememberThemedGlassBackdrop()
+                val iridescent = rememberIridescentColors()
+                val baseModifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .graphicsLayer {
+                        scaleX = panelScale
+                        scaleY = panelScale
+                        alpha = panelAlpha
+                    }
+                    .liquidGlass(
+                        backdrop = dialogBackdrop,
+                        shape = cardShape,
+                        surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                        blurRadius = 22.dp,
+                        refraction = true
+                    )
+                    .clip(cardShape)
+                    .filmGrain(alpha = 0.04f)
+                    .iridescentBorder(
+                        shape = cardShape,
+                        colors = iridescent,
+                        width = 2.dp,
+                        alpha = 0.22f
+                    )
+
+                Box(
+                    modifier = baseModifier
+                        .padding(24.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -211,21 +226,12 @@ fun LibraryLoginDialog(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Button(
-                        enabled = !loading && email.isNotBlank() && password.isNotBlank(),
+                    AppLiquidButton(
+                        text = if (loading) "登录中" else "确认登录",
                         onClick = { onLogin(email, password) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    ) {
-                        Text(
-                            text = if (loading) "登录中" else "确认登录",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                        enabled = !loading && email.isNotBlank() && password.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -250,6 +256,7 @@ fun LibraryLoginDialog(
                     }
                 }
             }
+        }
         }
     }
 }

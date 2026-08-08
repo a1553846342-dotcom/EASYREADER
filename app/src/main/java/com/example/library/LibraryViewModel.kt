@@ -51,6 +51,83 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val hasConfiguredSource = MutableStateFlow(prefs.hasConfiguredSource)
     val hasImportedLocalBook = MutableStateFlow(prefs.hasImportedLocalBook)
 
+    // 阅读统计：为已删除书籍补抓封面与书信息（按书名在所有漫画源搜索一次，缓存到本地，删除历史时清除）
+    private val _recordCovers = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val recordCovers: StateFlow<Map<Int, String>> = _recordCovers.asStateFlow()
+    private val _recordBooks = MutableStateFlow<Map<Int, SearchBook>>(emptyMap())
+    val recordBooks: StateFlow<Map<Int, SearchBook>> = _recordBooks.asStateFlow()
+
+    fun resolveMissingRecordCovers(records: List<com.example.data.ReadingRecord>) {
+        viewModelScope.launch {
+            val missing = records.filter { _recordBooks.value[it.id] == null }
+            if (missing.isEmpty()) return@launch
+            val prefs = getApplication<Application>().getSharedPreferences(
+                "record_cover_cache",
+                android.content.Context.MODE_PRIVATE
+            )
+            val cached = missing.mapNotNull { r ->
+                val json = prefs.getString(r.id.toString(), null) ?: return@mapNotNull null
+                val book = runCatching {
+                    val obj = org.json.JSONObject(json)
+                    SearchBook(
+                        id = obj.optString("comicId").ifBlank { "record_${r.id}" },
+                        sourceId = obj.optString("sourceId", ""),
+                        title = obj.optString("title", r.bookTitle),
+                        cover = obj.optString("cover").ifBlank { null },
+                        author = ""
+                    )
+                }.getOrNull() ?: return@mapNotNull null
+                r.id to book
+            }.toMap()
+            if (cached.isNotEmpty()) {
+                _recordBooks.update { it + cached }
+                _recordCovers.update {
+                    it + cached.mapValues { entry -> entry.value.cover ?: "" }.filterValues { v -> v.isNotBlank() }
+                }
+            }
+            val toResolve = missing.filter { it.id !in cached }.take(5)
+            val resolved = toResolve.map { r ->
+                r.id to fetchRecordBook(r.bookTitle)
+            }.filter { it.second != null }.map { it.first to it.second!! }
+            resolved.forEach { (id, book) ->
+                val json = org.json.JSONObject().apply {
+                    put("title", book.title)
+                    put("sourceId", book.sourceId)
+                    put("comicId", book.id)
+                    put("cover", book.cover ?: "")
+                }.toString()
+                prefs.edit().putString(id.toString(), json).apply()
+            }
+            if (resolved.isNotEmpty()) {
+                _recordBooks.update { it + resolved.toMap() }
+                _recordCovers.update {
+                    it + resolved.toMap().mapValues { entry -> entry.value.cover ?: "" }.filterValues { v -> v.isNotBlank() }
+                }
+            }
+        }
+    }
+
+    private suspend fun fetchRecordBook(title: String): SearchBook? = withContext(Dispatchers.IO) {
+        if (title.isBlank()) return@withContext null
+        val sources = sourceManager.allSources.value.filterIsInstance<ComicSource>()
+        for (source in sources) {
+            val result = withTimeoutOrNull(8000) { source.search(title) }
+            val book = (result as? SourceResult.Success)
+                ?.data
+                ?.firstOrNull { !it.cover.isNullOrBlank() || !it.comicId.isNullOrBlank() }
+            if (book != null) {
+                return@withContext SearchBook(
+                    id = book.comicId?.takeIf { it.isNotBlank() } ?: book.id,
+                    sourceId = book.sourceId,
+                    title = book.title,
+                    cover = book.cover,
+                    author = ""
+                )
+            }
+        }
+        null
+    }
+
     private val _isCurrentSourceLoggedIn = MutableStateFlow(false)
     val isCurrentSourceLoggedIn: StateFlow<Boolean> = _isCurrentSourceLoggedIn
 

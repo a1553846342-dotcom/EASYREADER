@@ -19,13 +19,25 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import dev.liquidglass.compose.liquidGlassProvider
+import dev.liquidglass.compose.rememberLiquidGlassProviderState
+import com.example.ui.components.LocalLiquidGlassState
+import com.example.ui.components.AppBottomTabBar
+import com.example.ui.components.AppTabItem
+import com.example.ui.components.rememberTabBarCollapseState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
 import com.example.ui.*
@@ -76,10 +88,13 @@ class MainActivity : ComponentActivity() {
                 colorPrimaryIndex = colorPrimaryIndex,
                 colorSecondaryIndex = colorSecondaryIndex
             ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .drawWithContent {
+                val liquidGlass = rememberLiquidGlassProviderState()
+                CompositionLocalProvider(LocalLiquidGlassState provides liquidGlass) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .liquidGlassProvider(liquidGlass)
+                            .drawWithContent {
                             drawContent()
                             if (blueLightFilter) {
                                 // Real warm-orange color filter overlay drawn on top of the entire application
@@ -91,9 +106,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         },
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    val navController = rememberNavController()
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        val navController = rememberNavController()
 
                     val orientationLock = viewModel.prefs.screenOrientationLock
                     DisposableEffect(orientationLock) {
@@ -183,6 +198,16 @@ class MainActivity : ComponentActivity() {
                             val books by viewModel.allBooks.collectAsState()
                             val categories by viewModel.allCategories.collectAsState()
                             val readingRecords by viewModel.allReadingRecords.collectAsState()
+                            val tabBarCollapseState = rememberTabBarCollapseState()
+
+                            val tabItems = remember {
+                                listOf(
+                                    AppTabItem("书库", Icons.Outlined.Search, Icons.Filled.Search),
+                                    AppTabItem("书架", Icons.Outlined.BookmarkBorder, Icons.Filled.Bookmark),
+                                    AppTabItem("统计", Icons.Outlined.BarChart, Icons.Filled.BarChart),
+                                    AppTabItem("设置", Icons.Outlined.Settings, Icons.Filled.Settings)
+                                )
+                            }
 
                             val libraryErrorMessage by libraryViewModel.errorMessage.collectAsState()
                             val mainImportMessage by viewModel.importStatusMessage.collectAsState()
@@ -221,61 +246,21 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 bottomBar = {
-                                    // 标准 Material 不透明底栏，恢复与其他界面的正常观感
-                                    NavigationBar(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    ) {
-                                        NavigationBarItem(
-                                            selected = selectedTab == 0,
-                                            onClick = { selectedTab = 0 },
-                                            icon = { Icon(Icons.Filled.Search, contentDescription = "书库") },
-                                            label = { Text("书库") },
-                                            colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = MintPrimary,
-                                                selectedTextColor = MintPrimary,
-                                                indicatorColor = MintPrimary.copy(alpha = 0.15f)
-                                            )
-                                        )
-                                        NavigationBarItem(
-                                            selected = selectedTab == 1,
-                                            onClick = { selectedTab = 1 },
-                                            icon = { Icon(Icons.Filled.Book, contentDescription = "书架") },
-                                            label = { Text("书架") },
-                                            colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = MintPrimary,
-                                                selectedTextColor = MintPrimary,
-                                                indicatorColor = MintPrimary.copy(alpha = 0.15f)
-                                            )
-                                        )
-                                        NavigationBarItem(
-                                            selected = selectedTab == 2,
-                                            onClick = { selectedTab = 2 },
-                                            icon = { Icon(Icons.Filled.BarChart, contentDescription = "统计") },
-                                            label = { Text("统计") },
-                                            colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = MintPrimary,
-                                                selectedTextColor = MintPrimary,
-                                                indicatorColor = MintPrimary.copy(alpha = 0.15f)
-                                            )
-                                        )
-                                        NavigationBarItem(
-                                            selected = selectedTab == 3,
-                                            onClick = { selectedTab = 3 },
-                                            icon = { Icon(Icons.Filled.Settings, contentDescription = "设置") },
-                                            label = { Text("设置") },
-                                            colors = NavigationBarItemDefaults.colors(
-                                                selectedIconColor = MintPrimary,
-                                                selectedTextColor = MintPrimary,
-                                                indicatorColor = MintPrimary.copy(alpha = 0.15f)
-                                            )
-                                        )
-
-                                    }
+                                    AppBottomTabBar(
+                                        items = tabItems,
+                                        selectedIndex = selectedTab,
+                                        onTabSelected = { selectedTab = it },
+                                        collapseState = tabBarCollapseState
+                                    )
                                 }
                             ) { innerPadding ->
                                 // 内容区向下延伸到屏幕底部（底栏后方），滚动时直接没入底栏，
                                 // 底栏上方不再存在任何固定不动的空白带。
-                                Box(modifier = Modifier.padding(top = innerPadding.calculateTopPadding())) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = innerPadding.calculateTopPadding())
+                                        .nestedScroll(tabBarCollapseState.connection())
+                                ) {
                                     AnimatedContent(
                                         targetState = selectedTab,
                                         transitionSpec = {
@@ -350,7 +335,23 @@ class MainActivity : ComponentActivity() {
                                                 books = books,
                                                 totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
                                                 readingRecords = readingRecords,
-                                                onGoToShelf = { selectedTab = 1 }
+                                                onGoToShelf = { selectedTab = 1 },
+                                                onDeleteRecord = { viewModel.deleteReadingRecord(it.id) },
+                                                recordCovers = libraryViewModel.recordCovers.collectAsState().value,
+                                                recordBooks = libraryViewModel.recordBooks.collectAsState().value,
+                                                onResolveRecordCovers = { libraryViewModel.resolveMissingRecordCovers(it) },
+                                                onOpenRecordDetail = { book ->
+                                                    libraryViewModel.openComic(book)
+                                                    navController.navigate("comic_chapters")
+                                                },
+                                                onOpenBook = { book ->
+                                                    viewModel.selectBook(book)
+                                                    if (book.isComic) {
+                                                        navController.navigate("comic_reader")
+                                                    } else {
+                                                        navController.navigate("reader")
+                                                    }
+                                                }
                                             )
                                                 3 -> SettingsTabScreen(
                                                     prefs = viewModel.prefs,
@@ -552,6 +553,11 @@ class MainActivity : ComponentActivity() {
                                 onDownloadChapter = { chapter ->
                                     comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
                                 },
+                                onDownloadAll = {
+                                    comicChapters.forEach { chapter ->
+                                        comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
+                                    }
+                                },
                                 onPauseDownload = { chapter ->
                                     libraryViewModel.pauseComicChapter(chapter.id)
                                 },
@@ -593,6 +599,9 @@ class MainActivity : ComponentActivity() {
                                 imageHeaders = imageHeaders,
                                 resolveImage = { url -> libraryViewModel.resolveComicImage(url) },
                                 resolveImageHeaders = { url -> libraryViewModel.resolveComicImageHeaders(url) },
+                                onRecordTime = { seconds ->
+                                    viewModel.recordTime(seconds, comicBook?.title ?: activeChapter?.title)
+                                },
                                 onBack = { navController.popBackStack() },
                                 onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
                             )
@@ -611,6 +620,7 @@ class MainActivity : ComponentActivity() {
             com.example.ui.mascot.MascotOverlay()
         }
     }
+}
 }
 }
 }

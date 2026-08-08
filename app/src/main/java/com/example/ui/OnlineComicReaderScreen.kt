@@ -39,8 +39,10 @@ import okhttp3.Protocol
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import com.example.ui.components.ChasingDots
+import com.example.ui.components.AppLiquidButton
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import net.engawapg.lib.zoomable.ExperimentalZoomableApi
 import net.engawapg.lib.zoomable.rememberZoomState
@@ -60,6 +62,7 @@ fun OnlineComicReaderScreen(
     imageHeaders: Map<String, Map<String, String>> = emptyMap(),
     resolveImage: (suspend (String) -> String?)? = null,
     resolveImageHeaders: (suspend (String) -> Map<String, String>)? = null,
+    onRecordTime: (Long) -> Unit = {},
     onBack: () -> Unit,
     onRetry: () -> Unit
 ) {
@@ -67,6 +70,27 @@ fun OnlineComicReaderScreen(
     var isRightToLeft by remember { mutableStateOf(true) }
     var showBars by remember { mutableStateOf(true) }
     var currentPage by remember { mutableIntStateOf(0) }
+
+    // 在线阅读计时：每 30 秒上报一次阅读统计，离开时补报剩余时长
+    var readSeconds by remember { mutableLongStateOf(0L) }
+    var lastFlush by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            readSeconds += 1L
+            if (readSeconds - lastFlush >= 30L) {
+                onRecordTime(readSeconds - lastFlush)
+                lastFlush = readSeconds
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (readSeconds - lastFlush > 0) {
+                onRecordTime(readSeconds - lastFlush)
+            }
+        }
+    }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -191,9 +215,10 @@ fun OnlineComicReaderScreen(
                             modifier = Modifier.padding(horizontal = 32.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)) {
-                            Text("重试")
-                        }
+                        AppLiquidButton(
+                            text = "重试",
+                            onClick = onRetry
+                        )
                     }
                 }
             }

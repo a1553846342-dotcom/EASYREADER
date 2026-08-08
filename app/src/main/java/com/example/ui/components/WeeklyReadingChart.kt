@@ -1,4 +1,4 @@
-package com.example.ui.components
+﻿package com.example.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -6,8 +6,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,10 +27,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.data.Book
+import com.example.data.ReadingRecord
+import com.example.ui.components.AcrylicDialog
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
@@ -41,6 +52,13 @@ import kotlinx.coroutines.delay
 fun WeeklyReadingChart(
     minutesPerDay: List<Int> = listOf(0, 0, 0, 0, 0, 0, 0),
     bookTitlesPerDay: List<String> = listOf("", "", "", "", "", "", ""),
+    dayRecords: List<List<ReadingRecord>> = emptyList(),
+    books: List<Book> = emptyList(),
+    recordCovers: Map<Int, String> = emptyMap(),
+    recordBooks: Map<Int, com.example.source.SearchBook> = emptyMap(),
+    onDeleteRecord: (ReadingRecord) -> Unit = {},
+    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit = {},
+    onOpenBook: (Book) -> Unit = {},
     todayIndex: Int = remember {
         val cal = java.util.Calendar.getInstance()
         (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
@@ -52,6 +70,8 @@ fun WeeklyReadingChart(
     
     val totalMinutes = remember(minutesPerDay) { minutesPerDay.sum() }
     val maxMinutes = remember(minutesPerDay) { (minutesPerDay.maxOrNull() ?: 1).coerceAtLeast(1) }
+    val chartPrimary = MaterialTheme.colorScheme.primary
+    val chartSecondary = MaterialTheme.colorScheme.secondary
 
     // Staggered entrance animation factors for 7 bars
     val barAnimatables = remember { List(7) { Animatable(0f) } }
@@ -159,9 +179,11 @@ fun WeeklyReadingChart(
                     )
 
                     val barGradient = when {
-                        isToday -> listOf(MintPrimary, MintPrimary.copy(alpha = 0.65f))
-                        isSelected -> listOf(MintSecondary, MintSecondary.copy(alpha = 0.5f))
-                        mins > 0 -> listOf(MintPrimary.copy(alpha = 0.6f), MintPrimary.copy(alpha = 0.25f))
+                        isToday || isSelected -> listOf(chartSecondary, chartPrimary)
+                        mins > 0 -> listOf(
+                            chartSecondary.copy(alpha = 0.65f),
+                            chartPrimary.copy(alpha = 0.45f)
+                        )
                         else -> listOf(Color.LightGray.copy(alpha = 0.4f), Color.LightGray.copy(alpha = 0.2f))
                     }
 
@@ -219,11 +241,23 @@ fun WeeklyReadingChart(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .fillMaxHeight(animatedFraction.coerceAtLeast(0.04f))
+                                        .then(
+                                            if (isSelected) {
+                                                Modifier.shadow(
+                                                    elevation = 6.dp,
+                                                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp),
+                                                    ambientColor = chartPrimary.copy(alpha = 0.30f),
+                                                    spotColor = chartPrimary.copy(alpha = 0.30f)
+                                                )
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
                                         .graphicsLayer {
                                             scaleX = scaleState
                                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
                                         }
-                                        .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                         .background(brush = Brush.verticalGradient(colors = barGradient))
                                 )
                             }
@@ -260,7 +294,7 @@ fun WeeklyReadingChart(
 
             // Detail Popover Card for Selected Day
             val selMins = minutesPerDay.getOrElse(selectedDayIndex) { 0 }
-            val selBook = bookTitlesPerDay.getOrElse(selectedDayIndex) { "" }
+            val selRecords = dayRecords.getOrElse(selectedDayIndex) { emptyList() }
             val selDayName = dayNames.getOrElse(selectedDayIndex) { "" }
 
             Surface(
@@ -290,7 +324,13 @@ fun WeeklyReadingChart(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (selMins > 0) selBook.ifEmpty { "自选阅读" } else "无阅读记录",
+                            text = if (selMins > 0 && selRecords.isNotEmpty()) {
+                                "共 ${selRecords.size} 本 · 详情见下方封面"
+                            } else if (selMins > 0) {
+                                "自选阅读"
+                            } else {
+                                "无阅读记录"
+                            },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (selMins > 0) MintPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -305,6 +345,275 @@ fun WeeklyReadingChart(
                     )
                 }
             }
+
+            // 选中日封面轮播：周几阅读记录直接接入漫画封面
+            DayCoverCarousel(
+                records = dayRecords.getOrElse(selectedDayIndex) { emptyList() },
+                books = books,
+                recordCovers = recordCovers,
+                recordBooks = recordBooks,
+                onDeleteRecord = onDeleteRecord,
+                onOpenRecordDetail = onOpenRecordDetail,
+                onOpenBook = onOpenBook
+            )
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DayCoverCarousel(
+    records: List<ReadingRecord>,
+    books: List<Book>,
+    recordCovers: Map<Int, String>,
+    recordBooks: Map<Int, com.example.source.SearchBook>,
+    onDeleteRecord: (ReadingRecord) -> Unit,
+    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit,
+    onOpenBook: (Book) -> Unit
+) {
+    if (records.isEmpty()) return
+    val listState = rememberLazyListState()
+    // 5 秒无操作后自动平滑滚动；用户拖动时暂停
+    LaunchedEffect(records.size) {
+        if (records.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(5000)
+            if (listState.isScrollInProgress) continue
+            val next = (listState.firstVisibleItemIndex + 1) % records.size
+            listState.animateScrollToItem(next)
+        }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    LazyRow(
+        state = listState,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(records, key = { it.id }) { record ->
+            DayCoverCard(
+                record = record,
+                books = books,
+                recordCovers = recordCovers,
+                recordBooks = recordBooks,
+                onDeleteRecord = onDeleteRecord,
+                onOpenRecordDetail = onOpenRecordDetail,
+                onOpenBook = onOpenBook
+            )
+        }
+    }
+}
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DayCoverCard(
+    record: ReadingRecord,
+    books: List<Book>,
+    recordCovers: Map<Int, String>,
+    recordBooks: Map<Int, com.example.source.SearchBook>,
+    onDeleteRecord: (ReadingRecord) -> Unit,
+    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit,
+    onOpenBook: (Book) -> Unit
+) {
+    val book = books.firstOrNull { it.id == record.bookId }
+    val recordBook = recordBooks[record.id]
+    var showMenu by remember { mutableStateOf(false) }
+    var showDetail by remember { mutableStateOf(false) }
+    val remoteCover = recordBook?.cover ?: recordCovers[record.id]
+    Column(
+        modifier = Modifier
+            .width(84.dp)
+            .combinedClickable(
+                onClick = {
+                    when {
+                        book != null -> onOpenBook(book)
+                        recordBook != null -> onOpenRecordDetail(recordBook)
+                        else -> showDetail = true
+                    }
+                },
+                onLongClick = { showMenu = true }
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .width(84.dp)
+                .height(112.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(MintSecondary.copy(alpha = 0.55f), MintPrimary.copy(alpha = 0.65f))
+                    )
+                )
+        ) {
+            val coverData = remember(book?.coverUri, book?.isCoverValid, remoteCover) {
+                if (book == null || book.coverUri.isNullOrEmpty()) {
+                    remoteCover
+                } else if (book.coverUri!!.startsWith("content://")) {
+                    android.net.Uri.parse(book.coverUri!!)
+                } else if (book.isCoverValid) {
+                    val p = if (book.coverUri!!.startsWith("file://")) {
+                        book.coverUri!!.substring(7)
+                    } else {
+                        book.coverUri!!
+                    }
+                    java.io.File(p)
+                } else {
+                    null
+                }
+            }
+            if (coverData != null) {
+                AsyncImage(
+                    model = coverData,
+                    contentDescription = record.bookTitle,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.MenuBook,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(3.dp),
+                shape = RoundedCornerShape(50),
+                color = Color.Black.copy(alpha = 0.38f)
+            ) {
+                Text(
+                    text = "${(record.durationSeconds / 60).coerceAtLeast(1)}分",
+                    fontSize = 9.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = record.bookTitle,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+
+    if (showMenu) {
+        AcrylicDialog(
+            onDismissRequest = { showMenu = false },
+            title = {
+                Text(
+                    text = record.bookTitle,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column {
+                    MenuActionRow(
+                        label = "前往阅读",
+                        enabled = book != null || recordBook != null,
+                        onClick = {
+                            showMenu = false
+                            if (book != null) onOpenBook(book)
+                            else if (recordBook != null) onOpenRecordDetail(recordBook)
+                        }
+                    )
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                    MenuActionRow(
+                        label = "阅读详情",
+                        onClick = {
+                            showMenu = false
+                            showDetail = true
+                        }
+                    )
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                    )
+                    MenuActionRow(
+                        label = "删除阅读历史",
+                        destructive = true,
+                        onClick = {
+                            showMenu = false
+                            onDeleteRecord(record)
+                        }
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMenu = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showDetail) {
+        AcrylicDialog(
+            onDismissRequest = { showDetail = false },
+            title = {
+                Text(
+                    text = record.bookTitle,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column {
+                    Text("阅读日期：${record.dateStr}")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("时长：${(record.durationSeconds / 60).coerceAtLeast(1)} 分钟")
+                    if (book == null && recordBook == null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "该书已不在书库中",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDetail = false }) { Text("关闭") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun MenuActionRow(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    destructive: Boolean = false
+) {
+    val color = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        destructive -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = color
+        )
     }
 }

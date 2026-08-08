@@ -84,17 +84,23 @@ fun ComicReaderScreen(
 
     // Reading Timer
     var readSeconds by remember { mutableLongStateOf(0L) }
+    var lastFlush by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(1000L)
             readSeconds += 1L
+            // 每 30 秒上报一次，统计页更新及时
+            if (readSeconds - lastFlush >= 30L) {
+                onRecordTime(readSeconds - lastFlush)
+                lastFlush = readSeconds
+            }
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            if (readSeconds > 0) {
-                onRecordTime(readSeconds)
+            if (readSeconds - lastFlush > 0) {
+                onRecordTime(readSeconds - lastFlush)
             }
             onUpdateProgress(book.id, currentPageIndex, 0, currentPageIndex >= totalPages - 1)
         }

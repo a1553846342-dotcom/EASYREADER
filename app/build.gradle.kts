@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 110
-    versionName = "0.35"
+    versionCode = 147
+    versionName = "0.72"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -73,6 +73,15 @@ android {
       enableSplit = true
     }
   }
+  packaging {
+    jniLibs {
+      // 压缩原生库（cronet/quickjs），APK 更小；安装时再解压
+      useLegacyPackaging = true
+    }
+  }
+  packagingOptions {
+    jniLibs.useLegacyPackaging = true
+  }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
@@ -95,7 +104,7 @@ dependencies {
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
-  implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation("io.github.abdullajon1881:liquidglass-compose:1.0.0")
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.work.runtime.ktx)
@@ -104,6 +113,8 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
   implementation("dev.chrisbanes.haze:haze:1.1.1")
+    implementation(project(":backdrop"))
+    implementation("com.github.skydoves:flexible-bottomsheet-material3:0.1.5")
   implementation("org.brotli:dec:0.1.2")
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
@@ -132,5 +143,6 @@ dependencies {
   androidTestImplementation(libs.androidx.runner)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.androidx.compose.ui.tooling.preview)
   "ksp"(libs.androidx.room.compiler)
 }

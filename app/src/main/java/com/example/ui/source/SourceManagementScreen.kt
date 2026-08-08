@@ -37,6 +37,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppButton
+import com.example.ui.components.AcrylicDialog
+import com.example.ui.components.GradientActionButton
+import com.example.ui.components.JellySwitch
+import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.SourceAvatar
 import com.example.library.LibraryLoginDialog
 import com.example.library.ZLibraryNativeSession
 import com.example.library.ZLibraryNodeConfig
@@ -201,43 +208,69 @@ fun SourceManagementScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                    )
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Link,
-                            contentDescription = null,
-                            tint = MintPrimary
+                    Column {
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = "Venera 源仓库",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = "内置 JS 引擎加载社区漫画源，可随时刷新更新",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            leadingContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Link,
+                                        contentDescription = null,
+                                        tint = MintPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                AssistChip(
+                                    onClick = { viewModel.refreshJsSources() },
+                                    label = { Text("社区源", fontSize = 12.sp) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MintPrimary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                )
+                            }
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Venera 源仓库", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "内置 JS 引擎加载社区漫画源（拷贝漫画、漫画人、漫画柜、comick 等），可随时刷新更新",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = { viewModel.refreshJsSources() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                            shape = RoundedCornerShape(10.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White
+                            GradientActionButton(
+                                text = "更新 Venera 源",
+                                onClick = { viewModel.refreshJsSources() },
+                                icon = Icons.Default.Refresh
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("刷新", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
@@ -246,9 +279,10 @@ fun SourceManagementScreen(
             item {
                 Text(
                     text = "内置书源",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
                 )
             }
 
@@ -257,27 +291,44 @@ fun SourceManagementScreen(
                     Text("暂无内置书源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             } else {
-                items(builtinSources, key = { it.id }) { source ->
-                    SourceItemCard(
-                        source = source,
-                        isActive = activeSource?.id == source.id,
-                        isEnabled = enabledStates[source.id] ?: true,
-                        isCustom = false,
-                        onToggleEnable = { enabled ->
-                            if (enabled) viewModel.enableSource(source.id)
-                            else viewModel.disableSource(source.id)
-                        },
-                        onSelectActive = {
-                            viewModel.setActiveSource(source.id)
-                        },
-                        onOpenLogin = if (source.capabilities.requiresLogin && source.id != "zlibrary") {
-                            { loginSource = source }
-                        } else null,
-                        onOpenNodeManager = if (source.id == "zlibrary") {
-                            { showNodeManagement = true }
-                        } else null,
-                        onDelete = {}
-                    )
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        builtinSources.chunked(5).forEach { group ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                shadowElevation = 1.dp,
+                                tonalElevation = 0.dp
+                            ) {
+                                Column {
+                                    group.forEachIndexed { index, source ->
+                                        SourceItemCard(
+                                            source = source,
+                                            isActive = activeSource?.id == source.id,
+                                            isEnabled = enabledStates[source.id] ?: true,
+                                            isCustom = false,
+                                            showDivider = index < group.lastIndex,
+                                            onToggleEnable = { enabled ->
+                                                if (enabled) viewModel.enableSource(source.id)
+                                                else viewModel.disableSource(source.id)
+                                            },
+                                            onSelectActive = {
+                                                viewModel.setActiveSource(source.id)
+                                            },
+                                            onOpenLogin = if (source.capabilities.requiresLogin && source.id != "zlibrary") {
+                                                { loginSource = source }
+                                            } else null,
+                                            onOpenNodeManager = if (source.id == "zlibrary") {
+                                                { showNodeManagement = true }
+                                            } else null,
+                                            onDelete = {}
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -286,9 +337,10 @@ fun SourceManagementScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "自定义书源",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
 
@@ -304,73 +356,70 @@ fun SourceManagementScreen(
                     )
                 }
             } else {
-                items(customSources, key = { it.id }) { source ->
-                    SourceItemCard(
-                        source = source,
-                        isActive = activeSource?.id == source.id,
-                        isEnabled = enabledStates[source.id] ?: true,
-                        isCustom = true,
-                        onToggleEnable = { enabled ->
-                            if (enabled) viewModel.enableSource(source.id)
-                            else viewModel.disableSource(source.id)
-                        },
-                        onSelectActive = {
-                            viewModel.setActiveSource(source.id)
-                        },
-                        onDelete = {
-                            viewModel.removeSource(source.id)
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        customSources.chunked(5).forEach { group ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                shadowElevation = 1.dp,
+                                tonalElevation = 0.dp
+                            ) {
+                                Column {
+                                    group.forEachIndexed { index, source ->
+                                        SourceItemCard(
+                                            source = source,
+                                            isActive = activeSource?.id == source.id,
+                                            isEnabled = enabledStates[source.id] ?: true,
+                                            isCustom = true,
+                                            showDivider = index < group.lastIndex,
+                                            onToggleEnable = { enabled ->
+                                                if (enabled) viewModel.enableSource(source.id)
+                                                else viewModel.disableSource(source.id)
+                                            },
+                                            onSelectActive = {
+                                                viewModel.setActiveSource(source.id)
+                                            },
+                                            onDelete = {
+                                                viewModel.removeSource(source.id)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    )
+                    }
                 }
             }
 
             // 粘贴 JSON 入口：放在“导入书源文件”按钮下方，样式保持一致
             item {
-                AppButton(
+                GradientActionButton(
+                    text = "粘贴 JSON",
                     onClick = { showPasteDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp),
-                    containerColor = MintPrimary,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Code,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("粘贴 JSON", color = Color.White, fontWeight = FontWeight.Bold)
-                }
+                    icon = Icons.Default.Code,
+                    variant = AppButtonVariant.Secondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             // 网络导入：可直接导入 GitHub 社区书源合集
             item {
-                AppButton(
+                GradientActionButton(
+                    text = "网络导入（社区书源合集）",
                     onClick = { showNetworkDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Link,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("网络导入（社区书源合集）", color = Color.White, fontWeight = FontWeight.Bold)
-                }
+                    icon = Icons.Default.Link,
+                    variant = AppButtonVariant.Tertiary,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
     }
 
     if (showPasteDialog) {
-        AlertDialog(
+        AcrylicDialog(
             onDismissRequest = { showPasteDialog = false },
             title = { Text("粘贴 JSON 书源配置") },
             text = {
@@ -385,18 +434,16 @@ fun SourceManagementScreen(
                 )
             },
             confirmButton = {
-                Button(
+                GradientActionButton(
+                    text = "确定导入",
                     onClick = {
                         if (pasteJsonText.isNotBlank()) {
                             viewModel.importSourceFromJsonString(pasteJsonText)
                             pasteJsonText = ""
                             showPasteDialog = false
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                ) {
-                    Text("确定导入")
-                }
+                    }
+                )
             },
             dismissButton = {
                 TextButton(onClick = { showPasteDialog = false }) {
@@ -407,7 +454,7 @@ fun SourceManagementScreen(
     }
 
     if (showNetworkDialog) {
-        AlertDialog(
+        AcrylicDialog(
             onDismissRequest = { showNetworkDialog = false },
             title = { Text("网络导入书源") },
             text = {
@@ -443,18 +490,16 @@ fun SourceManagementScreen(
                 }
             },
             confirmButton = {
-                Button(
+                GradientActionButton(
+                    text = "开始导入",
                     onClick = {
                         if (networkUrl.isNotBlank()) {
                             viewModel.importSourceFromUrl(networkUrl.trim())
                             networkUrl = ""
                             showNetworkDialog = false
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                ) {
-                    Text("开始导入")
-                }
+                    }
+                )
             },
             dismissButton = {
                 TextButton(onClick = { showNetworkDialog = false }) {
@@ -493,60 +538,56 @@ private fun ZLibraryLoginStatusCard(
     loggedIn: Boolean,
     onLoginClick: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (loggedIn) MintPrimary.copy(alpha = 0.12f)
-            else MaterialTheme.colorScheme.surfaceVariant
-        )
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 1.dp,
+        tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = "Z-Library",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+            },
+            supportingContent = {
+                Text(
+                    text = if (loggedIn) "账号已登录，可正常下载书籍"
+                    else "尚未登录，下载前需登录账号",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            leadingContent = {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (loggedIn) MintPrimary.copy(alpha = 0.18f)
-                            else MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
+                            if (loggedIn) MintPrimary.copy(alpha = 0.12f)
+                            else MaterialTheme.colorScheme.surfaceVariant
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (loggedIn) Icons.Default.CheckCircle else Icons.Default.Lock,
                         contentDescription = null,
-                        tint = if (loggedIn) MintPrimary else MaterialTheme.colorScheme.secondary
+                        tint = if (loggedIn) MintPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = if (loggedIn) "Z-Library 已登录" else "Z-Library 尚未登录",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (loggedIn) "账号可用，进入书库可正常下载书籍"
-                        else "进入书库下载前需要登录账号，搜索不受影响",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            },
+            trailingContent = {
+                GradientActionButton(
+                    text = if (loggedIn) "重新登录" else "去登录",
+                    onClick = onLoginClick,
+                    variant = AppButtonVariant.Secondary
+                )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = onLoginClick,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MintPrimary),
-                modifier = Modifier.fillMaxWidth().height(44.dp)
-            ) {
-                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(if (loggedIn) "重新登录" else "去登录", fontWeight = FontWeight.Bold)
-            }
-        }
+        )
     }
 }
 
@@ -556,52 +597,52 @@ fun SourceItemCard(
     isActive: Boolean,
     isEnabled: Boolean,
     isCustom: Boolean,
+    showDivider: Boolean = true,
     onToggleEnable: (Boolean) -> Unit,
     onSelectActive: () -> Unit,
     onOpenLogin: (() -> Unit)? = null,
     onOpenNodeManager: (() -> Unit)? = null,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            SourceAvatar(
+                sourceId = source.id,
+                sourceName = source.name,
+                size = 32.dp,
+                modifier = Modifier.padding(end = 12.dp)
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = source.name,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp
                     )
                     if (isActive) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            color = MintPrimary.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = "当前使用",
-                                color = MintPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        FilterChip(
+                            selected = true,
+                            onClick = {},
+                            label = { Text("当前使用", fontSize = 11.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "ID: ${source.id}${if (source.capabilities.requiresLogin) " • 需要登录" else ""}",
+                    text = "ID: ${source.id}${if (source.capabilities.requiresLogin) " · 需要登录" else ""}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -609,30 +650,35 @@ fun SourceItemCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onOpenLogin != null) {
-                    TextButton(onClick = onOpenLogin) {
-                        Text("账号登录", fontSize = 13.sp)
-                    }
+                                            AppActionButton(
+                            text = "登录",
+                            onClick = onOpenLogin,
+                            variant = AppButtonVariant.Secondary,
+                            buttonSize = AppButtonSize.Small
+                        )
                 }
 
                 if (onOpenNodeManager != null) {
-                    TextButton(onClick = onOpenNodeManager) {
-                        Text("节点管理", fontSize = 13.sp)
-                    }
+                                            AppActionButton(
+                            text = "节点",
+                            onClick = onOpenNodeManager,
+                            variant = AppButtonVariant.Secondary,
+                            buttonSize = AppButtonSize.Small
+                        )
                 }
 
                 if (isEnabled && !isActive) {
-                    TextButton(onClick = onSelectActive) {
-                        Text("使用", fontSize = 13.sp)
-                    }
+                                            AppActionButton(
+                            text = "使用",
+                            onClick = onSelectActive,
+                            variant = AppButtonVariant.Secondary,
+                            buttonSize = AppButtonSize.Small
+                        )
                 }
 
-                Switch(
+                JellySwitch(
                     checked = isEnabled,
-                    onCheckedChange = onToggleEnable,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MintPrimary,
-                        checkedTrackColor = MintPrimary.copy(alpha = 0.3f)
-                    )
+                    onCheckedChange = onToggleEnable
                 )
 
                 if (isCustom) {
@@ -646,6 +692,13 @@ fun SourceItemCard(
                     }
                 }
             }
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f)
+            )
         }
     }
 }

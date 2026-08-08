@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.mascot.MascotSpriteSheet
+import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.MintPrimary
 
 data class OnboardingPage(
@@ -220,7 +223,8 @@ fun OnboardingScreen(
                 }
 
                 // Action Button
-                Button(
+                AppActionButton(
+                    text = if (currentPage == pages.lastIndex) "立即开启阅读之旅" else "下一步",
                     onClick = {
                         if (currentPage < pages.lastIndex) {
                             currentPage++
@@ -228,33 +232,16 @@ fun OnboardingScreen(
                             onFinished()
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("onboarding_action_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MintPrimary)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = if (currentPage == pages.lastIndex) "立即开启阅读之旅" else "下一步",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        if (currentPage < pages.lastIndex) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Next Icon",
-                                tint = Color.White
-                            )
-                        }
-                    }
-                }
+                    variant = AppButtonVariant.Primary,
+                    buttonSize = AppButtonSize.Large,
+                    fullWidth = true,
+                    icon = if (currentPage < pages.lastIndex) {
+                        Icons.AutoMirrored.Filled.ArrowForward
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.testTag("onboarding_action_button")
+                )
             }
         }
     }
