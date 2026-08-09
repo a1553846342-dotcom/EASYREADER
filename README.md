@@ -59,6 +59,7 @@
 
 - **自定义规则书源**：支持粘贴 JSON / 导入文件，兼容 Legado 规则与 JSON API；网络导入社区书源合集。
 - **书源导入导出**：JSON 格式标准化，社区分享即贴即用。
+- **隐藏彩蛋**：设置页连按六下「主色按钮实时联动效果」，开启「带你登大郎~~~」后自动更新并显示成人漫画源。
 - **搜索聚合逻辑**：逐源搜索、每出一个源立即展示，源与源之间用渐变毛玻璃胶囊分隔，失败显示“超时/无结果”而不是干等。
 - **内置 Z-Library**：自动过 DiamWall 新版 PoW 验证；节点管理（默认节点、官网/备用入口扒取、自定义节点、一键检测）；账号/Cookie 登录后直接下载。
 - **内置 MangaDex 与 Venera 漫画源**：QuickJS 运行社区 JS 源，聚合搜索一次覆盖主流漫画站。
@@ -87,11 +88,13 @@
 
 ## 3. 📸 应用截图 / 效果预览
 
-> 占位图将在正式 Release 后替换。
+| 书架主页 | 书库 · 选择书源 |
+|---|---|
+| ![书架主页](docs/screenshots/shot1.jpg) | ![书库书源选择](docs/screenshots/shot2.jpg) |
 
-| 主界面 | 阅读界面 | 书源管理 | 设置页 |
-|---|---|---|---|
-| ![主界面](docs/screenshots/home.png) | ![阅读界面](docs/screenshots/reader.png) | ![书源管理](docs/screenshots/source.png) | ![设置页](docs/screenshots/settings.png) |
+| 书源管理 | 阅读统计 | 设置页 |
+|---|---|---|
+| ![书源管理](docs/screenshots/shot3.jpg) | ![阅读统计](docs/screenshots/shot4.jpg) | ![设置页](docs/screenshots/shot5.jpg) |
 
 ---
 
@@ -139,6 +142,7 @@ APK 输出路径：`app/build/outputs/apk/release/app-release.apk`
 2. 顶部书源选择器切换 Z-Library / MangaDex / 聚合漫画（全部）。
 3. 需要更多漫画源：设置 → 书源管理 →「更新 Venera 源」，自动拉取社区源。
 4. 想用自己的规则：书源管理 →「粘贴 JSON」或「导入 JSON 书源文件」，格式兼容 Legado。
+5. 解锁成人源：设置页连按六下「主色按钮实时联动效果」，开启「带你登大郎~~~」后自动更新并显示成人漫画源。
 
 ### 如何导入本地书籍
 
