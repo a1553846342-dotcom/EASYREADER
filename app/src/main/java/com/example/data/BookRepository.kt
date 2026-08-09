@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.regex.Pattern
 
@@ -79,6 +80,11 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     suspend fun importBookFromUri(uri: Uri, fileName: String): Result<Book> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("BookImport", "[BookRepository] Starting streaming import: $fileName, uri: $uri")
+            // 同一路径已入库：直接返回已有书籍，避免重复下载后书架出现重复书
+            bookDao.getBookByFilePath(uri.toString())?.let { existing ->
+                android.util.Log.d("BookImport", "[BookRepository] Same file already imported, skip duplicate: ${existing.title}")
+                return@withContext Result.success(existing)
+            }
             if (EpubParser.isEpubFile(fileName)) {
                 return@withContext EpubParser.importEpub(context, uri, fileName, bookDao)
             }
@@ -323,6 +329,51 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         bookDao.nullifyBookIdInReadingRecords(book.id)
         bookDao.deleteChaptersForBook(book.id)
         bookDao.deleteBook(book)
+        deleteBookFiles(book)
+    }
+
+    /** 删除书籍时彻底清理磁盘文件（书本体、封面、下载任务与残留缓存），避免“删了但内存还在涨”。 */
+    private suspend fun deleteBookFiles(book: Book) {
+        // 1) 书本体：TXT/EPUB 文件或漫画目录
+        runCatching {
+            val f = File(book.filePath.removePrefix("file://"))
+            if (f.exists()) {
+                if (f.isDirectory) f.deleteRecursively() else f.delete()
+            }
+        }
+        // 2) 封面文件（漫画/EPUB 封面缓存）
+        book.coverUri?.let {
+            runCatching {
+                val cf = File(it.removePrefix("file://"))
+                if (cf.exists()) cf.delete()
+            }
+        }
+        // 3) 对应的下载任务记录 + downloads 目录文件
+        runCatching {
+            val taskDao = AppDatabase.getDatabase(context).downloadTaskDao()
+            val downloadsDir = File(context.filesDir, "downloads")
+            val safeTitle = com.example.download.DownloadManager.sanitizeFileName(book.title)
+            val tasks = taskDao.getAllTasksSync()
+            tasks.filter { task ->
+                task.filePath == book.filePath ||
+                    (safeTitle.isNotBlank() && File(task.filePath).name.contains(safeTitle))
+            }.forEach { task ->
+                taskDao.deleteTaskById(task.id)
+                runCatching { File(task.filePath).delete() }
+                runCatching {
+                    File(
+                        downloadsDir,
+                        "${com.example.download.DownloadManager.sanitizeFileName(task.id)}.tmp"
+                    ).delete()
+                }
+            }
+            // 4) downloads 目录中按标题匹配的孤儿文件
+            if (safeTitle.isNotBlank()) {
+                downloadsDir.listFiles()?.forEach { f ->
+                    if (f.name.contains(safeTitle)) runCatching { f.delete() }
+                }
+            }
+        }
     }
 
     suspend fun deleteReadingRecord(id: Int) {

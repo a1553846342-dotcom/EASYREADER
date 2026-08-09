@@ -9,23 +9,22 @@ plugins {
 }
 
 // 本地调试密钥库：不在仓库提交，首次构建自动生成（保证 clone 后可直接编译）
-fun ensureDebugKeystore() {
-  val keystoreFile = file("${rootDir}/debug.keystore")
-  if (keystoreFile.exists()) return
+val debugKeystoreFile = file("${rootDir}/debug.keystore")
+if (!debugKeystoreFile.exists()) {
   val javaHome = System.getProperty("java.home")
   val keytoolName = if (System.getProperty("os.name").lowercase().contains("win")) "keytool.exe" else "keytool"
   val keytool = File(javaHome, "bin/$keytoolName")
-  exec {
-    commandLine(
-      keytool.absolutePath,
-      "-genkeypair", "-v",
-      "-keystore", keystoreFile.absolutePath,
-      "-alias", "androiddebugkey",
-      "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
-      "-storepass", "android", "-keypass", "android",
-      "-dname", "CN=Android Debug,O=Android,C=US"
-    )
-  }
+  val pb = ProcessBuilder(
+    keytool.absolutePath,
+    "-genkeypair", "-v",
+    "-keystore", debugKeystoreFile.absolutePath,
+    "-alias", "androiddebugkey",
+    "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+    "-storepass", "android", "-keypass", "android",
+    "-dname", "CN=Android Debug,O=Android,C=US"
+  )
+  pb.redirectErrorStream(true)
+  pb.start().waitFor()
 }
 
 android {
@@ -36,7 +35,7 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 171
+    versionCode = 172
     versionName = "0.90"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -51,7 +50,6 @@ android {
   }
 
   signingConfigs {
-    ensureDebugKeystore()
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
       storeFile = file(keystorePath)

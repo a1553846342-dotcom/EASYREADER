@@ -20,6 +20,9 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_tasks ORDER BY updatedAt DESC")
     fun getAllTasksFlow(): Flow<List<DownloadTaskEntity>>
 
+    @Query("SELECT * FROM download_tasks")
+    suspend fun getAllTasksSync(): List<DownloadTaskEntity>
+
     @Query("SELECT * FROM download_tasks WHERE id = :id LIMIT 1")
     suspend fun getTaskById(id: String): DownloadTaskEntity?
 

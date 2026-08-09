@@ -39,6 +39,12 @@ class DownloadManager(private val context: Context) {
         restoreTasks()
     }
 
+    /** 已完成任务对应的书是否还在书架（按文件路径匹配，file:// 前缀归一化）。 */
+    private suspend fun bookExistsForTask(task: DownloadTaskEntity): Boolean =
+        runCatching {
+            db.bookDao().getAllBooksSync().any { it.filePath.removePrefix("file://") == task.filePath }
+        }.getOrDefault(false)
+
     private fun restoreTasks() {
         scope.launch {
             val unfinished = taskDao.getUnfinishedTasksSync()
@@ -64,7 +70,7 @@ class DownloadManager(private val context: Context) {
                         DownloadState.Paused(task.downloadedBytes, task.totalBytes)
                     )
                 } else if (task.status == DownloadStatus.COMPLETED) {
-                    val finalFile = File(context.filesDir, "downloads/${task.id}.${task.format}")
+                    val finalFile = File(context.filesDir, "downloads/${sanitizeFileName(task.id)}.${task.format}")
                     Log.i(TAG, "Restoring COMPLETED task state in broadcaster: bookId=${task.id}")
                     DownloadProgressBroadcaster.updateState(
                         task.id,
@@ -82,25 +88,42 @@ class DownloadManager(private val context: Context) {
             // pending/downloading/paused/completed. Failed tasks may be retried.
             val existing = taskDao.getTaskById(request.bookId)
             if (existing != null && existing.status != DownloadStatus.FAILED) {
-                Log.i(TAG, "Task already exists for bookId=${request.bookId} (status=${existing.status}); skipping duplicate")
-                DownloadProgressBroadcaster.updateState(
-                    request.bookId,
-                    when (existing.status) {
-                        DownloadStatus.COMPLETED -> DownloadState.Success(existing.filePath)
-                        DownloadStatus.PAUSED -> DownloadState.Paused(existing.downloadedBytes, existing.totalBytes)
-                        DownloadStatus.DOWNLOADING -> DownloadState.Downloading(
-                            existing.downloadedBytes,
-                            existing.totalBytes,
-                            if (existing.totalBytes > 0) {
-                                (existing.downloadedBytes.toFloat() / existing.totalBytes).coerceIn(0f, 1f)
-                            } else {
-                                0f
-                            }
+                if (existing.status == DownloadStatus.COMPLETED) {
+                    // 书架里是否还存在这本书；若已被删除，则清掉旧任务重新下载并重新入库
+                    val stillOnShelf = bookExistsForTask(existing)
+                    if (stillOnShelf) {
+                        DownloadProgressBroadcaster.updateState(
+                            request.bookId,
+                            DownloadState.Success(existing.filePath)
                         )
-                        else -> DownloadState.Pending
+                        return@launch
                     }
-                )
-                return@launch
+                    Log.i(TAG, "Completed task found but book removed from shelf; re-downloading ${request.bookId}")
+                    taskDao.deleteTaskById(existing.id)
+                    runCatching { File(existing.filePath).delete() }
+                    runCatching {
+                        File(File(existing.filePath).parentFile, "${sanitizeFileName(existing.id)}.tmp").delete()
+                    }
+                } else {
+                    Log.i(TAG, "Task already exists for bookId=${request.bookId} (status=${existing.status}); skipping duplicate")
+                    DownloadProgressBroadcaster.updateState(
+                        request.bookId,
+                        when (existing.status) {
+                            DownloadStatus.PAUSED -> DownloadState.Paused(existing.downloadedBytes, existing.totalBytes)
+                            DownloadStatus.DOWNLOADING -> DownloadState.Downloading(
+                                existing.downloadedBytes,
+                                existing.totalBytes,
+                                if (existing.totalBytes > 0) {
+                                    (existing.downloadedBytes.toFloat() / existing.totalBytes).coerceIn(0f, 1f)
+                                } else {
+                                    0f
+                                }
+                            )
+                            else -> DownloadState.Pending
+                        }
+                    )
+                    return@launch
+                }
             }
 
             val downloadsDir = File(context.filesDir, "downloads")
