@@ -13,7 +13,9 @@ TXT / EPUB / 漫画阅读
 在线书库聚合搜索 · 资源下载 · 自定义书源 · LiquidGlass UI
 
 
-<img src="./docs/demo.gif" width="360"/>
+<img src="./docs/gif/demo-1.gif" width="260"/>
+<img src="./docs/gif/demo-2.gif" width="260"/>
+<img src="./docs/gif/demo-3.gif" width="260"/>
 
 
 [📲 下载 APK](https://github.com/a1553846342-dotcom/EASYREADER/releases) ·
