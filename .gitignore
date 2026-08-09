@@ -9,6 +9,8 @@ local.properties
 .DS_Store
 *.apk
 *.aab
+debug.keystore
+*.jks
 captures/
 .externalNativeBuild/
 .cxx/

@@ -139,7 +139,7 @@ echo "sdk.dir=/你的/Android/Sdk/路径" > local.properties
 
 APK 输出路径：`app/build/outputs/apk/release/app-release.apk`
 
-> 提示：仓库已内置 `debug.keystore`，未配置签名环境变量时自动回退 debug 签名，clone 下来即可构建；正式分发请配置 `KEYSTORE_PATH / STORE_PASSWORD / KEY_PASSWORD`。
+> 提示：`debug.keystore` 不会提交到仓库，首次构建会自动生成本地调试密钥；未配置签名环境变量时自动回退 debug 签名，clone 下来即可构建。正式分发请配置 `KEYSTORE_PATH / STORE_PASSWORD / KEY_PASSWORD`。
 
 ---
 
