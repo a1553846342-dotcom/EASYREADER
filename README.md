@@ -1,9 +1,38 @@
-# 🚀 Ciallo阅读（EASYREADER）
+<div align="center">
 
-> **“也许会是下一款最好的安卓阅读器——以及最好用的资源下载器。”**
->
-> 本地 TXT/EPUB 秒开、在线书库聚合搜索、Z-Library 直连下载、Venera 漫画源、
-> 液态玻璃 UI——一套把“能看”和“能下”都做到极致的 Kotlin + Jetpack Compose 应用。
+<img src="./docs/logo.png" width="120"/>
+
+<div align="center">
+
+<img src=".\app\src\main\res\mipmap-xxxhdpi\ic_launcher_foreground.png" width="120"/>
+
+# 📚 Ciallo阅读（EASYREADER）
+
+### Modern Android Reader × Resource Downloader
+
+一个基于 **Kotlin + Jetpack Compose** 打造的现代 Android 阅读器。
+
+TXT / EPUB / 漫画阅读  
+在线书库聚合搜索 · 资源下载 · 自定义书源 · LiquidGlass UI
+
+
+<img src="./docs/demo.gif" width="360"/>
+
+
+[📲 下载 APK](#安装方式) ·
+[📖 功能介绍](#✨-功能特性) ·
+[🐛 提交 Issue](#🤝-贡献指南)
+
+
+![GitHub stars](https://img.shields.io/github/stars/a1553846342-dotcom/EASYREADER)
+![GitHub forks](https://img.shields.io/github/forks/a1553846342-dotcom/EASYREADER)
+![Android](https://img.shields.io/badge/Android-API24+-green)
+
+</div>
+
+
+---
+
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
 ![Release](https://img.shields.io/badge/Release-v0.90-orange)
