@@ -1,6 +1,3 @@
-<div align="center">
-
-<img src="./docs/logo.png" width="120"/>
 
 <div align="center">
 
@@ -19,19 +16,15 @@ TXT / EPUB / 漫画阅读
 <img src="./docs/demo.gif" width="360"/>
 
 
-[📲 下载 APK](#安装方式) ·
-[📖 功能介绍](#✨-功能特性) ·
-[🐛 提交 Issue](#🤝-贡献指南)
+[📲 下载 APK](https://github.com/a1553846342-dotcom/EASYREADER/releases) ·
+[📖 功能介绍](#功能特性) ·
+[🐛 提交 Issue](https://github.com/a1553846342-dotcom/EASYREADER/issues)
 
 
 ![GitHub stars](https://img.shields.io/github/stars/a1553846342-dotcom/EASYREADER)
 ![GitHub forks](https://img.shields.io/github/forks/a1553846342-dotcom/EASYREADER)
 ![Android](https://img.shields.io/badge/Android-API24+-green)
 
-</div>
-
-
----
 
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
