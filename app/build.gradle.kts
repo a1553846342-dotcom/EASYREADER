@@ -104,7 +104,7 @@ dependencies {
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
-  implementation("io.github.abdullajon1881:liquidglass-compose:1.0.0")
+  implementation(project(":liquidglass-compose"))
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.work.runtime.ktx)
