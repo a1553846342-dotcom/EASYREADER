@@ -33,6 +33,8 @@ TXT / EPUB / 漫画阅读
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)
 
+</div>
+
 ---
 
 ## 1. 📖 项目简介
