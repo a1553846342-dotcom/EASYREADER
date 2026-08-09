@@ -120,7 +120,7 @@ fun ZLibraryLoginDialog(
                         shape = cardShape,
                         surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
                         blurRadius = 22.dp,
-                        refraction = true
+                        refraction = false
                     )
                     .clip(cardShape)
                     .filmGrain(alpha = 0.04f)

@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
@@ -38,6 +39,8 @@ import com.example.ui.components.LocalLiquidGlassState
 import com.example.ui.components.AppBottomTabBar
 import com.example.ui.components.AppTabItem
 import com.example.ui.components.rememberTabBarCollapseState
+import com.kashif_e.backdrop.backdrops.rememberLayerBackdrop
+import com.kashif_e.backdrop.backdrops.layerBackdrop
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
 import com.example.ui.*
@@ -82,6 +85,7 @@ class MainActivity : ComponentActivity() {
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
             val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
             val colorSecondaryIndex by viewModel.colorSecondaryIndex.collectAsState()
+            val orientationLock by viewModel.screenOrientationLock.collectAsState()
 
             MyApplicationTheme(
                 darkTheme = autoNightMode,
@@ -89,7 +93,9 @@ class MainActivity : ComponentActivity() {
                 colorSecondaryIndex = colorSecondaryIndex
             ) {
                 val liquidGlass = rememberLiquidGlassProviderState()
-                CompositionLocalProvider(LocalLiquidGlassState provides liquidGlass) {
+                CompositionLocalProvider(
+                    LocalLiquidGlassState provides liquidGlass
+                ) {
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
@@ -110,7 +116,6 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val navController = rememberNavController()
 
-                    val orientationLock = viewModel.prefs.screenOrientationLock
                     DisposableEffect(orientationLock) {
                         requestedOrientation = when (orientationLock) {
                             1 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -199,6 +204,9 @@ class MainActivity : ComponentActivity() {
                             val categories by viewModel.allCategories.collectAsState()
                             val readingRecords by viewModel.allReadingRecords.collectAsState()
                             val tabBarCollapseState = rememberTabBarCollapseState()
+                            // Tab 栏专用背景采样（书源选择弹窗同款手法）：
+                            // layerBackdrop 捕获页面真实内容，Tab 栏 drawBackdrop 模糊它。
+                            val tabBackdrop = rememberLayerBackdrop()
 
                             val tabItems = remember {
                                 listOf(
@@ -233,6 +241,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
+                            Box(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .layerBackdrop(tabBackdrop)
+                            ) {
                             Scaffold(
                                 snackbarHost = {
                                     SnackbarHost(
@@ -245,14 +259,6 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 },
-                                bottomBar = {
-                                    AppBottomTabBar(
-                                        items = tabItems,
-                                        selectedIndex = selectedTab,
-                                        onTabSelected = { selectedTab = it },
-                                        collapseState = tabBarCollapseState
-                                    )
-                                }
                             ) { innerPadding ->
                                 // 内容区向下延伸到屏幕底部（底栏后方），滚动时直接没入底栏，
                                 // 底栏上方不再存在任何固定不动的空白带。
@@ -291,7 +297,7 @@ class MainActivity : ComponentActivity() {
                                                         libraryViewModel.openComic(book)
                                                         navController.navigate("comic_chapters")
                                                     },
-                                                    extraBottomPadding = innerPadding.calculateBottomPadding()
+                                                    extraBottomPadding = 96.dp
                                                 )
                                             1 -> HomeScreen(
                                                 books = books,
@@ -357,7 +363,7 @@ class MainActivity : ComponentActivity() {
                                                     prefs = viewModel.prefs,
                                                     backupManager = viewModel.backupManager,
                                                     categories = categories,
-                                                    extraBottomPadding = innerPadding.calculateBottomPadding(),
+                                                    extraBottomPadding = 96.dp,
                                                     onAdultSourcesChange = { sourceViewModel.setAdultSourcesEnabled(it) },
                                                     onAddCategory = { name ->
                                                         viewModel.addCategory(name)
@@ -373,11 +379,23 @@ class MainActivity : ComponentActivity() {
                                                 onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) },
                                                 colorPrimaryIndexVal = colorPrimaryIndex,
                                                 colorSecondaryIndexVal = colorSecondaryIndex,
-                                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) }
+                                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) },
+                                                orientationLockVal = orientationLock,
+                                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) }
                                             )
                                         }
                                     }
                                 }
+                            }
+                            }
+                            AppBottomTabBar(
+                                items = tabItems,
+                                selectedIndex = selectedTab,
+                                onTabSelected = { selectedTab = it },
+                                collapseState = tabBarCollapseState,
+                                backdrop = tabBackdrop,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                            )
                             }
                         }
  }
@@ -405,7 +423,9 @@ class MainActivity : ComponentActivity() {
                                 onBlueLightAlphaChange = { viewModel.updateBlueLightAlpha(it) },
                                 colorPrimaryIndexVal = colorPrimaryIndex,
                                 colorSecondaryIndexVal = colorSecondaryIndex,
-                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) }
+                                onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) },
+                                orientationLockVal = orientationLock,
+                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) }
                             )
                         }
 

@@ -65,7 +65,7 @@ class LegacyLayoutParser : ZLibraryLayoutParser {
     }
 
     override fun parseDetail(doc: Document, baseUrl: String): ParsedBookDetail {
-        val dlAnchor = doc.selectFirst("a[href*=/dl/]")
+        val dlAnchor = doc.firstRealDownloadLink()
             ?: throw SourceException.ParseError("未找到通用下载链接")
 
         var dlUrl = dlAnchor.attr("href")

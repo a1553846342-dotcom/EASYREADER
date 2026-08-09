@@ -91,10 +91,13 @@ import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import android.webkit.CookieManager
 import android.app.Activity
+import android.widget.Toast
 import com.example.download.DownloadState
 import com.example.source.SearchBook
 import com.example.source.BookSource
 import com.example.source.ComicSource
+import com.example.source.LoginCredential
+import com.example.source.SourceResult
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.PlayPauseMorphButton
@@ -113,6 +116,7 @@ import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.source.ZLibraryLoginDialog
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,6 +167,7 @@ fun LibraryScreen(
     var loginChecked by remember { mutableStateOf(false) }
     var showDownloadPanel by remember { mutableStateOf(false) }
     val hazeState = remember { HazeState() }
+    val scope = rememberCoroutineScope()
 
     val session = remember {
         ZLibraryNativeSession(
@@ -173,7 +178,8 @@ fun LibraryScreen(
             },
             onRealDownloadUrl = { url ->
                 val book = activeDownloadBook
-                val cookies = CookieManager.getInstance().getCookie("https://1lib.sk/") ?: ""
+                val cookies = CookieManager.getInstance()
+                    .getCookie("https://${ZLibraryNodeConfig.domain}/") ?: ""
                 viewModel.startWebViewDownload(book, url, cookies)
             },
             onLoginResult = { ok, msg ->
@@ -197,7 +203,8 @@ fun LibraryScreen(
             loginChecked = true
             kotlinx.coroutines.delay(1200)
             // 登录检测只读 Cookie，无需提前创建隐藏 WebView（首次搜索/登录时再创建）
-            if (!session.isLoggedIn()) {
+            viewModel.checkSourceLoginStatus()
+            if (!viewModel.isCurrentSourceLoggedIn.value) {
                 showLoginDialog = true
                 loginMessage = "检测到未登录，登录后可正常下载（搜索无需登录）"
             }
@@ -234,12 +241,6 @@ fun LibraryScreen(
             viewModel.recordSearch(keyword)
             if (aggregateMode) {
                 viewModel.aggregateSearch(keyword)
-            } else if (isZlibSource) {
-                nativeBooks = emptyList()
-                nativeStatus = ""
-                nativeSearching = true
-                session.ensureCreated(context)
-                session.search(keyword)
             } else {
                 viewModel.search(keyword)
             }
@@ -642,90 +643,6 @@ fun LibraryScreen(
                             }
                         }
                     }
-                } else if (isZlibSource) {
-                    when {
-                        nativeSearching -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                ChasingDots(
-                                    size = 52.dp,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                        }
-                        nativeBooks.isNotEmpty() -> {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                items(nativeBooks, key = { it.id }) { book ->
-                                    val st by remember(book.id) {
-                                        derivedStateOf {
-                                            downloadStatesState.value[book.id] ?: DownloadState.Idle
-                                        }
-                                    }
-                                    LibraryBookCard(
-                                        book = book,
-                                        downloadState = st,
-                                        imageLoader = imageLoader,
-                                        coverHeaders = rememberCoverHeaders(book, availableSources),
-                                        onStartDownload = {
-                                            activeDownloadBook = book
-                                            showDownloadPanel = true
-                                            val dl = book.downloadUrl
-                                            if (dl.isNullOrBlank()) {
-                                                nativeStatus = "该书无下载链接"
-                                            } else {
-                                                session.loadUrl(dl)
-                                            }
-                                        },
-                                        onPauseDownload = { viewModel.pauseDownload(book.id) },
-                                        onResumeDownload = { viewModel.resumeDownload(book.id) },
-                                        onCancelDownload = { viewModel.cancelDownload(book.id) }
-                                    )
-                                }
-                            }
-                        }
-                        nativeStatus.isNotBlank() -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(nativeStatus, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        else -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                com.example.ui.components.MascotEmptyState(
-                                    mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
-                                    title = if (searchQuery.isBlank()) "检索图书" else "未找到结果",
-                                    description = if (searchQuery.isBlank()) {
-                                        "在上方输入书名、作者或关键词"
-                                    } else {
-                                        "未找到与“$searchQuery”匹配的内容，请尝试更换关键词或书源"
-                                    },
-                                    actionLabel = "管理与导入书源",
-                                    onActionClick = onOpenSourceManagement,
-                                    testTagPrefix = "search_empty_state"
-                                )
-                            }
-                        }
-                    }
                 } else if (isSearching) {
                     Box(
                         modifier = Modifier
@@ -835,10 +752,28 @@ fun LibraryScreen(
                         message = loginMessage,
                         loading = loginLoading,
                         onLogin = { email, pass ->
+                            val src = currentSource
+                            if (src == null) {
+                                loginLoading = false
+                                loginMessage = "当前书源不可用"
+                                return@LibraryLoginDialog
+                            }
                             loginLoading = true
                             loginMessage = "登录中…"
-                            session.ensureCreated(context)
-                            session.login(email, pass)
+                            scope.launch {
+                                when (val result = src.login(LoginCredential(username = email, password = pass))) {
+                                    is SourceResult.Success -> {
+                                        loginLoading = false
+                                        loginMessage = "登录成功"
+                                        showLoginDialog = false
+                                        viewModel.checkSourceLoginStatus()
+                                    }
+                                    is SourceResult.Error -> {
+                                        loginLoading = false
+                                        loginMessage = result.exception.message ?: "登录失败，请检查账号密码"
+                                    }
+                                }
+                            }
                         },
                         onDismiss = { if (!loginLoading) showLoginDialog = false },
                         hazeState = hazeState
@@ -1047,7 +982,7 @@ private fun SourcePickerSheet(
                                 alpha = if (reduceEffects) 0.72f else 0.58f
                             ),
                             blurRadius = 12.dp,
-                            refraction = !reduceEffects
+                            refraction = false
                         )
                         .clip(sheetShape)
                         .filmGrain(alpha = 0.04f)

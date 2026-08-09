@@ -99,7 +99,7 @@ fun rememberAppButtonColors(): AppButtonColors {
     val themePrimary = MaterialTheme.colorScheme.primary
     val themeAccent = MaterialTheme.colorScheme.secondary
     val themeDestructive = MaterialTheme.colorScheme.error
-    val fallbackColors = remember {
+    val fallbackColors = remember(themePrimary, themeAccent, themeDestructive) {
         AppButtonColors(
             primary = themePrimary,
             primaryVariant = lerp(themePrimary, Color.White, 0.35f),

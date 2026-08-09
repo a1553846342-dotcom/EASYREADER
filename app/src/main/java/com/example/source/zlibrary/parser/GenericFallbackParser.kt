@@ -151,7 +151,7 @@ class GenericFallbackParser : ZLibraryLayoutParser {
         val cover = doc.selectFirst("img[src]")?.attr("src")?.let { absUrl(baseUrl, it) } ?: ""
         val format = doc.select("[class*=extension], [class*=format], [class*=file-type]")
             .firstOrNull()?.text()?.trim()?.lowercase() ?: ""
-        val downloadUrl = doc.selectFirst("a[href*=/dl/], a.add_to_download_history, a.dlButton")
+        val downloadUrl = doc.firstRealDownloadLink()
             ?.attr("href")?.let { absUrl(baseUrl, it) } ?: ""
         return ParsedBookDetail(
             title = title,

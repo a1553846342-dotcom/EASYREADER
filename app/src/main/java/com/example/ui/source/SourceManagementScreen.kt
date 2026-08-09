@@ -45,15 +45,17 @@ import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
 import com.example.ui.components.SourceAvatar
 import com.example.library.LibraryLoginDialog
-import com.example.library.ZLibraryNativeSession
 import com.example.library.ZLibraryNodeConfig
 import com.example.source.BookSource
+import com.example.source.LoginCredential
+import com.example.source.SourceResult
 import com.example.source.SourceViewModel
 import com.example.source.importer.SourceImporter
 import com.example.source.zlibrary.ZLibrarySource
 import com.example.ui.theme.MintPrimary
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,20 +94,7 @@ fun SourceManagementScreen(
 
     val zlibSource = allSources.firstOrNull { it.id == "zlibrary" } as? ZLibrarySource
 
-    val loginSession = remember {
-        ZLibraryNativeSession(
-            onSearchResults = { _, _ -> },
-            onRealDownloadUrl = { },
-            onLoginResult = { ok, msg ->
-                loginLoading = false
-                loginMessage = msg
-                if (ok) {
-                    loggedIn = true
-                    showLoginDialog = false
-                }
-            }
-        )
-    }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit, zlibSource) {
         val cookies = CookieManager.getInstance().getCookie("https://${ZLibraryNodeConfig.domain}/") ?: ""
@@ -516,8 +505,26 @@ fun SourceManagementScreen(
             onLogin = { email, pass ->
                 loginLoading = true
                 loginMessage = "登录中…"
-                loginSession.ensureCreated(context)
-                loginSession.login(email, pass)
+                scope.launch {
+                    val src = zlibSource
+                    if (src == null) {
+                        loginLoading = false
+                        loginMessage = "Z-Library 源不可用"
+                        return@launch
+                    }
+                    when (val result = src.login(LoginCredential(username = email, password = pass))) {
+                        is SourceResult.Success -> {
+                            loginLoading = false
+                            loginMessage = "登录成功"
+                            loggedIn = true
+                            showLoginDialog = false
+                        }
+                        is SourceResult.Error -> {
+                            loginLoading = false
+                            loginMessage = result.exception.message ?: "登录失败，请检查账号密码"
+                        }
+                    }
+                }
             },
             onDismiss = { if (!loginLoading) showLoginDialog = false },
             hazeState = hazeState

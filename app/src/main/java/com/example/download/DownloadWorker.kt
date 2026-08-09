@@ -7,6 +7,9 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
 import com.example.data.BookRepository
+import com.example.source.zlibrary.DiamWallInterceptor
+import com.example.source.zlibrary.EncryptedCookieJar
+import com.example.source.zlibrary.ZLibraryCredentialStorage
 import com.example.source.zlibrary.network.SystemProxyResolver
 import com.example.source.zlibrary.network.ZLibraryDns
 import kotlinx.coroutines.Dispatchers
@@ -64,10 +67,16 @@ class DownloadWorker(
     }
 
     private val client = run {
+        val credentialStorage = ZLibraryCredentialStorage(applicationContext)
+        val cookieJar = EncryptedCookieJar(credentialStorage)
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .dns(ZLibraryDns.INSTANCE)
+            .cookieJar(cookieJar)
+            // 下载文件同样会触发 DiamWall PoW，带上求解器 + Cookie 存储，
+            // 否则文件请求会被 503 挑战直接拦下。
+            .addInterceptor(DiamWallInterceptor(cookieJar))
         // Downloads must follow the same network path as the rest of the app (system proxy)
         SystemProxyResolver.resolve(applicationContext)?.let { builder.proxy(it) }
         builder.build()

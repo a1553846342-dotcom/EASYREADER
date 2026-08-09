@@ -79,7 +79,7 @@ class DesktopLayoutParser : ZLibraryLayoutParser {
             cover = formatUrl(baseUrl, cover)
         }
 
-        val dlAnchor = doc.selectFirst("a.add_to_download_history, a.dlButton, a[href*=/dl/]")
+        val dlAnchor = doc.firstRealDownloadLink()
             ?: throw SourceException.ParseError("未找到下载链接")
 
         var dlUrl = dlAnchor.attr("href")

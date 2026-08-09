@@ -25,6 +25,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _blueLightAlpha = MutableStateFlow(prefs.blueLightAlpha)
     val blueLightAlpha: StateFlow<Float> = _blueLightAlpha.asStateFlow()
 
+    private val _screenOrientationLock = MutableStateFlow(prefs.screenOrientationLock)
+    val screenOrientationLock: StateFlow<Int> = _screenOrientationLock.asStateFlow()
+
     private val _colorPrimaryIndex = MutableStateFlow(prefs.colorPrimaryIndex)
     val colorPrimaryIndex: StateFlow<Int> = _colorPrimaryIndex.asStateFlow()
 
@@ -47,6 +50,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateBlueLightAlpha(alpha: Float) {
         prefs.blueLightAlpha = alpha
         _blueLightAlpha.value = alpha
+    }
+
+    fun updateScreenOrientationLock(mode: Int) {
+        prefs.screenOrientationLock = mode
+        _screenOrientationLock.value = mode
     }
 
     fun updateColorTheme(primary: Int, secondary: Int) {

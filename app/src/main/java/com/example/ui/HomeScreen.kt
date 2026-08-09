@@ -1140,7 +1140,7 @@ private fun BookActionSheet(
                                 alpha = if (reduceEffects) 0.72f else 0.58f
                             ),
                             blurRadius = 12.dp,
-                            refraction = !reduceEffects
+                            refraction = false
                         )
                         .clip(sheetShape)
                         .filmGrain(alpha = 0.04f)

@@ -89,6 +89,47 @@ class DiamWallInterceptor(private val cookieJar: okhttp3.CookieJar) : Intercepto
                     Log.w("DiamWall", "Captcha-based DiamWall challenge detected; HTTP client cannot auto-solve. Use WebView verification.")
                     break
                 }
+
+                // New DiamWall PoW: SHA-1 digest of (TOKEN + nonce), checking two bytes:
+                //   s1['array'](TOKEN + i)[n1] == byte1 && [n1+1] == byte2
+                // where n1 = hex value of the first char of TOKEN.
+                val powTokenMatch = Regex("""['"]([0-9A-Fa-f]{40})['"]""").find(bodyString)
+                val byte1Match = Regex("""s\[n1\]===(0x[0-9a-fA-F]+)""").find(powHtml)
+                val byte2Match = Regex("""s\[n1\+0x1\]===(0x[0-9a-fA-F]+)""").find(powHtml)
+                if (powTokenMatch != null && byte1Match != null && byte2Match != null) {
+                    val powToken = powTokenMatch.groupValues[1].uppercase()
+                    val n1 = Integer.parseInt(powToken.substring(0, 1), 16)
+                    val target1 = byte1Match.groupValues[1].substring(2).toInt(16)
+                    val target2 = byte2Match.groupValues[1].substring(2).toInt(16)
+                    Log.d("DiamWall", "Solving c_token PoW token=$powToken n1=$n1 targets=(${target1.toString(16)},${target2.toString(16)})")
+
+                    val md = MessageDigest.getInstance("SHA-1")
+                    var nonce = 0L
+                    var digest: ByteArray
+                    while (true) {
+                        digest = md.digest((powToken + nonce).toByteArray())
+                        val b1 = digest[n1].toInt() and 0xFF
+                        val b2 = digest[n1 + 1].toInt() and 0xFF
+                        if (b1 == target1 && b2 == target2) break
+                        nonce++
+                    }
+
+                    val cookieHost = request.url.host
+                    cookieJar.saveFromResponse(
+                        request.url,
+                        listOf(
+                            Cookie.Builder().name("c_token").value(powToken + nonce)
+                                .domain(cookieHost).path("/").build(),
+                            Cookie.Builder().name("c_time").value("1")
+                                .domain(cookieHost).path("/").build()
+                        )
+                    )
+                    Log.d("DiamWall", "c_token solved nonce=$nonce, retrying $cookieHost")
+                    response.close()
+                    response = chain.proceed(request)
+                    followUpCount++
+                    continue
+                }
                 
                 if (powHtml.contains("Checking your browser") || powHtml.contains("DiamWall", ignoreCase = true) || powHtml.contains("TOKEN")) {
                     val tokenMatch = Regex("""var TOKEN="([^"]+)"""").find(powHtml)

@@ -780,7 +780,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         )
         downloadManager.enqueueDownload(
             request,
-            referer = "https://1lib.sk/",
+            referer = "https://${ZLibraryNodeConfig.domain}/",
             headers = mapOf("Cookie" to cookieHeader)
         )
     }

@@ -73,7 +73,7 @@ class MobileLayoutParser : ZLibraryLayoutParser {
             cover = formatUrl(baseUrl, cover)
         }
 
-        val dlAnchor = doc.selectFirst("a.btn-primary[href*=/dl/], a[href*=/dl/]")
+        val dlAnchor = doc.firstRealDownloadLink()
             ?: throw SourceException.ParseError("未找到移动端下载按钮")
 
         var dlUrl = dlAnchor.attr("href")

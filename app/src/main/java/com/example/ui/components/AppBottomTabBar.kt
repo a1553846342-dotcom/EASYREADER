@@ -1,8 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -26,9 +26,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +44,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -52,22 +55,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.liquidglass.compose.GlassHighlight
-import dev.liquidglass.compose.GlassRefraction
-import dev.liquidglass.compose.GlassShape
-import dev.liquidglass.compose.GlassStyle
-import dev.liquidglass.compose.LiquidGlassProviderState
-import dev.liquidglass.compose.liquidGlass
+import com.kashif_e.backdrop.Backdrop
 import kotlin.math.roundToInt
 
 /**
- * 苹果 Liquid Glass 风格底部标签栏。
+ * 苹果 Liquid Glass 风格底部标签栏（上一版结构 + 真实验证参数增强）。
  *
- * 滚动收缩只做两件事：降低高度（68dp→52dp）+ 隐藏文字标签，
- * 图标永远在、永远可点，不会出现“先点一下展开”的问题。
- * 胶囊悬浮不贴边；收缩时左右留白增大（胶囊变窄）。
- * 折射参数比按钮轻（Tab 栏面积大，太强会晃眼），整条栏不接 gel-press，
- * 形变只保留在单个图标的选中态缩放上。
+ * 背景采用书源选择弹窗同款手法：MainActivity 用 layerBackdrop 捕获页面真实内容，
+ * Tab 栏作为兄弟节点用 drawBackdrop(blur) 采样，得到真实 Gaussian Blur 磨砂。
  */
 
 data class AppTabItem(
@@ -103,10 +98,11 @@ fun AppBottomTabBar(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    collapseState: TabBarCollapseState = rememberTabBarCollapseState()
+    collapseState: TabBarCollapseState = rememberTabBarCollapseState(),
+    backdrop: Backdrop? = null
 ) {
     val colors = rememberAppButtonColors()
-    // 主色/强调色跟随主题切换时平滑过渡（Color State Morph 同款弹簧参数）
+    // 主题色跟随设置主色调平滑过渡（不固化在 remember 里）
     val animatedPrimary by animateColorAsState(
         targetValue = colors.primary,
         animationSpec = spring(
@@ -123,8 +119,17 @@ fun AppBottomTabBar(
         ),
         label = "tabBarAccent"
     )
-    val animatedColors = colors.copy(primary = animatedPrimary, accent = animatedAccent)
-    val glass = LocalLiquidGlassState.current
+    // 根据 Tab 栏“有效底色”（内容面 + 30% 主题色）自动取对比色，
+    // 并用与全软件一致的弹簧动画过渡。
+    val barBase = lerp(MaterialTheme.colorScheme.surface, animatedPrimary, 0.30f)
+    val contrast by animateColorAsState(
+        targetValue = barBase.contrastColor(),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "tabBarContrast"
+    )
 
     val barHeight by animateDpAsState(
         targetValue = if (collapseState.collapsed) 52.dp else 68.dp,
@@ -146,94 +151,100 @@ fun AppBottomTabBar(
     val tabPositions = remember { mutableStateMapOf<Int, Rect>() }
     val shape = RoundedCornerShape(50)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalMargin, vertical = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier
+    // 主题 key：主题色变化时强制重建玻璃样式/着色器
+    key(animatedPrimary, animatedAccent) {
+        Box(
+            modifier = modifier
                 .fillMaxWidth()
-                .height(barHeight)
-                .shadow(
-                    elevation = 24.dp,
-                    shape = shape,
-                    ambientColor = animatedColors.primary.copy(alpha = 0.18f),
-                    spotColor = animatedColors.primary.copy(alpha = 0.18f)
-                )
-                .shadow(
-                    elevation = 8.dp,
-                    shape = shape,
-                    ambientColor = Color.Black.copy(alpha = 0.20f),
-                    spotColor = Color.Black.copy(alpha = 0.20f)
-                )
-                .clip(shape)
-                .background(animatedColors.primary.copy(alpha = 0.24f))
-                .then(
-                    if (glass != null) {
-                        Modifier.liquidGlass(
-                            glass,
-                            GlassStyle.Regular.copy(
-                                shape = GlassShape.Capsule,
-                                blurRadius = 30.dp,
-                                refraction = GlassRefraction(
-                                    height = 8.dp,
-                                    amount = 10.dp
-                                ),
-                                saturation = 1.35f,
-                                tint = animatedColors.primary.copy(alpha = 0.12f),
-                                highlight = GlassHighlight(
-                                    width = 1.dp,
-                                    alpha = 0.35f
-                                ),
-                                noiseAlpha = 0.02f,
-                                chromaticAberration = 0.08f
-                            )
-                        )
-                    } else {
-                        Modifier
-                    }
-                )
-                .iridescentBorder(
-                    shape = shape,
-                    colors = remember(animatedColors) {
-                        listOf(
-                            animatedColors.primary.copy(alpha = 0.30f),
-                            animatedColors.accent.copy(alpha = 0.30f),
-                            animatedColors.primary.copy(alpha = 0.30f)
-                        )
-                    },
-                    width = 1.dp,
-                    alpha = 0.30f
-                ),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = horizontalMargin, vertical = 12.dp)
         ) {
-            items.forEachIndexed { index, item ->
-                TabIcon(
-                    item = item,
-                    selected = index == selectedIndex,
-                    collapsed = collapseState.collapsed,
-                    colors = animatedColors,
-                    onClick = { onTabSelected(index) },
-                    onPositioned = { rect -> tabPositions[index] = rect }
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = shape,
+                        ambientColor = animatedPrimary.copy(alpha = 0.18f),
+                        spotColor = animatedPrimary.copy(alpha = 0.18f)
+                    )
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = shape,
+                        ambientColor = Color.Black.copy(alpha = 0.20f),
+                        spotColor = Color.Black.copy(alpha = 0.20f)
+                    )
+                    .clip(shape)
+                    .then(
+                        if (backdrop != null) {
+                            // 书源选择弹窗同款模糊：真实内容采样 + Gaussian Blur
+                            Modifier.liquidGlass(
+                                backdrop = backdrop,
+                                shape = shape,
+                                surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+                                blurRadius = 8.dp,
+                                refraction = false
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .background(animatedPrimary.copy(alpha = 0.30f), shape)
+                    .iridescentBorder(
+                        shape = shape,
+                        colors = listOf(
+                            animatedPrimary,
+                            animatedAccent,
+                            animatedPrimary
+                        ),
+                        width = 1.5.dp,
+                        alpha = 0.45f
+                    ),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEachIndexed { index, item ->
+                    TabIcon(
+                        item = item,
+                        selected = index == selectedIndex,
+                        collapsed = collapseState.collapsed,
+                        contrast = contrast,
+                        onClick = { onTabSelected(index) },
+                        onPositioned = { rect -> tabPositions[index] = rect }
+                    )
+                }
             }
-        }
 
-        SelectionIndicator(
-            targetRect = tabPositions[selectedIndex],
-            color = animatedColors.primary
-        )
+            SelectionIndicator(
+                targetRect = tabPositions[selectedIndex],
+                color = contrast
+            )
+        }
     }
 }
+
+/** 计算颜色的相对亮度，返回高对比前景色（白 / 深灰）。 */
+private fun Color.luminance(): Double {
+    fun linear(c: Float): Double {
+        val v = c
+        return if (v <= 0.03928f) {
+            v / 12.92
+        } else {
+            Math.pow(((v + 0.055f) / 1.055f).toDouble(), 2.4)
+        }
+    }
+    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+}
+
+private fun Color.contrastColor(): Color =
+    if (luminance() > 0.5) Color(0xFF1A1A1E) else Color.White
 
 @Composable
 private fun TabIcon(
     item: AppTabItem,
     selected: Boolean,
     collapsed: Boolean,
-    colors: AppButtonColors,
+    contrast: Color,
     onClick: () -> Unit,
     onPositioned: (Rect) -> Unit
 ) {
@@ -247,7 +258,7 @@ private fun TabIcon(
         ),
         label = "tabIconScale"
     )
-    val iconColor = if (selected) colors.primary else Color.Black.copy(alpha = 0.45f)
+    val iconColor = if (selected) contrast else contrast.copy(alpha = 0.55f)
 
     Column(
         modifier = Modifier

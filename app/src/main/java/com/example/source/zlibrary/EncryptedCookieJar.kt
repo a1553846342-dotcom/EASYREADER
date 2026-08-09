@@ -55,32 +55,34 @@ class EncryptedCookieJar(private val credentialStorage: ZLibraryCredentialStorag
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val storageDomain = credentialStorage.getDomain()
+        val currentDomain = runCatching { com.example.library.ZLibraryNodeConfig.domain }
+            .getOrDefault(storageDomain)
         val requestHost = url.host
 
-        // Ensure we only match if request host ends with storageDomain or equals storageDomain
-        val isDomainMatch = requestHost.equals(storageDomain, ignoreCase = true) ||
-                requestHost.endsWith(".$storageDomain", ignoreCase = true) ||
-                storageDomain.endsWith(".$requestHost", ignoreCase = true)
-
-        if (!isDomainMatch) {
-            return emptyList()
-        }
+        // 标准 Cookie 作用域：按 Cookie 自己的 domain 匹配请求主机，
+        // 不再用“账号保存时的域名”一刀切拦截（否则切换节点后 c_token 等
+        // 验证 Cookie 永远带不回去，导致 DiamWall 重试永远 503）。
+        val list = cookieMap.values.filter { cookie ->
+            val cd = cookie.domain
+            requestHost.equals(cd, ignoreCase = true) ||
+                requestHost.endsWith(".$cd", ignoreCase = true)
+        }.toMutableList()
 
         val remixUserKey = credentialStorage.getUserKey()
         val remixUserId = credentialStorage.getUserId()
 
-        val list = cookieMap.values.filter { cookie ->
-            val cd = cookie.domain
-            requestHost.equals(cd, ignoreCase = true) ||
-                    requestHost.endsWith(".$cd", ignoreCase = true) ||
-                    cd.equals(storageDomain, ignoreCase = true)
-        }.toMutableList()
+        val loginMatches = requestHost.equals(currentDomain, ignoreCase = true) ||
+            requestHost.endsWith(".$currentDomain", ignoreCase = true) ||
+            requestHost.equals(storageDomain, ignoreCase = true) ||
+            requestHost.endsWith(".$storageDomain", ignoreCase = true)
 
-        if (!remixUserKey.isNullOrBlank() && !list.any { it.name == "remix_userkey" }) {
-            list.add(Cookie.Builder().name("remix_userkey").value(remixUserKey).domain(requestHost).build())
-        }
-        if (!remixUserId.isNullOrBlank() && !list.any { it.name == "remix_userid" }) {
-            list.add(Cookie.Builder().name("remix_userid").value(remixUserId).domain(requestHost).build())
+        if (loginMatches) {
+            if (!remixUserKey.isNullOrBlank() && !list.any { it.name == "remix_userkey" }) {
+                list.add(Cookie.Builder().name("remix_userkey").value(remixUserKey).domain(requestHost).build())
+            }
+            if (!remixUserId.isNullOrBlank() && !list.any { it.name == "remix_userid" }) {
+                list.add(Cookie.Builder().name("remix_userid").value(remixUserId).domain(requestHost).build())
+            }
         }
         return list
     }

@@ -46,6 +46,10 @@ import com.example.ui.components.ColorMorphSwatch
 import com.example.ui.components.AppLiquidButton
 import com.example.ui.components.AppLiquidSwitch
 import com.example.ui.components.DialogLiquidGlass
+import com.example.ui.components.SegmentedPillSelector
+import com.example.ui.components.PageTurnSelectorRow
+import com.example.ui.components.CustomMinutesDialog
+import com.example.ui.components.JunoSlider
 import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
@@ -72,17 +76,19 @@ fun SettingsTabScreen(
     colorPrimaryIndexVal: Int = prefs.colorPrimaryIndex,
     colorSecondaryIndexVal: Int = prefs.colorSecondaryIndex,
     onColorThemeChange: (Int, Int) -> Unit = { p, s -> prefs.colorPrimaryIndex = p; prefs.colorSecondaryIndex = s },
-    onAdultSourcesChange: (Boolean) -> Unit = {}
+    onAdultSourcesChange: (Boolean) -> Unit = {},
+    orientationLockVal: Int = prefs.screenOrientationLock,
+    onOrientationLockChange: (Int) -> Unit = { prefs.screenOrientationLock = it }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var restReminderMinutes by remember { mutableStateOf(prefs.restReminderMinutes) }
+    var showCustomMinutes by remember { mutableStateOf(false) }
     var autoNightMode by remember(autoNightModeVal) { mutableStateOf(autoNightModeVal) }
     var blueLightFilter by remember(blueLightFilterVal) { mutableStateOf(blueLightFilterVal) }
     var blueLightAlpha by remember(blueLightAlphaVal) { mutableStateOf(blueLightAlphaVal) }
     var pageTurnMode by remember { mutableStateOf(prefs.pageTurnMode) }
-    var orientationLock by remember { mutableStateOf(prefs.screenOrientationLock) }
     var colorPrimaryIndex by remember(colorPrimaryIndexVal) { mutableStateOf(colorPrimaryIndexVal) }
     var colorSecondaryIndex by remember(colorSecondaryIndexVal) { mutableStateOf(colorSecondaryIndexVal) }
     var liveButtonTapCount by remember { mutableStateOf(0) }
@@ -432,22 +438,11 @@ fun SettingsTabScreen(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                listOf(0 to "跟随系统", 1 to "锁定竖屏", 2 to "锁定横屏").forEach { (mode, label) ->
-                                    FilterChip(
-                                        selected = orientationLock == mode,
-                                        onClick = {
-                                            orientationLock = mode
-                                            prefs.screenOrientationLock = mode
-                                        },
-                                        shape = CircleShape,
-                                        label = { Text(label, fontSize = 12.sp) }
-                                    )
-                                }
-                            }
+                            SegmentedPillSelector(
+                                options = listOf(0 to "跟随系统", 1 to "锁定竖屏", 2 to "锁定横屏"),
+                                selected = orientationLockVal,
+                                onSelect = onOrientationLockChange
+                            )
                         }
                     }
                 }
@@ -464,95 +459,18 @@ fun SettingsTabScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            PageTurnType.entries.forEachIndexed { index, turnType ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickableWithFeedback {
-                                            pageTurnMode = turnType.id
-                                            prefs.pageTurnMode = turnType.id
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(turnType.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    RadioButton(
-                                        selected = pageTurnMode == turnType.id,
-                                        onClick = {
-                                            pageTurnMode = turnType.id
-                                            prefs.pageTurnMode = turnType.id
-                                        },
-                                        colors = RadioButtonDefaults.colors(selectedColor = MintPrimary)
-                                    )
-                                }
-                                if (index != PageTurnType.entries.size - 1) {
-                                    Divider(color = Color.LightGray.copy(alpha = 0.2f))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Section 4: Backup
-                item {
-                    Text("本地备份", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
-                }
-
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = MintPrimary)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("导出备份", fontWeight = FontWeight.SemiBold)
-                                }
-                                AppLiquidButton(
-                                    text = "导出",
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PageTurnType.entries.forEach { turnType ->
+                                PageTurnSelectorRow(
+                                    title = turnType.title,
+                                    description = turnType.description,
+                                    selected = pageTurnMode == turnType.id,
                                     onClick = {
-                                        scope.launch {
-                                            backupManager.exportBackupJson()
-                                            Toast.makeText(context, "备份已导出", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = Color.LightGray.copy(alpha = 0.2f))
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.CloudDownload, contentDescription = null, tint = MintSecondary)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("恢复备份", fontWeight = FontWeight.SemiBold)
-                                }
-                                AppLiquidButton(
-                                    text = "恢复",
-                                    onClick = {
-                                        scope.launch {
-                                            val json = backupManager.exportBackupJson()
-                                            val success = backupManager.restoreBackupJson(json)
-                                            if (success) {
-                                                Toast.makeText(context, "恢复成功", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
+                                        pageTurnMode = turnType.id
+                                        prefs.pageTurnMode = turnType.id
                                     }
                                 )
                             }
@@ -587,64 +505,36 @@ fun SettingsTabScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                val presets = listOf(0 to "关", 15 to "15分", 30 to "30分", 45 to "45分", 60 to "60分")
-                                presets.forEach { (min, label) ->
-                                    FilterChip(
-                                        selected = restReminderMinutes == min,
-                                        onClick = {
-                                            restReminderMinutes = min
-                                            prefs.restReminderMinutes = min
-                                        },
-                                        shape = CircleShape,
-                                        label = { Text(label, fontSize = 11.sp) }
-                                    )
+                            SegmentedPillSelector(
+                                options = listOf(0 to "关", 15 to "15分", 30 to "30分", 45 to "45分", 60 to "60分"),
+                                selected = if (restReminderMinutes in listOf(0, 15, 30, 45, 60)) restReminderMinutes else -1,
+                                onSelect = {
+                                    restReminderMinutes = it
+                                    prefs.restReminderMinutes = it
                                 }
-                                if (restReminderMinutes !in listOf(0, 15, 30, 45, 60)) {
-                                    FilterChip(
-                                        selected = true,
-                                        onClick = {},
-                                        shape = CircleShape,
-                                        label = { Text("${restReminderMinutes}分(自定义)", fontSize = 11.sp) }
-                                    )
-                                }
-                            }
+                            )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                var customText by remember(restReminderMinutes) { mutableStateOf(if (restReminderMinutes !in listOf(0, 15, 30, 45, 60)) restReminderMinutes.toString() else "") }
-                                OutlinedTextField(
-                                    value = customText,
-                                    onValueChange = { customText = it.filter { char -> char.isDigit() } },
-                                    label = { Text("自定义时间 (分钟)", fontSize = 12.sp) },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = MintPrimary,
-                                        unfocusedBorderColor = Color.LightGray.copy(alpha = 0.5f),
-                                        focusedLabelColor = MintPrimary
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
+                                Text(
+                                    text = if (restReminderMinutes in listOf(0, 15, 30, 45, 60)) {
+                                        "自定义提醒时间"
+                                    } else {
+                                        "当前自定义：$restReminderMinutes 分钟"
+                                    },
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                AppLiquidButton(
-                                    text = "设置",
-                                    onClick = {
-                                        val mins = customText.toIntOrNull() ?: 0
-                                        if (mins > 0) {
-                                            restReminderMinutes = mins
-                                            prefs.restReminderMinutes = mins
-                                        }
-                                    }
+                                AppActionButton(
+                                    text = "自定义",
+                                    onClick = { showCustomMinutes = true },
+                                    variant = AppButtonVariant.Secondary,
+                                    buttonSize = AppButtonSize.Small
                                 )
                             }
 
@@ -695,16 +585,13 @@ fun SettingsTabScreen(
                             }
 
                             if (blueLightFilter) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("强度: ${(blueLightAlpha * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                Slider(
+                                Spacer(modifier = Modifier.height(10.dp))
+                                JunoSlider(
                                     value = blueLightAlpha,
                                     onValueChange = {
                                         blueLightAlpha = it
                                         onBlueLightAlphaChange(it)
-                                    },
-                                    valueRange = 0.0f..1.0f,
-                                    colors = SliderDefaults.colors(thumbColor = MintPrimary, activeTrackColor = MintPrimary)
+                                    }
                                 )
                             }
                         }
@@ -761,6 +648,18 @@ fun SettingsTabScreen(
                 onOpenSourceManager = { onOpenSourceManager?.invoke() }
             )
         }
+    }
+
+    if (showCustomMinutes) {
+        CustomMinutesDialog(
+            current = if (restReminderMinutes in listOf(0, 15, 30, 45, 60)) 15 else restReminderMinutes,
+            onConfirm = {
+                restReminderMinutes = it
+                prefs.restReminderMinutes = it
+                showCustomMinutes = false
+            },
+            onDismiss = { showCustomMinutes = false }
+        )
     }
 
     if (showAddCategoryDialog) {

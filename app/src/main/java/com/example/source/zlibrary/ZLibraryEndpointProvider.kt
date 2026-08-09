@@ -34,6 +34,17 @@ class ZLibraryEndpointProvider(
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     suspend fun getEndpoint(forceRefresh: Boolean = false): String = withContext(Dispatchers.IO) {
+        // 0. 用户在“节点管理”里选中的节点优先（立即生效，不再被缓存/扫描结果覆盖）
+        val selectedNode = runCatching { com.example.library.ZLibraryNodeConfig.domain }
+            .getOrDefault("")
+            ?.trim()
+            ?.removePrefix("https://")
+            ?.removePrefix("http://")
+            ?.removeSuffix("/")
+        if (!selectedNode.isNullOrBlank() && !forceRefresh) {
+            return@withContext selectedNode
+        }
+
         // 1. User custom config
         val customDomain = prefs.getString(KEY_CUSTOM_ENDPOINT, null)?.trim()
         if (!customDomain.isNullOrBlank()) {

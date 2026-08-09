@@ -1,11 +1,5 @@
 package com.example.ui.source
 
-import android.net.Uri
-import android.os.Handler
-import android.os.Looper
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -36,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.library.ZLibraryNodeManager
 import com.example.source.SearchBook
+import com.example.source.zlibrary.ZLibraryCredentialStorage
+import com.example.source.zlibrary.ZLibraryWebViewHelper
+import com.example.source.zlibrary.network.ZLibraryHttpClient
 import com.example.source.zlibrary.parser.ZLibraryParserManager
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
@@ -43,7 +40,9 @@ import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
-import org.json.JSONTokener
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URLEncoder
 
 /**
  * Z-Library 节点管理窗口：
@@ -73,93 +72,87 @@ fun ZLibraryNodeManagementScreen(
 
     val statuses = remember { mutableStateMapOf<String, String>() }
     var testingNode by remember { mutableStateOf<String?>(null) }
-    val webView = remember { mutableStateOf<WebView?>(null) }
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-
-    LaunchedEffect(Unit) {
-        webView.value = WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            // 节点检测只需解析结果，不下载页面图片，避免触发站点风控
-            settings.blockNetworkImage = true
-            CookieManager.getInstance().setAcceptCookie(true)
-        }
-    }
-
-    // 离开节点管理时释放测试 WebView
-    DisposableEffect(Unit) {
-        onDispose {
-            webView.value?.let { wv ->
-                try { wv.stopLoading() } catch (_: Exception) {}
-                try { wv.destroy() } catch (_: Exception) {}
-            }
-            webView.value = null
-        }
-    }
 
     fun testNode(node: String) {
         if (testingNode != null) return
         testingNode = node
         statuses[node] = "测试中…"
-        val wv = webView.value
-        if (wv == null) {
-            statuses[node] = "初始化失败"
-            testingNode = null
-            return
-        }
-        var tries = 0
-        val url = "https://$node/s/" + Uri.encode("三体")
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val httpClient = ZLibraryHttpClient(
+                        credentialStorage = ZLibraryCredentialStorage(context),
+                        context = context
+                    )
+                    val encodedKw = URLEncoder.encode("三体", "UTF-8")
+                    val url = "https://$node/s/$encodedKw"
+                    val response = httpClient.get(url, referer = "https://$node/")
+                    val code = response.code
+                    val html = response.body?.string() ?: ""
+                    response.close()
 
-        fun parseOnce() {
-            wv.evaluateJavascript("(function(){return document.documentElement.outerHTML;})();") { htmlJson ->
-                if (testingNode != node) return@evaluateJavascript
-                if (htmlJson == null) return@evaluateJavascript
-                val html = try {
-                    JSONTokener(htmlJson).nextValue() as String
-                } catch (e: Exception) {
-                    htmlJson
-                }
-                val isChallenge = html.contains("Verifying your browser", ignoreCase = true) ||
-                    html.contains("Checking your browser", ignoreCase = true) ||
-                    html.contains("cpt.lib") ||
-                    html.contains("solve this captcha", ignoreCase = true)
-                if (isChallenge) {
-                    tries++
-                    if (tries >= 6) {
-                        statuses[node] = "需验证（无法自动搜索）"
-                        testingNode = null
+                    val httpResult = if (code !in 200..299) {
+                        "不可用（HTTP $code）"
+                    } else if (
+                        html.contains("Verifying your browser", ignoreCase = true) ||
+                        html.contains("Checking your browser", ignoreCase = true) ||
+                        html.contains("Just a moment", ignoreCase = true) ||
+                        html.contains("solve this captcha", ignoreCase = true) ||
+                        html.contains("cpt.lib")
+                    ) {
+                        "需验证（无法自动搜索）"
                     } else {
-                        mainHandler.postDelayed({ parseOnce() }, 2000)
+                        val books: List<SearchBook> = try {
+                            ZLibraryParserManager.parseSearchPage(html, "https://$node", "zlibrary")
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        when {
+                            books.isNotEmpty() -> "可用（搜索到 ${books.size} 本）"
+                            html.contains("/book/") ||
+                            html.contains("z-bookcard") ||
+                            html.contains("resItemBox") ||
+                            html.contains("book-item") -> "可用（页面可打开）"
+                            else -> "不可用（无搜索结果）"
+                        }
                     }
-                    return@evaluateJavascript
-                }
-                val books: List<SearchBook> = try {
-                    ZLibraryParserManager.parseSearchPage(html, "https://$node", "zlibrary")
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                if (books.isNotEmpty()) {
-                    statuses[node] = "可用（搜到 ${books.size} 本）"
-                    testingNode = null
-                } else {
-                    tries++
-                    if (tries >= 6) {
-                        statuses[node] = "不可用"
-                        testingNode = null
+                    if (httpResult.startsWith("不可用") || httpResult.startsWith("需验证")) {
+                        val web = ZLibraryWebViewHelper.searchViaWebView(
+                            context,
+                            node,
+                            "三体",
+                            cookies = ZLibraryCredentialStorage(context).getCookies()
+                        )
+                        when {
+                            web.books.isNotEmpty() -> "可用（搜索到 ${web.books.size} 本）"
+                            web.pageHasZlibMarkers -> "可用（页面可打开）"
+                            web.stillChallenged -> "需验证（无法自动搜索）"
+                            else -> httpResult
+                        }
                     } else {
-                        mainHandler.postDelayed({ parseOnce() }, 2000)
+                        httpResult
+                    }
+                } catch (e: Exception) {
+                    val web = ZLibraryWebViewHelper.searchViaWebView(
+                        context,
+                        node,
+                        "三体",
+                        cookies = ZLibraryCredentialStorage(context).getCookies()
+                    )
+                    if (web.books.isNotEmpty()) {
+                        "可用（搜索到 ${web.books.size} 本）"
+                    } else if (web.pageHasZlibMarkers) {
+                        "可用（页面可打开）"
+                    } else {
+                        "不可用（${e.message?.take(40) ?: "连接失败"}）"
                     }
                 }
             }
-        }
-
-        wv.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                if (testingNode == node) parseOnce()
+            if (testingNode == node) {
+                statuses[node] = result
+                testingNode = null
             }
         }
-        mainHandler.postDelayed({ if (testingNode == node) parseOnce() }, 2500)
-        wv.loadUrl(url)
     }
 
     fun selectNode(node: String) {
@@ -207,7 +200,8 @@ fun ZLibraryNodeManagementScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {

@@ -99,6 +99,11 @@ fun SplashScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (isPureMode) {
+            // 纯净模式：不显示任何开屏海报，直接进入软件
+            safeOnSplashFinished()
+            return@LaunchedEffect
+        }
         try {
             alpha.animateTo(
                 targetValue = 1.0f,
