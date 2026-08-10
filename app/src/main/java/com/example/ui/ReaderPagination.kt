@@ -7,20 +7,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.text.Paragraph
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * ANR-free pagination layer.
+ * ANR-free pagination layer backed by real text layout.
  *
- * All page computation happens on [Dispatchers.Default] and results are cached per
- * (content, layout) key. Toggling the reader bars, rotating the screen or returning to a
- * previously opened chapter never re-measures text on the main thread.
- *
- * We deliberately use fast approximate pagination (character-grid estimation) instead of
- * measuring the full chapter with TextMeasurer: this is the same technique used by many
- * lightweight readers and makes even multi-megabyte chapters instant to open.
+ * Every page break is a real line boundary produced by [Paragraph] (the same layout
+ * engine Compose's Text uses), so a paragraph split across two pages never loses a line
+ * and the last line of a page is always fully visible. Measurement runs on
+ * [Dispatchers.Default]; very large chapters are split into ~40k-char chunks, each chunk
+ * is measured independently and pages are appended as chunks finish so the first pages
+ * appear almost immediately.
  */
 object ReaderPaginationCache {
     private val lock = Any()
@@ -44,19 +48,38 @@ data class PaginationKey(
     val content: String,
     val widthPx: Int,
     val heightPx: Int,
-    val fontSizePx: Int,
-    val lineHeightPx: Int,
+    val fontSizePx: Float,
+    val lineHeightPx: Float,
+    val fontFamily: FontFamily,
+    val includeFontPadding: Boolean,
     val titleReservePx: Int
 )
+
+/** Vertical padding applied by RenderSinglePage around the page content (12dp x 2). */
+internal const val PAGE_VERTICAL_PADDING_DP = 12
+
+/** Bottom padding of the body Text inside RenderSinglePage. */
+internal const val PAGE_TEXT_BOTTOM_PADDING_DP = 16
+
+/** Vertical padding around the chapter title block (8dp top + 12dp bottom). */
+internal const val TITLE_BLOCK_PADDING_DP = 20
+
+/** Chapters larger than this are paginated chunk-by-chunk instead of in one pass. */
+internal const val LARGE_CHAPTER_THRESHOLD = 200_000
+
+/** Chunk size used for large chapters (measured once per chunk, ~40k chars). */
+private const val PAGINATION_CHUNK_CHARS = 40_000
+
+/** Chapters up to this size are paginated in one pass and published at once. */
+private const val EAGER_CHAPTER_THRESHOLD = 60_000
 
 @Composable
 fun rememberChapterPages(
     content: String,
-    titleText: String?,
     widthPx: Int,
     heightPx: Int,
-    fontSizePx: Float,
-    lineHeightPx: Float,
+    bodyStyle: TextStyle,
+    titleReservePx: Int,
     isScrollMode: Boolean
 ): List<String> {
     if (isScrollMode || content.isEmpty() || widthPx <= 20 || heightPx <= 20) {
@@ -64,17 +87,17 @@ fun rememberChapterPages(
     }
 
     val density = LocalDensity.current
-    val titleReservePx = if (titleText.isNullOrEmpty()) {
-        0
-    } else {
-        with(density) { TITLE_RESERVE_DP.dp.toPx().toInt() }
-    }
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontSizePx = with(density) { bodyStyle.fontSize.toPx() }.coerceAtLeast(8f)
+    val lineHeightPx = with(density) { bodyStyle.lineHeight.toPx() }.coerceAtLeast(fontSizePx * 1.2f)
     val key = PaginationKey(
         content = content,
         widthPx = widthPx,
         heightPx = heightPx,
-        fontSizePx = fontSizePx.toInt().coerceAtLeast(8),
-        lineHeightPx = lineHeightPx.toInt().coerceAtLeast(12),
+        fontSizePx = fontSizePx,
+        lineHeightPx = lineHeightPx,
+        fontFamily = bodyStyle.fontFamily ?: FontFamily.Default,
+        includeFontPadding = false,
         titleReservePx = titleReservePx
     )
 
@@ -84,66 +107,163 @@ fun rememberChapterPages(
 
     LaunchedEffect(key) {
         if (pages.isNotEmpty()) return@LaunchedEffect
-        val computed = withContext(Dispatchers.Default) {
-            paginateApproximate(
-                content = content,
-                fontSizePx = fontSizePx.coerceAtLeast(8f),
-                lineHeightPx = lineHeightPx.coerceAtLeast(fontSizePx * 1.2f),
-                widthPx = widthPx,
-                firstPageHeight = (heightPx - titleReservePx).coerceAtLeast(80),
-                normalHeight = heightPx
-            )
+        val cached = ReaderPaginationCache.get(key)
+        if (cached != null) {
+            pages = cached
+            return@LaunchedEffect
         }
-        ReaderPaginationCache.put(key, computed)
-        pages = computed
+
+        val params = LayoutParams(
+            widthPx = widthPx,
+            pageHeightPx = heightPx,
+            firstPageHeightPx = (heightPx - titleReservePx).coerceAtLeast(80),
+            bodyStyle = bodyStyle,
+            fontSizePx = fontSizePx,
+            lineHeightPx = lineHeightPx,
+            density = density,
+            fontFamilyResolver = fontFamilyResolver
+        )
+
+        if (content.length <= EAGER_CHAPTER_THRESHOLD) {
+            val computed = withContext(Dispatchers.Default) {
+                paginateChunked(content, params, progressiveSink = null)
+            }
+            ReaderPaginationCache.put(key, computed)
+            pages = computed
+        } else {
+            // Very large chapters: measure the first chunk right away so the reader gets
+            // pages almost instantly, then append the remaining chunks in the background.
+            val full = withContext(Dispatchers.Default) {
+                paginateChunked(content, params) { partial -> pages = partial }
+            }
+            ReaderPaginationCache.put(key, full)
+            pages = full
+        }
     }
 
     return pages
 }
 
+private class LayoutParams(
+    val widthPx: Int,
+    val pageHeightPx: Int,
+    val firstPageHeightPx: Int,
+    val bodyStyle: TextStyle,
+    val fontSizePx: Float,
+    val lineHeightPx: Float,
+    val density: androidx.compose.ui.unit.Density,
+    val fontFamilyResolver: androidx.compose.ui.text.font.FontFamily.Resolver
+)
+
 /**
- * Splits text into pages using the character-grid estimate:
- *   charsPerLine = widthPx / fontSizePx
- *   linesPerPage = heightPx / lineHeightPx
- * This is exact for CJK text and slightly conservative for Latin text, so pages never overflow.
- * Only string slicing is performed - no text layout on the main thread.
+ * Splits [content] into ~40k-char chunks (preferring newline boundaries) and paginates
+ * each chunk with a real [Paragraph] layout, appending pages so the concatenation is
+ * byte-for-byte identical to [content].
+ *
+ * When [progressiveSink] is provided it is invoked after every chunk with the pages
+ * computed so far; the final returned list contains every page.
  */
-private fun paginateApproximate(
+private fun paginateChunked(
     content: String,
-    fontSizePx: Float,
-    lineHeightPx: Float,
-    widthPx: Int,
-    firstPageHeight: Int,
-    normalHeight: Int
+    params: LayoutParams,
+    progressiveSink: ((List<String>) -> Unit)?
 ): List<String> {
-    // Two chars less than the theoretical maximum so punctuation/line-wrap never pushes a line over.
-    val charsPerLine = ((widthPx / fontSizePx).toInt() - 2).coerceAtLeast(4)
-    fun pageCharsFor(height: Int): Int {
-        // Reserve two full lines at the bottom so the last line's glyphs are never clipped
-        // by the page container (clipToBounds), even with unusual fonts or metrics.
-        val safeHeight = (height - lineHeightPx * 2f).toInt().coerceAtLeast((height * 0.55f).toInt())
-        val lines = (safeHeight / lineHeightPx).toInt().coerceAtLeast(1)
-        return (charsPerLine * lines).coerceAtLeast(120)
+    val chunks = splitChunks(content)
+    if (chunks.size <= 1) {
+        return paginateChunk(chunks.first(), params, reserveTitle = true)
+    }
+
+    val allPages = mutableListOf<String>()
+    chunks.forEachIndexed { index, chunk ->
+        val reserveTitle = index == 0
+        allPages += paginateChunk(chunk, params, reserveTitle)
+        progressiveSink?.invoke(allPages.toList())
+    }
+    return allPages
+}
+
+/** Splits text into chunks of at most [PAGINATION_CHUNK_CHARS], preferring '\n' cuts. */
+private fun splitChunks(content: String, maxChars: Int = PAGINATION_CHUNK_CHARS): List<String> {
+    if (content.length <= maxChars) return listOf(content)
+    val chunks = mutableListOf<String>()
+    var start = 0
+    while (start < content.length) {
+        val end = minOf(content.length, start + maxChars)
+        if (end < content.length) {
+            val newline = content.lastIndexOf('\n', end)
+            if (newline > start + maxChars / 2) {
+                chunks.add(content.substring(start, newline))
+                start = newline + 1
+                continue
+            }
+        }
+        chunks.add(content.substring(start, end))
+        start = end
+    }
+    return chunks
+}
+
+/**
+ * Real-layout pagination for one chunk. Page breaks are line boundaries reported by
+ * [Paragraph], so no line is ever clipped or lost between pages.
+ *
+ * @param reserveTitle whether the first page of this chunk must reserve the chapter
+ *   title block (only the very first chunk of a chapter).
+ */
+private fun paginateChunk(
+    chunk: String,
+    params: LayoutParams,
+    reserveTitle: Boolean
+): List<String> {
+    val paragraph = buildParagraph(chunk, params)
+    val lineCount = paragraph.lineCount
+    if (lineCount == 0) {
+        return if (chunk.isEmpty()) emptyList() else listOf(chunk)
     }
 
     val pages = mutableListOf<String>()
-    var start = 0
-    var firstPage = true
-    while (start < content.length) {
-        val target = if (firstPage) pageCharsFor(firstPageHeight) else pageCharsFor(normalHeight)
-        val end = minOf(content.length, start + target)
-        var cut = end
-        if (end < content.length) {
-            val newline = content.lastIndexOf('\n', end)
-            if (newline > start + target / 2) {
-                cut = newline
-            }
+    var lineIndex = 0
+    var pageStartChar = 0
+    var isFirstPageOfChunk = true
+
+    while (lineIndex < lineCount) {
+        val pageHeight = if (isFirstPageOfChunk && reserveTitle && pageStartChar == 0) {
+            params.firstPageHeightPx.toFloat()
+        } else {
+            params.pageHeightPx.toFloat()
         }
-        pages.add(content.substring(start, cut))
-        start = if (cut == end) end else cut + 1
-        firstPage = false
+
+        var accumulatedHeight = 0f
+        var lastFit = lineIndex
+        var i = lineIndex
+        while (i < lineCount) {
+            val lineH = (paragraph.getLineBottom(i) - paragraph.getLineTop(i)).coerceAtLeast(1f)
+            if (i > lineIndex && accumulatedHeight + lineH > pageHeight) break
+            accumulatedHeight += lineH
+            lastFit = i
+            i++
+        }
+
+        val endChar = paragraph.getLineEnd(lastFit)
+        pages.add(chunk.substring(pageStartChar, endChar))
+        lineIndex = lastFit + 1
+        pageStartChar = endChar
+        isFirstPageOfChunk = false
     }
-    return if (pages.isEmpty()) listOf(content) else pages
+    return pages
 }
 
-private const val TITLE_RESERVE_DP = 128
+/**
+ * Builds a [Paragraph] that lays out [text] exactly like RenderSinglePage's Text:
+ * same TextStyle (fontFamily / fontSize / lineHeight / includeFontPadding), same width
+ * and same density.
+ */
+private fun buildParagraph(text: String, params: LayoutParams): Paragraph {
+    return Paragraph(
+        text = text,
+        style = params.bodyStyle,
+        constraints = Constraints(maxWidth = params.widthPx),
+        density = params.density,
+        fontFamilyResolver = params.fontFamilyResolver
+    )
+}

@@ -84,12 +84,18 @@ fun ZLibraryNodeManagementScreen(
                         credentialStorage = ZLibraryCredentialStorage(context),
                         context = context
                     )
-                    val encodedKw = URLEncoder.encode("三体", "UTF-8")
+                    val encodedKw = URLEncoder.encode("三体", "UTF-8").replace("+", "%20")
                     val url = "https://$node/s/$encodedKw"
                     val response = httpClient.get(url, referer = "https://$node/")
                     val code = response.code
                     val html = response.body?.string() ?: ""
                     response.close()
+
+                    // 官网搜索服务故障（2026-08 全站性）：节点本身可达但搜索不可用。
+                    // 此时不算"不可用"，也不再走 WebView 兜底（只会浪费 ~36s 后同样失败）。
+                    if (html.contains("Search service temporary unavailable", ignoreCase = true)) {
+                        return@withContext "站点可达，搜索服务暂不可用（官网故障）"
+                    }
 
                     val httpResult = if (code !in 200..299) {
                         "不可用（HTTP $code）"
@@ -113,9 +119,12 @@ fun ZLibraryNodeManagementScreen(
                             html.contains("z-bookcard") ||
                             html.contains("resItemBox") ||
                             html.contains("book-item") -> "可用（页面可打开）"
+                            html.contains("Z-Library", ignoreCase = true) -> "可用（站点可达）"
                             else -> "不可用（无搜索结果）"
                         }
                     }
+                    // 仅"不可用 / 需验证"才尝试 WebView（挑战/JS 渲染场景），
+                    // "搜索服务暂不可用"直接返回，不再浪费 WebView 超时。
                     if (httpResult.startsWith("不可用") || httpResult.startsWith("需验证")) {
                         val web = ZLibraryWebViewHelper.searchViaWebView(
                             context,
@@ -401,7 +410,7 @@ private fun NodeCard(
     onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val isOk = status.startsWith("可用")
+    val isOk = status.startsWith("可用") || status.startsWith("站点可达")
     val isFail = status == "不可用" || status.startsWith("需验证") || status == "初始化失败"
     Card(
         shape = RoundedCornerShape(16.dp),

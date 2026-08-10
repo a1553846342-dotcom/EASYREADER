@@ -58,6 +58,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.library.ZLibraryNodeManager.restoreSelection(applicationContext)
+        // 冷启动兜底：清空书架分享的"用完即焚"临时文件，防止异常残留堆积
+        Thread {
+            com.example.library.BookShareHelper.cleanupTempShareDir(applicationContext)
+        }.start()
         enableEdgeToEdge()
         setContent {
             val viewModel: MainViewModel = viewModel()

@@ -55,7 +55,7 @@ class ZLibraryCredentialStorage(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_DOMAIN = "1lib.sk"
+        const val DEFAULT_DOMAIN = "z-library.sk"
         private const val KEY_USER_ID = "userId"
         private const val KEY_USER_KEY = "userKey"
         private const val KEY_DOMAIN = "domain"

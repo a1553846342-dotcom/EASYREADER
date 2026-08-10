@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -82,6 +83,9 @@ import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
 import kotlin.math.roundToInt
+import android.widget.Toast
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -1011,6 +1015,10 @@ private fun BookActionSheet(
 ) {
     val context = LocalContext.current
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    // 分享用 Activity 级作用域：弹窗关闭也不中断正在准备的分享
+    val hostActivity = LocalContext.current as? androidx.activity.ComponentActivity
+    val shareScope = hostActivity?.lifecycleScope ?: rememberCoroutineScope()
+    var sharing by remember { mutableStateOf(false) }
     val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val backdrop = rememberGlassPanelBackdrop()
     val iridescentColors = rememberIridescentColors()
@@ -1236,6 +1244,7 @@ private fun BookActionSheet(
         listOf(
             Triple("打开详情", Icons.Default.MenuBook, primary),
             Triple("移动到其他书架", Icons.Default.Folder, primary),
+            Triple("分享图书", Icons.Default.Share, primary),
             Triple("删除图书", Icons.Default.Delete, error)
         ).forEach { (label, icon, tint) ->
             val interaction = remember { MutableInteractionSource() }
@@ -1244,40 +1253,80 @@ private fun BookActionSheet(
                 targetValue = if (pressed) 0.97f else 1f,
                 label = "press"
             )
-            ListItem(
-                headlineContent = {
-                    Text(
-                        text = label,
-                        fontWeight = FontWeight.Medium,
-                        color = if (label == "删除图书") tint else onSurface
-                    )
-                },
-                leadingContent = {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = tint
-                    )
-                },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.White.copy(alpha = 0.06f)
-                ),
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = pressScale
-                        scaleY = pressScale
-                    }
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null
-                    ) {
-                        when (label) {
-                            "打开详情" -> onOpenDetail()
-                            "移动到其他书架" -> onMove()
-                            else -> onDelete()
+            if (label == "分享图书" && sharing) {
+                // 大文件准备分享的加载反馈
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = "正在准备分享…",
+                            fontWeight = FontWeight.Medium,
+                            color = onSurface
+                        )
+                    },
+                    leadingContent = {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = primary
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.06f)
+                    ),
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = pressScale
+                            scaleY = pressScale
                         }
-                    }
-            )
+                )
+            } else {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = label,
+                            fontWeight = FontWeight.Medium,
+                            color = if (label == "删除图书") tint else onSurface
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = tint
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.White.copy(alpha = 0.06f)
+                    ),
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = pressScale
+                            scaleY = pressScale
+                        }
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            enabled = !(label == "分享图书" && sharing)
+                        ) {
+                            when (label) {
+                                "打开详情" -> onOpenDetail()
+                                "移动到其他书架" -> onMove()
+                                "分享图书" -> {
+                                    if (sharing) return@clickable
+                                    sharing = true
+                                    shareScope.launch {
+                                        val error = com.example.library.BookShareHelper.shareBook(context, book)
+                                        sharing = false
+                                        if (error != null) {
+                                            Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                                else -> onDelete()
+                            }
+                        }
+                )
+            }
         }
         Spacer(modifier = Modifier.navigationBarsPadding())
             }

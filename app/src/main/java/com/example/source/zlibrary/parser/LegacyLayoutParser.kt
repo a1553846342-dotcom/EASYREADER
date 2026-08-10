@@ -3,6 +3,7 @@ package com.example.source.zlibrary.parser
 import com.example.source.SearchBook
 import com.example.source.SourceException
 import com.example.source.zlibrary.ParsedBookDetail
+import com.example.source.zlibrary.guessFileFormatFromUrl
 import org.jsoup.nodes.Document
 
 class LegacyLayoutParser : ZLibraryLayoutParser {
@@ -41,6 +42,12 @@ class LegacyLayoutParser : ZLibraryLayoutParser {
                 if (!downloadUrl.isNullOrBlank() && !downloadUrl.startsWith("http")) {
                     downloadUrl = formatUrl(baseUrl, downloadUrl)
                 }
+                val format = guessFileFormatFromUrl(downloadUrl)
+                    ?: parent?.selectFirst(
+                        ".property_extension, .extension, [class*=extension], [class*=format], [class*=file-type]"
+                    )?.text()?.lowercase()?.trim()
+                    ?: dlEl?.text()?.lowercase()?.trim()?.takeIf { it.length in 1..8 }
+                    ?: "epub"
 
                 books.add(
                     SearchBook(
@@ -49,7 +56,7 @@ class LegacyLayoutParser : ZLibraryLayoutParser {
                         title = title.trim(),
                         author = author.trim(),
                         cover = cover,
-                        format = "epub",
+                        format = format,
                         downloadUrl = downloadUrl
                     )
                 )
@@ -78,7 +85,11 @@ class LegacyLayoutParser : ZLibraryLayoutParser {
             author = "未知作者",
             cover = null,
             downloadUrl = dlUrl,
-            format = "epub"
+            format = guessFileFormatFromUrl(dlUrl)
+                ?: doc.selectFirst(
+                    ".property_extension, .extension, [class*=extension], [class*=format], [class*=file-type]"
+                )?.text()?.lowercase()?.trim()
+                ?: "epub"
         )
     }
 

@@ -42,6 +42,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -53,11 +54,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.Paragraph
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
@@ -372,7 +378,7 @@ fun ReaderScreen(
             } ?: fallbackWidthPx
 
             val containerHeightPx = pageContainerSize?.let {
-                (it.height - with(density) { 24.dp.toPx().toInt() }).coerceAtLeast(100)
+                (it.height - with(density) { (PAGE_VERTICAL_PADDING_DP * 2).dp.toPx().toInt() }).coerceAtLeast(100)
             } ?: fallbackHeightPx
 
             val bodyTextStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -383,20 +389,45 @@ fun ReaderScreen(
                 platformStyle = PlatformTextStyle(includeFontPadding = false)
             )
 
-            val fontSizePx = with(density) { bodyTextStyle.fontSize.toPx() }.coerceAtLeast(8f)
-            val lineHeightPx = with(density) { bodyTextStyle.lineHeight.toPx() }.coerceAtLeast(fontSizePx * 1.2f)
+            val titleStyle = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = textColor,
+                platformStyle = PlatformTextStyle(includeFontPadding = false)
+            )
+            val textWidthPx = containerWidthPx
+            val textHeightPx = containerHeightPx - with(density) { PAGE_TEXT_BOTTOM_PADDING_DP.dp.toPx().toInt() }.coerceAtLeast(16)
+            val fontFamilyResolver = LocalFontFamilyResolver.current
+            val currentTitleReservePx = remember(currentChapter?.title, textWidthPx, titleStyle, density, fontFamilyResolver) {
+                measureTitleReservePx(
+                    title = currentChapter?.title,
+                    widthPx = textWidthPx,
+                    maxHeightPx = textHeightPx,
+                    titleStyle = titleStyle,
+                    density = density,
+                    fontFamilyResolver = fontFamilyResolver
+                )
+            }
 
             val pagesList = rememberChapterPages(
                 content = formattedContent,
-                titleText = currentChapter?.title,
-                widthPx = containerWidthPx,
-                heightPx = containerHeightPx,
-                fontSizePx = fontSizePx,
-                lineHeightPx = lineHeightPx,
+                widthPx = textWidthPx,
+                heightPx = textHeightPx,
+                bodyStyle = bodyTextStyle,
+                titleReservePx = currentTitleReservePx,
                 isScrollMode = isScrollMode
             )
 
             val nextChapter = chapters.getOrNull(currentChapterIndex + 1)
+            val nextTitleReservePx = remember(nextChapter?.title, textWidthPx, titleStyle, density, fontFamilyResolver) {
+                measureTitleReservePx(
+                    title = nextChapter?.title,
+                    widthPx = textWidthPx,
+                    maxHeightPx = textHeightPx,
+                    titleStyle = titleStyle,
+                    density = density,
+                    fontFamilyResolver = fontFamilyResolver
+                )
+            }
             val nextChapterFormattedContent = remember(nextChapter, firstLineIndent) {
                 val text = nextChapter?.content ?: ""
                 if (firstLineIndent) {
@@ -409,15 +440,24 @@ fun ReaderScreen(
             }
             val nextChapterPages = rememberChapterPages(
                 content = nextChapterFormattedContent,
-                titleText = nextChapter?.title,
-                widthPx = containerWidthPx,
-                heightPx = containerHeightPx,
-                fontSizePx = fontSizePx,
-                lineHeightPx = lineHeightPx,
+                widthPx = textWidthPx,
+                heightPx = textHeightPx,
+                bodyStyle = bodyTextStyle,
+                titleReservePx = nextTitleReservePx,
                 isScrollMode = isScrollMode
             )
 
             val prevChapter = chapters.getOrNull(currentChapterIndex - 1)
+            val prevTitleReservePx = remember(prevChapter?.title, textWidthPx, titleStyle, density, fontFamilyResolver) {
+                measureTitleReservePx(
+                    title = prevChapter?.title,
+                    widthPx = textWidthPx,
+                    maxHeightPx = textHeightPx,
+                    titleStyle = titleStyle,
+                    density = density,
+                    fontFamilyResolver = fontFamilyResolver
+                )
+            }
             val prevChapterFormattedContent = remember(prevChapter, firstLineIndent) {
                 val text = prevChapter?.content ?: ""
                 if (firstLineIndent) {
@@ -430,11 +470,10 @@ fun ReaderScreen(
             }
             val prevChapterPages = rememberChapterPages(
                 content = prevChapterFormattedContent,
-                titleText = prevChapter?.title,
-                widthPx = containerWidthPx,
-                heightPx = containerHeightPx,
-                fontSizePx = fontSizePx,
-                lineHeightPx = lineHeightPx,
+                widthPx = textWidthPx,
+                heightPx = textHeightPx,
+                bodyStyle = bodyTextStyle,
+                titleReservePx = prevTitleReservePx,
                 isScrollMode = isScrollMode
             )
 
@@ -597,9 +636,9 @@ fun ReaderScreen(
                                                 chapterTitle = currentChapter?.title,
                                                 bgColor = bgColor,
                                                 textColor = textColor,
-                                                fontSize = fontSize,
-                                                lineHeight = lineHeight,
-                                                selectedFontFamily = selectedFontFamily,
+                                                bodyStyle = bodyTextStyle,
+                                                titleStyle = titleStyle,
+                                                titleReservePx = currentTitleReservePx,
                                                 marginHorizontal = marginHorizontal,
                                                 showBars = showBars
                                             )
@@ -614,9 +653,9 @@ fun ReaderScreen(
                                                     chapterTitle = currentChapter?.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = currentTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -627,9 +666,9 @@ fun ReaderScreen(
                                                     chapterTitle = nextChapter.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = nextTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -640,9 +679,9 @@ fun ReaderScreen(
                                                     chapterTitle = null,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = currentTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -658,9 +697,9 @@ fun ReaderScreen(
                                                     chapterTitle = currentChapter?.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = currentTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -672,9 +711,9 @@ fun ReaderScreen(
                                                     chapterTitle = prevChapter.title,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = prevTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -685,9 +724,9 @@ fun ReaderScreen(
                                                     chapterTitle = null,
                                                     bgColor = bgColor,
                                                     textColor = textColor,
-                                                    fontSize = fontSize,
-                                                    lineHeight = lineHeight,
-                                                    selectedFontFamily = selectedFontFamily,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = currentTitleReservePx,
                                                     marginHorizontal = marginHorizontal,
                                                     showBars = showBars
                                                 )
@@ -1423,8 +1462,6 @@ private fun formatForReader(text: String, firstLineIndent: Boolean): String {
     }
 }
 
-private const val LARGE_CHAPTER_THRESHOLD = 200_000
-
 /** 把超大章节切成不超过 maxChars 的文本块（优先在换行处切），保持滚动位置语义不变。 */
 private fun chunkForScroll(content: String, maxChars: Int = 40000): List<String> {
     if (content.length <= maxChars) return listOf(content)
@@ -1446,6 +1483,42 @@ private fun chunkForScroll(content: String, maxChars: Int = 40000): List<String>
     return chunks
 }
 
+/**
+ * Measures how much vertical space the chapter title occupies on the first page so the
+ * pagination and RenderSinglePage agree on the same first-page height. Returns 0 when
+ * there is no title, and is capped so a very long title can never starve the body text.
+ */
+private fun measureTitleReservePx(
+    title: String?,
+    widthPx: Int,
+    maxHeightPx: Int,
+    titleStyle: TextStyle,
+    density: androidx.compose.ui.unit.Density,
+    fontFamilyResolver: androidx.compose.ui.text.font.FontFamily.Resolver
+): Int {
+    if (title.isNullOrEmpty() || widthPx <= 0) return 0
+    val fontSizePx = with(density) { titleStyle.fontSize.toPx() }.coerceAtLeast(8f)
+    val lineHeightPx = with(density) { titleStyle.lineHeight.toPx() }.coerceAtLeast(fontSizePx * 1.2f)
+    val style = titleStyle.copy(
+        fontSize = TextUnit(fontSizePx, TextUnitType.Sp),
+        lineHeight = TextUnit(lineHeightPx, TextUnitType.Sp)
+    )
+    val paragraph = Paragraph(
+        text = title,
+        style = style,
+        constraints = Constraints(maxWidth = widthPx),
+        density = density,
+        fontFamilyResolver = fontFamilyResolver
+    )
+    val titleHeight = if (paragraph.lineCount == 0) {
+        lineHeightPx
+    } else {
+        paragraph.getLineBottom(paragraph.lineCount - 1) - paragraph.getLineTop(0)
+    }.toInt()
+    val blockPaddingPx = with(density) { TITLE_BLOCK_PADDING_DP.dp.toPx().toInt() }
+    return (titleHeight + blockPaddingPx).coerceIn(0, (maxHeightPx * 0.4f).toInt().coerceAtLeast(60))
+}
+
 @Composable
 private fun RenderSinglePage(
     pageIndex: Int,
@@ -1453,9 +1526,9 @@ private fun RenderSinglePage(
     chapterTitle: String?,
     bgColor: Color,
     textColor: Color,
-    fontSize: Float,
-    lineHeight: Float,
-    selectedFontFamily: FontFamily,
+    bodyStyle: TextStyle,
+    titleStyle: TextStyle,
+    titleReservePx: Int,
     marginHorizontal: Int,
     showBars: Boolean
 ) {
@@ -1463,31 +1536,34 @@ private fun RenderSinglePage(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(horizontal = marginHorizontal.dp, vertical = 12.dp)
+            .padding(horizontal = marginHorizontal.dp, vertical = PAGE_VERTICAL_PADDING_DP.dp)
     ) {
         if (pageIndex == 0 && !chapterTitle.isNullOrEmpty()) {
-            Text(
-                text = chapterTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = textColor,
-                modifier = Modifier.padding(bottom = 12.dp, top = 8.dp)
-            )
-        }
-
-        Box(modifier = Modifier.weight(1f)) {
-            Text(
-                text = pageText,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = fontSize.sp,
-                    lineHeight = lineHeight.sp,
-                    fontFamily = selectedFontFamily,
-                    color = textColor.copy(alpha = 0.92f),
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
-                ),
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .height(with(LocalDensity.current) { titleReservePx.toDp() })
+                    .clipToBounds()
+            ) {
+                Text(
+                    text = chapterTitle,
+                    style = titleStyle,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clipToBounds()
+                )
+            }
+        }
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            Text(
+                text = pageText,
+                style = bodyStyle,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(bottom = PAGE_TEXT_BOTTOM_PADDING_DP.dp)
+                    .clipToBounds()
             )
         }
     }

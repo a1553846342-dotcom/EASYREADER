@@ -30,7 +30,7 @@ TXT / EPUB / 漫画阅读
 
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
-![Release](https://img.shields.io/badge/Release-v0.90-orange)
+![Release](https://img.shields.io/badge/Release-v0.99-orange)
 ![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)

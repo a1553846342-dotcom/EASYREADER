@@ -19,14 +19,10 @@ class ZLibraryEndpointProvider(
         
         // Preset high-availability mirror domains
         val PRESET_DOMAINS = listOf(
-            "1lib.sk",
-            "z-library.rs",
-            "zlibrary-global.se",
-            "z-lib.gs",
-            "z-lib.fm",
-            "z-lib.gd",
-            "singlelogin.re",
-            "z-lib.id"
+            "z-library.sk",
+            "z-lib.by",
+            "zh.z-library.by",
+            "z-lib.sk"
         )
         val FALLBACK_DOMAINS = PRESET_DOMAINS
     }

@@ -10,7 +10,7 @@ class ZLibrarySessionManager(
     val credentialStorage: ZLibraryCredentialStorage
 ) {
     private var isSessionInitialized = false
-    private var activeDomain: String = "1lib.sk"
+    private var activeDomain: String = "z-library.sk"
 
     suspend fun ensureSessionInitialized(domain: String, forceRefresh: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         activeDomain = domain

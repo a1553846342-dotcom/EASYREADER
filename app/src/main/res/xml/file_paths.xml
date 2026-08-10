@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 可分享路径：
+  - filesDir 下全部（下载原文件 downloads/、漫画解压目录、封面等）
+  - cacheDir/share_temp/（TXT/重打包漫画等"用完即焚"分享缓存）
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="internal_files" path="." />
+    <cache-path name="share_temp" path="share_temp/" />
+</paths>

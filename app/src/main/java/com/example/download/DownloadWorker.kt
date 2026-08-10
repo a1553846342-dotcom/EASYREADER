@@ -28,42 +28,6 @@ class DownloadWorker(
 
     companion object {
         private const val TAG = "DownloadWorker"
-
-        fun validateFileIntegrity(file: File, format: String): Boolean {
-            if (!file.exists() || file.length() == 0L) return false
-            
-            // 1. Check if the file is accidentally an HTML error page (e.g. 404/500 disguised as download)
-            try {
-                file.inputStream().use { stream ->
-                    val headBuffer = ByteArray(512)
-                    val readBytes = stream.read(headBuffer)
-                    if (readBytes > 0) {
-                        val headStr = String(headBuffer, 0, readBytes, java.nio.charset.StandardCharsets.UTF_8).lowercase()
-                        if (headStr.contains("<!doctype html") || headStr.contains("<html") || headStr.contains("<head>")) {
-                            Log.e(TAG, "File ${file.name} is disguised HTML error page!")
-                            return false
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed reading header stream for HTML check: ${e.message}")
-            }
-
-            // 2. Format specific ZIP / EPUB checks
-            if (format.lowercase() == "epub") {
-                return try {
-                    java.util.zip.ZipFile(file).use { zip ->
-                        val hasContainer = zip.getEntry("META-INF/container.xml") != null
-                        val hasMime = zip.getEntry("mimetype") != null
-                        hasContainer || hasMime
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "EPUB Zip structural verification failed for ${file.name}", e)
-                    false
-                }
-            }
-            return true
-        }
     }
 
     private val client = run {
@@ -71,7 +35,8 @@ class DownloadWorker(
         val cookieJar = EncryptedCookieJar(credentialStorage)
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            // 大文件/CDN 末端偶发慢速传输，给足读超时避免 99% 处被误杀
+            .readTimeout(120, TimeUnit.SECONDS)
             .dns(ZLibraryDns.INSTANCE)
             .cookieJar(cookieJar)
             // 下载文件同样会触发 DiamWall PoW，带上求解器 + Cookie 存储，
@@ -128,8 +93,17 @@ class DownloadWorker(
             }
 
             val cookie = inputData.getString("cookie")
-            if (!cookie.isNullOrBlank()) {
+            val requestHost = runCatching { requestBuilder.build().url.host }.getOrNull()?.lowercase() ?: ""
+            val isCdnHost = requestHost.contains("ncdn") ||
+                requestHost.contains("cdn-zlib") ||
+                requestHost.contains("s3proxy") ||
+                requestHost.contains("dln")
+            if (!cookie.isNullOrBlank() && !isCdnHost) {
+                // eapi 直链是带签名授权的 CDN 链接，不需要 zlib 会话 Cookie；
+                // 把 zlib Cookie 发给 CDN 会被部分 CDN 拒绝并返回 HTML 错误页。
                 requestBuilder.header("Cookie", cookie)
+            } else if (cookie.isNullOrBlank().not()) {
+                Log.i(TAG, "Skipping zlib Cookie header for CDN host $requestHost")
             }
 
             if (existingLength > 0) {
@@ -168,11 +142,56 @@ class DownloadWorker(
             } else if (response.code == 416) { // Range Not Satisfiable
                 Log.w(TAG, "HTTP 416 Range Not Satisfiable for bookId=$bookId. Testing local file completeness.")
                 if (tempFile.exists() && tempFile.length() > 0) {
-                    tempFile.renameTo(finalFile)
-                    taskDao.updateProgressAndStatus(bookId, DownloadStatus.COMPLETED, tempFile.length(), tempFile.length(), null)
-                    repository.importBookFromUri(Uri.fromFile(finalFile), "$title.$format")
-                    DownloadProgressBroadcaster.updateState(bookId, DownloadState.Success(finalFile.absolutePath))
-                    Log.i(TAG, "File completed locally via 416 recovery: path=${finalFile.absolutePath}")
+                    val integrity = DownloadFileValidator.validateFileIntegrity(tempFile, format)
+                    if (!integrity.valid) {
+                        tempFile.delete()
+                        val reason = if (integrity.isHtmlErrorPage) {
+                            integrity.htmlErrorHint ?: cdnHtmlReason(url) ?: "服务器返回了 HTML 错误页"
+                        } else {
+                            "非有效的 ${format.uppercase()} 电子书格式"
+                        }
+                        val errorMsg = "文件校验失败：$reason"
+                        taskDao.updateProgressAndStatus(bookId, DownloadStatus.FAILED, 0L, 0L, errorMsg)
+                        DownloadProgressBroadcaster.updateState(bookId, DownloadState.Error(errorMsg))
+                        return@withContext Result.failure()
+                    }
+                    val actualFormat = integrity.actualFormat ?: format.lowercase()
+                    val completedFile = if (actualFormat.equals(format, ignoreCase = true)) {
+                        finalFile
+                    } else {
+                        File(downloadsDir, "$safeBookId.$actualFormat")
+                    }
+                    if (completedFile.exists()) {
+                        completedFile.delete()
+                    }
+                    tempFile.renameTo(completedFile)
+                    if (!actualFormat.equals(format, ignoreCase = true)) {
+                        task?.let { t ->
+                            taskDao.insertOrUpdate(
+                                t.copy(format = actualFormat, filePath = completedFile.absolutePath)
+                            )
+                        }
+                    }
+                    taskDao.updateProgressAndStatus(
+                        bookId,
+                        DownloadStatus.COMPLETED,
+                        completedFile.length(),
+                        completedFile.length(),
+                        null
+                    )
+                    val importResult = repository.importBookFromUri(
+                        Uri.fromFile(completedFile),
+                        "$title.$actualFormat",
+                        forcePdfPlaceholder = actualFormat.equals("pdf", ignoreCase = true)
+                    )
+                    // TXT 全文已完整落入数据库，原始下载文件是纯冗余，删掉省空间；
+                    // EPUB/漫画目前仍可能按需读原文件，不做处理。
+                    if (importResult.isSuccess && actualFormat.equals("txt", ignoreCase = true)) {
+                        runCatching { completedFile.delete() }
+                        Log.i(TAG, "TXT import succeeded via 416 recovery, removed raw file: ${completedFile.absolutePath}")
+                    }
+                    DownloadProgressBroadcaster.updateState(bookId, DownloadState.Success(completedFile.absolutePath))
+                    Log.i(TAG, "File completed locally via 416 recovery: path=${completedFile.absolutePath}")
                     return@withContext Result.success()
                 } else {
                     taskDao.updateProgressAndStatus(bookId, DownloadStatus.FAILED, 0L, 0L, "Invalid Range")
@@ -236,25 +255,51 @@ class DownloadWorker(
             }
 
             // Finished reading
+            var actualFormat = format.lowercase()
+            var actualFinalFile = finalFile
             if (tempFile.exists()) {
-                if (!validateFileIntegrity(tempFile, format)) {
+                val integrity = DownloadFileValidator.validateFileIntegrity(tempFile, format)
+                if (!integrity.valid) {
                     tempFile.delete()
-                    val errorMsg = "文件校验失败：非有效的 ${format.uppercase()} 电子书格式或服务器返回了 HTML 错误页"
-                    Log.e(TAG, "File integrity check failed for bookId=$bookId")
+                    val reason = if (integrity.isHtmlErrorPage) {
+                        integrity.htmlErrorHint ?: cdnHtmlReason(url) ?: "服务器返回了 HTML 错误页"
+                    } else {
+                        "非有效的 ${format.uppercase()} 电子书格式"
+                    }
+                    val errorMsg = "文件校验失败：$reason"
+                    Log.e(TAG, "File integrity check failed for bookId=$bookId: $reason")
                     taskDao.updateProgressAndStatus(bookId, DownloadStatus.FAILED, 0L, 0L, errorMsg)
                     DownloadProgressBroadcaster.updateState(bookId, DownloadState.Error(errorMsg))
                     return@withContext Result.failure()
                 }
 
-                if (finalFile.exists()) {
-                    finalFile.delete()
+                actualFormat = integrity.actualFormat ?: format.lowercase()
+                actualFinalFile = if (actualFormat.equals(format, ignoreCase = true)) {
+                    finalFile
+                } else {
+                    File(downloadsDir, "$safeBookId.$actualFormat")
                 }
-                tempFile.renameTo(finalFile)
+                if (actualFinalFile.exists()) {
+                    actualFinalFile.delete()
+                }
+                tempFile.renameTo(actualFinalFile)
+
+                // 检测出的真实格式与任务记录不一致时，同步更新任务，保证下载中心/书架路径一致
+                if (!actualFormat.equals(format, ignoreCase = true)) {
+                    task?.let { t ->
+                        taskDao.insertOrUpdate(
+                            t.copy(format = actualFormat, filePath = actualFinalFile.absolutePath)
+                        )
+                    }
+                }
             }
 
-            val finalLength = finalFile.length()
-            val md5Hash = calculateMD5(finalFile)
-            Log.i(TAG, "Download finished successfully for bookId=$bookId. Final length=$finalLength bytes, MD5=$md5Hash. Importing into repository...")
+            val finalLength = actualFinalFile.length()
+            val md5Hash = calculateMD5(actualFinalFile)
+            Log.i(
+                TAG,
+                "Download finished successfully for bookId=$bookId. Final length=$finalLength bytes, format=$actualFormat, MD5=$md5Hash. Importing into repository..."
+            )
             taskDao.updateProgressAndStatus(
                 id = bookId,
                 status = DownloadStatus.COMPLETED,
@@ -264,10 +309,23 @@ class DownloadWorker(
             )
 
             // Import into local Book database automatically
-            val importFileName = "$title.$format"
-            repository.importBookFromUri(Uri.fromFile(finalFile), importFileName)
+            val importFileName = "$title.$actualFormat"
+            val importResult = repository.importBookFromUri(
+                Uri.fromFile(actualFinalFile),
+                importFileName,
+                forcePdfPlaceholder = actualFormat.equals("pdf", ignoreCase = true)
+            )
 
-            DownloadProgressBroadcaster.updateState(bookId, DownloadState.Success(finalFile.absolutePath))
+            // TXT 全文已完整落入数据库，原始下载文件是纯冗余，删掉省空间；
+            // 导入失败时保留文件，方便用户重试或排查问题；EPUB/漫画不动。
+            if (importResult.isSuccess && actualFormat.equals("txt", ignoreCase = true)) {
+                runCatching { actualFinalFile.delete() }
+                Log.i(TAG, "TXT import succeeded, removed raw downloaded file to save space: ${actualFinalFile.absolutePath}")
+            } else if (!importResult.isSuccess) {
+                Log.w(TAG, "Import failed, keeping raw downloaded file for retry: ${actualFinalFile.absolutePath}")
+            }
+
+            DownloadProgressBroadcaster.updateState(bookId, DownloadState.Success(actualFinalFile.absolutePath))
             Log.i(TAG, "Successfully imported bookId=$bookId into BookRepository.")
             Result.success()
 
@@ -301,6 +359,16 @@ class DownloadWorker(
             digest.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
             "unknown_md5"
+        }
+    }
+
+    /** eapi CDN 直链（dln1.ncdn.ec/redirection）过期后服务器会返回 HTML 页，给出明确提示。 */
+    private fun cdnHtmlReason(url: String?): String? {
+        val lower = url?.lowercase() ?: return null
+        return if (lower.contains("ncdn") || lower.contains("redirection") || lower.contains("cdn-zlib")) {
+            "下载链接可能已过期（CDN 返回 HTML），请重新下载"
+        } else {
+            null
         }
     }
 

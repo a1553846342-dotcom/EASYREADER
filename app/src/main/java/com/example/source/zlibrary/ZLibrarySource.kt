@@ -20,6 +20,9 @@ class ZLibrarySource(
     val sessionManager: ZLibrarySessionManager = ZLibrarySessionManager(httpClient, credentialStorage)
 ) : BookSource {
 
+    /** eapi（bipinkrish 方案）兜底客户端：登录/搜索/详情/多格式下载。 */
+    val eapiClient = ZLibraryEapiClient(httpClient, credentialStorage)
+
     override val id: String = "zlibrary"
     override val name: String = "Z-Library"
     override val capabilities: SourceCapabilities = SourceCapabilities(
@@ -73,7 +76,7 @@ class ZLibrarySource(
             }
 
             // 候选节点：用户选中的节点 > 解析器结果 > 默认/扒取节点。
-            // 只对“首页确认是 Z-Library”的主机提交登录（跳过假镜像，如 z-lib.id），
+            // 只对"首页确认是 Z-Library"的主机提交登录（跳过假镜像，如 z-lib.id），
             // 每个候选最多 8 秒，避免 rpc.php 挂起导致读超时。
             val candidates = buildList {
                 runCatching { ZLibraryNodeConfig.domain }.getOrNull()?.let { add(it) }
@@ -125,6 +128,7 @@ class ZLibrarySource(
                                 domain = effectiveHost,
                                 cookies = credentialStorage.getCookies()
                             )
+                            syncCookiesToWebView(effectiveHost)
                             return@runCatching "OK"
                         }
                         val doc = Jsoup.parse(htmlOrJson)
@@ -138,6 +142,17 @@ class ZLibrarySource(
                     "OK" -> return SourceResult.Success(true)
                     null -> Unit // 超时或非 Z-Library 首页：跳过该候选
                     else -> lastError = outcome
+                }
+            }
+            // 兜底：rpc.php 全部失败时走 eapi 登录（bipinkrish 方案）
+            for (candidate in candidates) {
+                val ok = withTimeoutOrNull(8000) {
+                    runCatching { eapiClient.login(credential.username, credential.password, candidate) }
+                        .getOrDefault(false)
+                } ?: false
+                if (ok) {
+                    syncCookiesToWebView(candidate)
+                    return SourceResult.Success(true)
                 }
             }
             SourceResult.Error(SourceException.ParseError(lastError ?: "登录失败，请检查账号密码或 Cookie"))
@@ -170,10 +185,11 @@ class ZLibrarySource(
             val domain = domainResolver.resolveDomain()
             sessionManager.ensureSessionInitialized(domain)
 
-            val encodedKw = URLEncoder.encode(keyword, "UTF-8")
+            // 路径段必须用 %20 而非 +（URLEncoder 会把空格编成 +，多词搜索会失效）
+            val encodedKw = URLEncoder.encode(keyword, "UTF-8").replace("+", "%20")
             val searchUrl = "https://$domain/s/$encodedKw"
 
-            val response = try {
+            var response = try {
                 httpClient.get(searchUrl, referer = "https://$domain/")
             } catch (e: Exception) {
                 val fallbackDomain = domainResolver.resolveDomain(forceScan = true)
@@ -182,26 +198,49 @@ class ZLibrarySource(
                 httpClient.get(fallbackSearchUrl, referer = "https://$fallbackDomain/")
             }
 
-            val html = response.body?.string() ?: ""
+            var html = response.body?.string() ?: ""
             checkCloudflare(response.code, html)
 
-            if (!response.isSuccessful) {
-                val webBooks = ZLibraryWebViewHelper.searchViaWebView(
-                    context,
-                    response.request.url.host,
-                    keyword,
-                    cookies = credentialStorage.getCookies()
+            // Z-Library 官网搜索服务故障时（/s/ 与 /eapi/book/search 均返回
+            // "Search service temporary unavailable!"）直接报错，绝不走 /fulltext/ 兜底：
+            // /fulltext/ 会对任何关键词返回同一批推荐书（假结果）。
+            if (html.contains("Search service temporary unavailable", ignoreCase = true)) {
+                response.close()
+                // 官网明确声明搜索故障时，eapi 搜索大概率同样故障，直接给出明确错误
+                ZLibraryNetworkLogger.logParserResult("FAILED", 0, "Z-Library search service unavailable")
+                return SourceResult.Error(
+                    SourceException.NetworkError("Z-Library 搜索服务暂时不可用（官网故障），请稍后重试")
                 )
-                if (webBooks.books.isNotEmpty()) {
-                    ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "WebView fallback")
-                    return SourceResult.Success(webBooks.books)
+            }
+
+            if (!response.isSuccessful) {
+                response.close()
+                ZLibraryNetworkLogger.logParserResult("RETRY_EAPI", 0, "HTTP ${response.code}")
+                val eapiBooks = eapiClient.search(keyword, response.request.url.host)
+                if (eapiBooks.isNotEmpty()) {
+                    ZLibraryNetworkLogger.logParserResult("SUCCESS_EAPI", eapiBooks.size, "eapi fallback")
+                    return SourceResult.Success(eapiBooks)
                 }
-                ZLibraryNetworkLogger.logParserResult("FAILED", 0, "HTTP ${response.code}")
-                return SourceResult.Error(SourceException.NetworkError("搜索失败 HTTP ${response.code}"))
+                return SourceResult.Error(SourceException.NetworkError("搜索请求失败 HTTP ${response.code}"))
             }
 
             val books = ZLibraryParserManager.parseSearchPage(html, "https://${response.request.url.host}", id)
             if (books.isEmpty()) {
+                response.close()
+                // 页面含书卡片标记但解析为空：真实"无结果"
+                if (html.contains("z-bookcard") || html.contains("resItemBox") ||
+                    html.contains("book-item") || html.contains("/book/")
+                ) {
+                    ZLibraryNetworkLogger.logParserResult("EMPTY", 0, "no parseable cards")
+                    // HTML 解析不出结果但页面结构正常：尝试 eapi 兜底，避免新版布局导致全空
+                    val eapiBooks = eapiClient.search(keyword, response.request.url.host)
+                    if (eapiBooks.isNotEmpty()) {
+                        ZLibraryNetworkLogger.logParserResult("SUCCESS_EAPI", eapiBooks.size, "eapi empty fallback")
+                        return SourceResult.Success(eapiBooks)
+                    }
+                    return SourceResult.Success(emptyList())
+                }
+                // 页面无任何书卡片标记：可能是 JS 渲染或新版挑战，交给 WebView 兜底
                 val webBooks = ZLibraryWebViewHelper.searchViaWebView(
                     context,
                     response.request.url.host,
@@ -209,9 +248,15 @@ class ZLibrarySource(
                     cookies = credentialStorage.getCookies()
                 )
                 if (webBooks.books.isNotEmpty()) {
-                    ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "HTTP empty, WebView fallback")
+                    ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "HTML empty, WebView fallback")
                     return SourceResult.Success(webBooks.books)
                 }
+                if (webBooks.stillChallenged) {
+                    ZLibraryNetworkLogger.logParserResult("FAILED", 0, "captcha challenge")
+                    return SourceResult.Error(SourceException.NetworkError("需要浏览器验证，暂时无法自动搜索"))
+                }
+                ZLibraryNetworkLogger.logParserResult("EMPTY", 0, "no results anywhere")
+                return SourceResult.Success(emptyList())
             }
             ZLibraryNetworkLogger.logParserResult(
                 status = if (books.isNotEmpty()) "SUCCESS" else "EMPTY",
@@ -269,6 +314,13 @@ class ZLibrarySource(
             checkCloudflare(response.code, html)
 
             if (!response.isSuccessful) {
+                // 兜底：HTML 详情页失败时尝试 eapi 书信息
+                val eapiBook = resolveEapiBookKey(domain, bookId)?.let { key ->
+                    eapiClient.getBookInfo(key.first, key.second, domain)
+                }
+                if (eapiBook != null) {
+                    return SourceResult.Success(eapiBook)
+                }
                 return SourceResult.Error(SourceException.NetworkError("获取详情失败 HTTP ${response.code}"))
             }
 
@@ -283,20 +335,79 @@ class ZLibrarySource(
                 format = parsed.format,
                 downloadUrl = parsed.downloadUrl
             )
+            // 新版详情页可能解析不到 /dl/ 链接：用 eapi 书信息的 dl 字段补全
+            // （该 /dl/ 直链已实测：解 DiamWall 后返回真实 EPUB 文件）
+            if (sourceBook.downloadUrl.isNullOrBlank()) {
+                val eapiBook = runCatching {
+                    resolveEapiBookKey(domain, bookId)?.let { key ->
+                        eapiClient.getBookInfo(key.first, key.second, domain)
+                    }
+                }.getOrNull()
+                if (eapiBook != null) {
+                    return SourceResult.Success(eapiBook)
+                }
+            }
             SourceResult.Success(sourceBook)
         } catch (e: SourceException) {
-            SourceResult.Error(e)
+            // 兜底：HTML 详情异常时尝试 eapi
+            val eapiBook = runCatching {
+                val d = domainResolver.resolveDomain()
+                resolveEapiBookKey(d, bookId)?.let { key ->
+                    eapiClient.getBookInfo(key.first, key.second, d)
+                }
+            }.getOrNull()
+            if (eapiBook != null) {
+                SourceResult.Success(eapiBook)
+            } else {
+                SourceResult.Error(e)
+            }
         } catch (e: Exception) {
-            SourceResult.Error(translateException(e))
+            val translated = translateException(e)
+            val eapiBook = runCatching {
+                val d = domainResolver.resolveDomain()
+                resolveEapiBookKey(d, bookId)?.let { key ->
+                    eapiClient.getBookInfo(key.first, key.second, d)
+                }
+            }.getOrNull()
+            if (eapiBook != null) {
+                SourceResult.Success(eapiBook)
+            } else {
+                SourceResult.Error(translated)
+            }
         }
     }
 
     override suspend fun getDownloadInfo(bookId: String): SourceResult<DownloadInfo> {
+        return getDownloadInfo(bookId, preferredFormat = null)
+    }
+
+    /**
+     * 多格式下载：按用户选择的路由到对应格式的直链。
+     * - 默认格式（HTML 详情页主直链）直接走 /dl/；
+     * - 其他格式通过 eapi（bipinkrish 方案）的 formats -> file 链路获取。
+     */
+    override suspend fun getDownloadInfo(
+        bookId: String,
+        preferredFormat: String?
+    ): SourceResult<DownloadInfo> {
         if (!isLoggedIn()) {
             return SourceResult.Error(SourceException.LoginRequired)
         }
 
         return try {
+            val domain = domainResolver.resolveDomain()
+
+            // 前置拦截：今日下载额度已用尽时直接提示，避免白白走下载+校验流程
+            // （新站 /dl/ 在额度用尽时会返回 HTML 限额页，旧逻辑会误报“HTML 错误页”）
+            val limitInfo = eapiClient.getDailyDownloadLimit(domain)
+            if (limitInfo != null && limitInfo.first >= limitInfo.second) {
+                return SourceResult.Error(
+                    SourceException.NetworkError(
+                        "今日下载次数已达上限（${limitInfo.first}/${limitInfo.second}），请等待额度重置或提升额度"
+                    )
+                )
+            }
+
             val detailResult = getDetail(bookId)
             if (detailResult is SourceResult.Error) {
                 return SourceResult.Error(detailResult.exception)
@@ -304,20 +415,83 @@ class ZLibrarySource(
 
             val book = (detailResult as SourceResult.Success).data
             val dlUrl = book.downloadUrl
-                ?: return SourceResult.Error(SourceException.ParseError("未获取到下载链接"))
 
             val cleanTitle = book.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-            val fileName = "$cleanTitle.${book.format.ifBlank { "epub" }}"
+            // 页面解析格式可能缺/错（旧版页面默认 epub），优先按下载链接真实后缀推断
+            val defaultFormat = guessFileFormatFromUrl(dlUrl)
+                ?: book.format.ifBlank { "epub" }.lowercase()
+            val wantFormat = preferredFormat?.lowercase()?.trim()
+                ?.takeIf { it.isNotBlank() && it != defaultFormat }
 
-            val domain = domainResolver.resolveDomain()
             val cookieHeader = credentialStorage.getCookies() ?: ""
-            val detailUrl = "https://$domain/${bookId.trimStart('/')}"
 
+            // 用户手动选择的非默认格式：走 eapi formats -> 变体 file 链路（多格式下载）
+            if (wantFormat != null) {
+                val key = if (!book.eapiId.isNullOrBlank() && !book.eapiHash.isNullOrBlank()) {
+                    book.eapiId to book.eapiHash
+                } else {
+                    resolveEapiBookKey(domain, bookId)
+                }
+                if (key != null) {
+                    val variants = eapiClient.getFormats(key.first, key.second, domain)
+                    val variant = variants.firstOrNull { it.format == wantFormat }
+                    val variantKey = if (variant?.eapiId != null && variant.eapiHash != null) {
+                        variant.eapiId to variant.eapiHash
+                    } else {
+                        null
+                    }
+                    if (variantKey != null) {
+                        val linkResult = eapiClient.getDownloadLinkResult(
+                            variantKey.first,
+                            variantKey.second,
+                            domain
+                        )
+                        if (!linkResult.url.isNullOrBlank()) {
+                            return SourceResult.Success(
+                                DownloadInfo(
+                                    url = linkResult.url,
+                                    fileName = "$cleanTitle.$wantFormat",
+                                    format = wantFormat,
+                                    size = variant?.size,
+                                    referer = "https://$domain/",
+                                    headers = mapOf("Cookie" to cookieHeader)
+                                )
+                            )
+                        }
+                        if (!linkResult.disallowMessage.isNullOrBlank()) {
+                            return SourceResult.Error(
+                                SourceException.NetworkError("$wantFormat 下载被限制：${linkResult.disallowMessage}")
+                            )
+                        }
+                    }
+                }
+                return SourceResult.Error(
+                    SourceException.NetworkError("无法获取 $wantFormat 格式（官网搜索服务暂不可用时可先下载默认格式）")
+                )
+            }
+
+            // 默认格式：软件自研方案 —— 直接走详情页 /dl/ 链接 + 会话 Cookie。
+            // /dl/ 会先返回 DiamWall 503 挑战页，DownloadWorker 的 DiamWallInterceptor
+            // 会自动解 PoW 后重试（已在真机链路实测：解完返回 application/epub+zip 真实文件）。
+            val detailUrl = "https://$domain/${bookId.trimStart('/')}"
+            val finalUrl = dlUrl ?: runCatching {
+                val key = if (!book.eapiId.isNullOrBlank() && !book.eapiHash.isNullOrBlank()) {
+                    book.eapiId to book.eapiHash
+                } else {
+                    resolveEapiBookKey(domain, bookId)
+                }
+                key?.let { eapiClient.getDownloadLinkResult(it.first, it.second, domain).url }
+            }.getOrNull()
+            if (finalUrl.isNullOrBlank()) {
+                return SourceResult.Error(
+                    SourceException.ParseError("未获取到下载链接，请稍后重试或切换节点")
+                )
+            }
             SourceResult.Success(
                 DownloadInfo(
-                    url = dlUrl,
-                    fileName = fileName,
-                    format = book.format.ifBlank { "epub" },
+                    url = finalUrl,
+                    fileName = "$cleanTitle.$defaultFormat",
+                    format = defaultFormat,
                     referer = detailUrl,
                     headers = mapOf("Cookie" to cookieHeader)
                 )
@@ -328,4 +502,95 @@ class ZLibrarySource(
             SourceResult.Error(SourceException.NetworkError("获取下载链接失败: ${e.message}"))
         }
     }
+
+    /**
+     * 可用格式列表：
+     * 1. eapi 元数据已知时（eapi 兜底搜索产生的结果）直接查 formats 接口（权威、带大小）；
+     * 2. 否则抓 HTML 详情页拿默认格式；
+     * 3. 尽力通过 eapi 搜索书名解析出 eapi id/hash 后补全多格式。
+     */
+    override suspend fun getAvailableFormats(book: SearchBook): SourceResult<List<BookFormat>> {
+        return try {
+            val domain = domainResolver.resolveDomain()
+            sessionManager.ensureSessionInitialized(domain)
+
+            val merged = LinkedHashMap<String, BookFormat>()
+
+            // 1) eapi 元数据已知 -> formats 接口
+            if (!book.eapiId.isNullOrBlank() && !book.eapiHash.isNullOrBlank()) {
+                eapiClient.getFormats(book.eapiId, book.eapiHash, domain).forEach { merged[it.format] = it }
+            }
+
+            // 2) HTML 详情页默认格式
+            val detail = runCatching { getDetail(book.id) }.getOrNull()
+            val detailBook = (detail as? SourceResult.Success)?.data
+            if (detailBook != null) {
+                val defaultFormat = guessFileFormatFromUrl(detailBook.downloadUrl)
+                    ?: detailBook.format.ifBlank { "epub" }.lowercase()
+                if (defaultFormat.isNotBlank() && !merged.containsKey(defaultFormat)) {
+                    merged[defaultFormat] = BookFormat(
+                        format = defaultFormat,
+                        downloadUrl = detailBook.downloadUrl
+                    )
+                }
+            }
+
+            // 3) 尽力解析 eapi key 补全多格式（需要官网搜索可用）
+            if (merged.isEmpty() || book.eapiId.isNullOrBlank()) {
+                val key = resolveEapiBookKey(domain, book.id)
+                if (key != null) {
+                    eapiClient.getFormats(key.first, key.second, domain).forEach { merged[it.format] = it }
+                }
+            }
+
+            if (merged.isEmpty()) {
+                SourceResult.Success(emptyList())
+            } else {
+                SourceResult.Success(merged.values.toList())
+            }
+        } catch (e: Exception) {
+            SourceResult.Error(SourceException.NetworkError("获取格式列表失败: ${e.message}"))
+        }
+    }
+
+    /**
+     * 解析一本书的 eapi (id, hash)：
+     * 详情页有 data-book_id（数字 id），再用 eapi 搜索书名匹配同 id 的书拿到短 hash。
+     */
+    private suspend fun resolveEapiBookKey(domain: String, bookId: String): Pair<String, String>? {
+        return runCatching {
+            val cleanBookId = bookId.trimStart('/')
+            val detailUrl = if (cleanBookId.startsWith("http")) cleanBookId else "https://$domain/$cleanBookId"
+            val response = httpClient.get(detailUrl, referer = "https://$domain/")
+            val html = response.body?.string() ?: ""
+            response.close()
+            val numericId = Regex("""data-book_id="(\d+)"""").find(html)?.groupValues?.get(1)
+            if (numericId == null) return@runCatching null
+
+            val title = Jsoup.parse(html).selectFirst("h1")?.text()?.trim()
+            if (title.isNullOrBlank()) return@runCatching null
+
+            val books = eapiClient.search(title, domain)
+            val hit = books.firstOrNull { it.eapiId == numericId }
+            val eid = hit?.eapiId
+            val ehash = hit?.eapiHash
+            if (eid.isNullOrBlank() || ehash.isNullOrBlank()) return@runCatching null
+            eid to ehash
+        }.getOrNull()
+    }
+
+    /**
+     * 把 eapi/rpc 登录得到的会话 Cookie 同步到 WebView CookieManager，
+     * 供自研 WebView 下载方案（/dl/ 页面）直接使用。
+     */
+    fun syncCookiesToWebView(domain: String = credentialStorage.getDomain()) {
+        val cookies = credentialStorage.getCookies() ?: return
+        runCatching {
+            val cm = android.webkit.CookieManager.getInstance()
+            cm.setAcceptCookie(true)
+            cm.setCookie("https://$domain/", cookies)
+            cm.flush()
+        }
+    }
+
 }

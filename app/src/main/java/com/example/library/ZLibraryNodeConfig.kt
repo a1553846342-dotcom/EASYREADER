@@ -6,5 +6,5 @@ package com.example.library
  */
 object ZLibraryNodeConfig {
     @Volatile
-    var domain: String = "1lib.sk"
+    var domain: String = "z-library.sk"
 }

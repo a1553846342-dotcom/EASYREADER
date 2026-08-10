@@ -14,5 +14,9 @@ data class SearchBook(
     val language: String? = null,
     val comicId: String? = null,
     val size: Long? = null,
-    val downloadUrl: String? = null
+    val downloadUrl: String? = null,
+    /** eapi（bipinkrish 方案）书对象里的数字 id，用于多格式查询，仅 eapi 兜底搜索时填充。 */
+    val eapiId: String? = null,
+    /** eapi 书对象里的短 hash，用于多格式查询，仅 eapi 兜底搜索时填充。 */
+    val eapiHash: String? = null
 )

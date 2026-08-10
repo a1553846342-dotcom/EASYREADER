@@ -15,6 +15,7 @@ import com.example.source.*
 import com.example.source.impl.MangaDexSource
 import com.example.source.js.JsSourceRepo
 import com.example.source.zlibrary.ZLibrarySource
+import com.example.source.zlibrary.guessFileFormatFromUrl
 import com.example.source.storage.SharedPreferencesSourceStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -56,6 +57,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val recordCovers: StateFlow<Map<Int, String>> = _recordCovers.asStateFlow()
     private val _recordBooks = MutableStateFlow<Map<Int, SearchBook>>(emptyMap())
     val recordBooks: StateFlow<Map<Int, SearchBook>> = _recordBooks.asStateFlow()
+
+    // 下载格式选择：多格式书源（Z-Library）下载前先弹选择
+    private val _formatPickerBook = MutableStateFlow<SearchBook?>(null)
+    val formatPickerBook: StateFlow<SearchBook?> = _formatPickerBook.asStateFlow()
+    private val _pendingFormats = MutableStateFlow<List<BookFormat>>(emptyList())
+    val pendingFormats: StateFlow<List<BookFormat>> = _pendingFormats.asStateFlow()
+    private val _formatLoading = MutableStateFlow(false)
+    val formatLoading: StateFlow<Boolean> = _formatLoading.asStateFlow()
 
     fun resolveMissingRecordCovers(records: List<com.example.data.ReadingRecord>) {
         viewModelScope.launch {
@@ -742,8 +751,50 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val source = sourceManager.availableSources.value.firstOrNull { it.id == book.sourceId }
             ?: sourceManager.activeSource.value
             ?: return
+        // Z-Library 支持多格式：先取格式列表，多个格式时弹选择框
+        if (source is ZLibrarySource) {
+            viewModelScope.launch {
+                _formatPickerBook.value = book
+                _formatLoading.value = true
+                val formats = when (val result = source.getAvailableFormats(book)) {
+                    is SourceResult.Success -> result.data.filter { it.format.isNotBlank() }
+                    is SourceResult.Error -> emptyList()
+                }
+                _formatLoading.value = false
+                if (formats.size > 1) {
+                    _pendingFormats.value = formats
+                } else {
+                    // 只有一个格式（或获取失败）：直接按默认格式下载
+                    _formatPickerBook.value = null
+                    _pendingFormats.value = emptyList()
+                    downloadBook(book, source, null)
+                }
+            }
+        } else {
+            downloadBook(book, source, null)
+        }
+    }
+
+    /** 用户选定格式后下载（格式为空表示用默认格式）。 */
+    fun startDownload(book: SearchBook, format: String?) {
+        _formatPickerBook.value = null
+        _pendingFormats.value = emptyList()
+        val source = sourceManager.availableSources.value.firstOrNull { it.id == book.sourceId }
+            ?: sourceManager.activeSource.value
+            ?: return
+        // 默认格式走软件自研 /dl/ + Cookie 方案，非默认格式走 eapi 多格式；
+        // 具体路由由 getDownloadInfo 内部按 preferredFormat 决定，这里统一交给下载器。
+        downloadBook(book, source, format)
+    }
+
+    fun dismissFormatPicker() {
+        _formatPickerBook.value = null
+        _pendingFormats.value = emptyList()
+    }
+
+    private fun downloadBook(book: SearchBook, source: BookSource, format: String?) {
         viewModelScope.launch {
-            when (val result = source.getDownloadInfo(book.id)) {
+            when (val result = source.getDownloadInfo(book.id, preferredFormat = format)) {
                 is SourceResult.Success -> {
                     val request = DownloadRequest(
                         bookId = book.id,
@@ -775,7 +826,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             author = book.author,
             sourceId = book.sourceId,
             downloadUrl = realUrl,
-            format = book.format.ifBlank { "epub" },
+            format = guessFileFormatFromUrl(realUrl) ?: book.format.ifBlank { "epub" },
             coverUrl = book.cover
         )
         downloadManager.enqueueDownload(

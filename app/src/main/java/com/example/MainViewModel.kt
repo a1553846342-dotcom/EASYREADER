@@ -426,10 +426,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                    // 本地书按 bookId 聚合；在线阅读/在线漫画没有本地 bookId，按书名聚合，
+                    // 避免同一本书在同一天反复插入多条记录导致周几阅读记录重复显示。
                     val record = if (currentBook != null) {
                         database.bookDao().getReadingRecordForBookAndDate(currentBook.id, todayStr)
                     } else {
-                        null
+                        database.bookDao().getReadingRecordForTitleAndDate(recordTitle, todayStr)
                     }
                     if (record != null) {
                         database.bookDao().insertReadingRecord(

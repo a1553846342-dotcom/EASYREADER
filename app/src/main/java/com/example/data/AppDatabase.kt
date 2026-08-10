@@ -86,6 +86,9 @@ interface BookDao {
     @Query("SELECT * FROM reading_records WHERE bookId = :bookId AND dateStr = :dateStr LIMIT 1")
     suspend fun getReadingRecordForBookAndDate(bookId: Int, dateStr: String): ReadingRecord?
 
+    @Query("SELECT * FROM reading_records WHERE bookId IS NULL AND bookTitle = :bookTitle AND dateStr = :dateStr LIMIT 1")
+    suspend fun getReadingRecordForTitleAndDate(bookTitle: String, dateStr: String): ReadingRecord?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReadingRecord(record: ReadingRecord)
 

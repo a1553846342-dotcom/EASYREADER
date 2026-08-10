@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -36,7 +37,8 @@ fun SourceAvatar(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(bg),
+            .background(bg)
+            .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.material3.Text(

@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -37,9 +38,8 @@ class CorruptedFileTest {
         testDir.deleteRecursively()
     }
 
-    private fun invokeValidateFileIntegrity(file: File, format: String): Boolean {
-        return DownloadWorker.validateFileIntegrity(file, format)
-    }
+    private fun invokeValidateFileIntegrity(file: File, format: String): DownloadFileValidator.IntegrityResult =
+        DownloadFileValidator.validateFileIntegrity(file, format)
 
     @Test
     fun testValidateFileIntegrity_withHtmlPage() {
@@ -48,21 +48,23 @@ class CorruptedFileTest {
             out.write("<!DOCTYPE html><html><head><title>Cloudflare</title></head><body>Error 503</body></html>".toByteArray())
         }
 
-        // HTML should be rejected as corrupted (returns false)
+        // HTML should be rejected as corrupted
         val result = invokeValidateFileIntegrity(file, "epub")
-        assertFalse("HTML masquerading as EPUB should be rejected", result)
+        assertFalse("HTML masquerading as EPUB should be rejected", result.valid)
+        assertTrue("HTML masquerading as EPUB should be flagged as HTML error page", result.isHtmlErrorPage)
     }
 
     @Test
-    fun testValidateFileIntegrity_withCorruptedZip() {
-        val file = File(testDir, "test_corrupted.epub")
+    fun testValidateFileIntegrity_withMislabeledTxt() {
+        val file = File(testDir, "test_mislabeled.epub")
         FileOutputStream(file).use { out ->
-            out.write("random garbage bytes that are not a zip file".toByteArray())
+            out.write("第1章 这是一本被错误标成 EPUB 的 TXT 小说。\n内容内容内容内容内容内容内容。".toByteArray())
         }
 
-        // Corrupted ZIP should fail ZipFile check (returns false)
+        // 书源把 TXT 标成 epub：应识别出真实格式 txt 并放行
         val result = invokeValidateFileIntegrity(file, "epub")
-        assertFalse("Arbitrary text bytes should fail EPUB zip-file validation", result)
+        assertTrue("TXT mislabeled as EPUB should be accepted", result.valid)
+        assertEquals("TXT mislabeled as EPUB should detect txt", "txt", result.actualFormat)
     }
 
     @Test
@@ -75,9 +77,9 @@ class CorruptedFileTest {
             zout.closeEntry()
         }
 
-        // Valid ZIP but missing EPUB properties (returns false)
+        // 普通 ZIP 既不是 EPUB 也不含图片 → 仍按损坏文件拒绝
         val result = invokeValidateFileIntegrity(file, "epub")
-        assertFalse("A normal zip without EPUB structural elements must be rejected", result)
+        assertFalse("A normal zip without EPUB/image content must be rejected", result.valid)
     }
 
     @Test
@@ -90,8 +92,9 @@ class CorruptedFileTest {
             zout.closeEntry()
         }
 
-        // EPUB contains META-INF/container.xml (returns true)
+        // EPUB contains META-INF/container.xml
         val result = invokeValidateFileIntegrity(file, "epub")
-        assertTrue("Valid EPUB structural ZIP must be accepted", result)
+        assertTrue("Valid EPUB structural ZIP must be accepted", result.valid)
+        assertEquals("Valid EPUB should keep epub format", "epub", result.actualFormat)
     }
 }

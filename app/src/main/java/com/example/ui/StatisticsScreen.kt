@@ -214,6 +214,7 @@ fun StatisticsScreen(
                         readingRecords
                             .filter { it.dateStr == date }
                             .sortedByDescending { it.id }
+                            .let { mergeDuplicateReadingRecords(it) }
                     }
                 }
 
@@ -243,4 +244,23 @@ fun StatisticsScreen(
             }
         }
     }
+}
+
+/**
+ * 合并同一天内同一本书的多条阅读记录（本地书按 bookId，在线书按书名），
+ * 时长累加、保留第一条的 id，避免周几阅读记录里同一本书重复显示。
+ */
+private fun mergeDuplicateReadingRecords(records: List<com.example.data.ReadingRecord>): List<com.example.data.ReadingRecord> {
+    if (records.size <= 1) return records
+    val merged = LinkedHashMap<String, com.example.data.ReadingRecord>()
+    for (record in records) {
+        val key = record.bookId?.let { "book:$it" } ?: "title:${record.bookTitle}"
+        val existing = merged[key]
+        if (existing == null) {
+            merged[key] = record
+        } else {
+            merged[key] = existing.copy(durationSeconds = existing.durationSeconds + record.durationSeconds)
+        }
+    }
+    return merged.values.toList()
 }

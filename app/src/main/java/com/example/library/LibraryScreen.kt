@@ -145,6 +145,9 @@ fun LibraryScreen(
     val comicBook by viewModel.comicBook.collectAsState()
     val comicChapters by viewModel.comicChapters.collectAsState()
     val searchHistory by viewModel.searchHistory.collectAsState()
+    val formatPickerBook by viewModel.formatPickerBook.collectAsState()
+    val pendingFormats by viewModel.pendingFormats.collectAsState()
+    val formatLoading by viewModel.formatLoading.collectAsState()
     // 封面加载器：ZLibrary 走专用 DoH/会话 Cookie 加载器，其余（MangaDex/JS 源/聚合）走通用加载器
     val imageLoader = remember(aggregateMode, currentSource?.id) {
         if (aggregateMode || currentSource?.id != "zlibrary") {
@@ -223,13 +226,6 @@ fun LibraryScreen(
         }
     }
 
-    // 下载开始/进行中自动展开悬浮卡片（右上角按钮也可手动开合）
-    LaunchedEffect(downloadStates) {
-        val st = activeDownloadBook?.let { downloadStates[it.id] }
-        if (st is DownloadState.Pending || st is DownloadState.Downloading) {
-            showDownloadPanel = true
-        }
-    }
     LaunchedEffect(comicDownloading) {
         if (comicDownloading.isNotEmpty()) {
             showDownloadPanel = true
@@ -599,11 +595,11 @@ fun LibraryScreen(
                                 )
                             }
                             if (group.loading) {
-                                items(4, key = { "agg_loading_${group.sourceId}_$it" }) {
+                                items(4, key = { "agg_loading_${group.sourceId}_$it" }) { index ->
                                     ShimmerBox(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .aspectRatio(3f / 4f)
+                                            .aspectRatio(STAGGER_RATIO_PALETTE[index % STAGGER_RATIO_PALETTE.size])
                                     )
                                 }
                             } else if (group.books.isNotEmpty()) {
@@ -784,6 +780,18 @@ fun LibraryScreen(
             }
         }
 
+        // 下载格式选择弹窗（Z-Library 多格式书源）
+        formatPickerBook?.let { book ->
+            FormatPickerDialog(
+                bookTitle = book.title,
+                formats = pendingFormats,
+                loading = formatLoading,
+                onPick = { fmt -> viewModel.startDownload(book, fmt.format) },
+                onDismiss = { viewModel.dismissFormatPicker() },
+                hazeState = hazeState
+            )
+        }
+
         // 下载管理中心：亚克力底部面板（Dialog + decorView 实时模糊 + 径向遮罩）
         if (showDownloadPanel) {
             AcrylicBottomOverlay(onDismissRequest = { showDownloadPanel = false }) {
@@ -838,6 +846,9 @@ fun LibraryScreen(
                             state = st,
                             hazeState = hazeState,
                             onDismiss = { showDownloadPanel = false },
+                            onPause = { book?.let { viewModel.pauseDownload(it.id) } },
+                            onResume = { book?.let { viewModel.resumeDownload(it.id) } },
+                            onCancel = { book?.let { viewModel.cancelDownload(it.id) } },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -1826,16 +1837,19 @@ fun LibraryBookCard(
 
 @Composable
 private fun BookCoverPlaceholder(book: SearchBook) {
+    // 按书名哈希取柔和渐变背景色：同一本书颜色稳定，加载失败态也有区分度
+    val gradientColors = remember(book.title) {
+        val hue = ((book.title.hashCode().toLong() and 0x7fffffffL) % 360L).toFloat()
+        listOf(
+            Color.hsv(hue, 0.32f, 0.92f),
+            Color.hsv((hue + 42f) % 360f, 0.30f, 0.78f)
+        )
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.linearGradient(
-                    listOf(
-                        MintPrimary.copy(alpha = 0.30f),
-                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
-                    )
-                )
+                Brush.linearGradient(gradientColors)
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -1871,6 +1885,19 @@ private fun SearchBook.displayFormat(): String {
     return raw.uppercase().ifBlank { "EPUB" }
 }
 
+/**
+ * 瀑布流节奏调色板：卡片高度从第一帧起就固定，图片解码完成后不再改尺寸，
+ * 避免 LazyVerticalStaggeredGrid 已排好的条目被后续高度变化拉扯（滚动卡死根因）。
+ */
+private val STAGGER_RATIO_PALETTE = listOf(0.62f, 0.70f, 0.78f, 0.90f, 3f / 4f)
+
+/** 用 书源+书ID 稳定映射到一个瀑布流比例：同一本书任何时候算出来都一样。 */
+private fun SearchBook.staggerRatio(): Float {
+    val seed = "${sourceId}_$id"
+    val hash = (seed.hashCode().toLong() and 0x7fffffffL)
+    return STAGGER_RATIO_PALETTE[(hash % STAGGER_RATIO_PALETTE.size).toInt()]
+}
+
 @Composable
 private fun StaggeredComicCard(
     book: SearchBook,
@@ -1879,13 +1906,33 @@ private fun StaggeredComicCard(
     sourceName: String,
     onClick: () -> Unit
 ) {
-    var coverRatio by remember(book.cover) { mutableStateOf(3f / 4f) }
+    // 固定比例：不再依赖图片解码结果，卡片测量高度全程不变
+    val coverRatio = book.staggerRatio()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         targetValue = if (pressed) 0.97f else 1f,
         animationSpec = tween(120),
         label = "gridPress"
+    )
+    // 按下时阴影同步加深（联动反馈）
+    val shadowAlpha by animateFloatAsState(
+        targetValue = if (pressed) 0.20f else 0.12f,
+        animationSpec = tween(120),
+        label = "gridShadow"
+    )
+    // 入场动画：淡入 + 轻微上移（只动透明度/位移，不影响测量尺寸）
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val enterAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(260),
+        label = "cardEnterAlpha"
+    )
+    val enterSlide by animateFloatAsState(
+        targetValue = if (entered) 0f else 1f,
+        animationSpec = tween(260),
+        label = "cardEnterSlide"
     )
     val cardShape = RoundedCornerShape(14.dp)
     val formatBadge = remember(book) {
@@ -1900,12 +1947,14 @@ private fun StaggeredComicCard(
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
+                alpha = enterAlpha
+                translationY = enterSlide * size.height / 8f
             }
             .shadow(
                 elevation = 8.dp,
                 shape = cardShape,
-                ambientColor = Color.Black.copy(alpha = 0.12f),
-                spotColor = Color.Black.copy(alpha = 0.12f)
+                ambientColor = Color.Black.copy(alpha = shadowAlpha),
+                spotColor = Color.Black.copy(alpha = shadowAlpha)
             )
             .clip(cardShape)
             .clickable(
@@ -1940,16 +1989,9 @@ private fun StaggeredComicCard(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     when (painter.state) {
-                        is AsyncImagePainter.State.Success -> {
-                            val s = painter.intrinsicSize
-                            LaunchedEffect(s) {
-                                if (s.width > 0f && s.height > 0f) {
-                                    val r = s.width / s.height
-                                    if (r in 0.45f..2.2f) coverRatio = r
-                                }
-                            }
-                            SubcomposeAsyncImageContent()
-                        }
+                        // 图片加载完成只负责渲染（ContentScale.Crop 自动裁切填满），
+                        // 绝不修改卡片尺寸，避免已排版条目高度跳变
+                        is AsyncImagePainter.State.Success -> SubcomposeAsyncImageContent()
                         else -> BookCoverPlaceholder(book)
                     }
                 }
@@ -1998,7 +2040,7 @@ private fun StaggeredComicCard(
                     .align(Alignment.TopEnd)
                     .padding(6.dp),
                 shape = RoundedCornerShape(6.dp),
-                color = Color.Black.copy(alpha = 0.55f)
+                color = Color.Black.copy(alpha = 0.40f)
             ) {
                 Text(
                     text = formatBadge,

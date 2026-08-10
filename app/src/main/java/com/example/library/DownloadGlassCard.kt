@@ -54,6 +54,7 @@ import com.example.ui.components.FlowingGradientProgressBar
 import com.example.ui.components.MascotEmptyState
 import com.example.ui.mascot.MascotSpriteSheet
 import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -69,6 +70,9 @@ fun DownloadGlassCard(
     state: DownloadState,
     hazeState: HazeState?,
     onDismiss: (() -> Unit)? = null,
+    onPause: (() -> Unit)? = null,
+    onResume: (() -> Unit)? = null,
+    onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -308,6 +312,44 @@ fun DownloadGlassCard(
                     }
                     else -> {
                         Text("准备中…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                // 下载控制：下载中/等待 -> 暂停+取消；已暂停/失败 -> 继续+取消
+                if (state is DownloadState.Pending ||
+                    state is DownloadState.Downloading ||
+                    state is DownloadState.Paused ||
+                    state is DownloadState.Error
+                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        val primaryAction = when (state) {
+                            is DownloadState.Paused, is DownloadState.Error -> onResume
+                            else -> onPause
+                        }
+                        if (primaryAction != null) {
+                            AppActionButton(
+                                text = when (state) {
+                                    is DownloadState.Paused -> "继续下载"
+                                    is DownloadState.Error -> "重试"
+                                    else -> "暂停"
+                                },
+                                onClick = primaryAction,
+                                variant = AppButtonVariant.Secondary,
+                                buttonSize = AppButtonSize.Small,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        if (onCancel != null) {
+                            AppActionButton(
+                                text = "取消",
+                                onClick = onCancel,
+                                variant = AppButtonVariant.Destructive,
+                                buttonSize = AppButtonSize.Small,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }

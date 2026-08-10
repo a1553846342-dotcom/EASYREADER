@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * - 选择的节点写入 SharedPreferences，并在启动时恢复。
  */
 object ZLibraryNodeManager {
-    const val DEFAULT_NODE = "1lib.sk"
+    const val DEFAULT_NODE = "z-library.sk"
     const val SCRAPE_URL = "https://z.wwwnav.com/rkfby.html"
 
     private const val PREFS_NAME = "zlib_node_manager"
@@ -28,9 +28,10 @@ object ZLibraryNodeManager {
 
     /** 首次使用即内置的官网/备用入口节点，扒取成功后可替换刷新。 */
     val INITIAL_SCRAPED_NODES = listOf(
-        "zh.z-library.sk",
-        "zh.ddd101.ru",
-        "z-lib.by"
+        "z-library.sk",
+        "z-lib.by",
+        "zh.z-library.by",
+        "z-lib.sk"
     )
 
     private fun prefs(context: Context) =

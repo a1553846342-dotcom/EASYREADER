@@ -14,7 +14,7 @@ import java.util.regex.Pattern
 class BookRepository(private val context: Context, private val bookDao: BookDao) {
 
     private val unsupportedBinaryExtensions = listOf(
-        ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".djvu", ".fb2",
+        ".pdf", ".kfx", ".djvu", ".fb2",
         ".docx", ".doc", ".rtf", ".chm"
     )
 
@@ -77,7 +77,11 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         return false
     }
 
-    suspend fun importBookFromUri(uri: Uri, fileName: String): Result<Book> = withContext(Dispatchers.IO) {
+    suspend fun importBookFromUri(
+        uri: Uri,
+        fileName: String,
+        forcePdfPlaceholder: Boolean = false
+    ): Result<Book> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("BookImport", "[BookRepository] Starting streaming import: $fileName, uri: $uri")
             // 同一路径已入库：直接返回已有书籍，避免重复下载后书架出现重复书
@@ -88,8 +92,17 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
             if (EpubParser.isEpubFile(fileName)) {
                 return@withContext EpubParser.importEpub(context, uri, fileName, bookDao)
             }
+            // 下载管道里的 PDF 小说按“暂不支持阅读”占位书入库，
+            // 避免被 ComicParser 当漫画逐页渲染（文本 PDF 会显示乱码）
+            if (forcePdfPlaceholder && fileName.lowercase().endsWith(".pdf")) {
+                return@withContext importUnsupportedFormat(uri, fileName)
+            }
             if (ComicParser.isComicFile(fileName)) {
                 return@withContext ComicParser.importComic(context, uri, fileName, bookDao)
+            }
+            // MOBI / AZW3 / AZW：支持解析正文章节并直接阅读
+            if (MobiParser.isMobiFile(fileName)) {
+                return@withContext MobiParser.importMobi(context, uri, fileName, bookDao)
             }
             if (unsupportedBinaryExtensions.any { fileName.lowercase().endsWith(it) }) {
                 return@withContext importUnsupportedFormat(uri, fileName)
@@ -228,6 +241,16 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
             val finalBook = initialBook.copy(id = bookId, totalChapters = chapterCount)
             bookDao.updateBook(finalBook)
             android.util.Log.d("BookImport", "Streaming import completed successfully. Total chapters: $chapterCount")
+
+            // ????? insertChapters ?? WAL ???????????????
+            // ?? checkpoint ???????????? -wal?????????????
+            runCatching {
+                AppDatabase.getDatabase(context).openHelper.writableDatabase
+                    .execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+            }.onFailure {
+                android.util.Log.w("BookImport", "WAL checkpoint failed (non-fatal): ${it.message}")
+            }
+
             Result.success(finalBook)
         } catch (t: Throwable) {
             android.util.Log.e("BookImport", "[BookRepository] Streaming import failed", t)
@@ -300,6 +323,12 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
                 bookDao.insertChapters(replacement)
                 bookDao.updateBook(book.copy(totalChapters = replacement.size))
                 android.util.Log.i("BookImport", "Split oversized chapters for '${book.title}': ${chapters.size} -> ${replacement.size}")
+            }
+            // ????????+??WAL ??????????????? checkpoint ?????
+            // ?????????????
+            runCatching {
+                AppDatabase.getDatabase(context).openHelper.writableDatabase
+                    .execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
             }
         } catch (t: Throwable) {
             android.util.Log.e("BookImport", "splitOversizedChaptersInLibrary failed", t)

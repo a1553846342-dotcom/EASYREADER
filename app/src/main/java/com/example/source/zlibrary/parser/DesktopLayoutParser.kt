@@ -3,6 +3,7 @@ package com.example.source.zlibrary.parser
 import com.example.source.SearchBook
 import com.example.source.SourceException
 import com.example.source.zlibrary.ParsedBookDetail
+import com.example.source.zlibrary.guessFileFormatFromUrl
 import org.jsoup.nodes.Document
 
 class DesktopLayoutParser : ZLibraryLayoutParser {
@@ -37,14 +38,17 @@ class DesktopLayoutParser : ZLibraryLayoutParser {
                     cover = formatUrl(baseUrl, cover)
                 }
 
-                val formatEl = item.selectFirst(".property_extension, .property__file .property__value, td.property_extension")
-                val format = formatEl?.text()?.lowercase()?.trim() ?: "epub"
-
                 val dlEl = item.selectFirst("a[href*=/dl/], a.add_to_download_history, a.dlButton")
                 var downloadUrl: String? = dlEl?.attr("href")
                 if (!downloadUrl.isNullOrBlank() && !downloadUrl.startsWith("http")) {
                     downloadUrl = formatUrl(baseUrl, downloadUrl)
                 }
+                val formatEl = item.selectFirst(
+                    ".property_extension, .property__file .property__value, td.property_extension"
+                )
+                val format = formatEl?.text()?.lowercase()?.trim()
+                    ?: guessFileFormatFromUrl(downloadUrl)
+                    ?: "epub"
 
                 books.add(
                     SearchBook(
@@ -86,7 +90,9 @@ class DesktopLayoutParser : ZLibraryLayoutParser {
         if (dlUrl.isBlank()) throw SourceException.ParseError("解析下载链接为空")
         if (!dlUrl.startsWith("http")) dlUrl = formatUrl(baseUrl, dlUrl)
 
-        val formatText = doc.selectFirst(".property_extension, div:contains(Extension) + div")?.text() ?: "epub"
+        val formatText = doc.selectFirst(".property_extension, div:contains(Extension) + div")?.text()
+            ?: guessFileFormatFromUrl(dlUrl)
+            ?: "epub"
 
         return ParsedBookDetail(
             title = title.trim(),
