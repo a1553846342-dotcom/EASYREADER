@@ -73,32 +73,3 @@ fun StarryNightBackground(
         }
     }
 }
-
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    cornerRadius: Dp = 20.dp,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    val isDark = MaterialTheme.colorScheme.background == DarkCharcoal
-    val cardBg = if (isDark) GlassDark else GlassWhite
-    val cardBorder = if (isDark) GlassBorderDark else GlassBorderWhite
-
-    Surface(
-        modifier = modifier
-            .border(
-                width = 1.dp,
-                color = cardBorder,
-                shape = RoundedCornerShape(cornerRadius)
-            ),
-        color = cardBg,
-        shape = RoundedCornerShape(cornerRadius),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            content = content
-        )
-    }
-}

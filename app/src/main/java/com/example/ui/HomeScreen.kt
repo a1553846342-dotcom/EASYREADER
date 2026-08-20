@@ -82,6 +82,7 @@ import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.theme.glassTitleColor
 import kotlin.math.roundToInt
 import android.widget.Toast
 import kotlinx.coroutines.launch
@@ -276,13 +277,11 @@ fun HomeScreen(
             val iconBtnBgColor = if (isDark) Color(0xFF2B2D31) else Color(0xFFF4F4F4)
             val iconCloseTint = if (isDark) Color.LightGray else Color.DarkGray
 
-            Surface(
+            GlassCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-                    .shadow(8.dp, RoundedCornerShape(24.dp)),
-                shape = RoundedCornerShape(24.dp),
-                color = barBgColor
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(24.dp)
             ) {
             Row(
                 modifier = Modifier
@@ -299,14 +298,14 @@ fun HomeScreen(
                             text = "我的书架",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = glassTitleColor(),
                             fontFamily = FontFamily.Serif
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "欢迎回到私人数字书库",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = glassTitleColor().copy(alpha = 0.75f),
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -451,15 +450,16 @@ fun HomeScreen(
                                 text = "正在阅读",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = adaptiveTitleColor(),
                                 fontFamily = FontFamily.Serif,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
 
                             GlassCard(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .shadow(12.dp, RoundedCornerShape(20.dp))
+                                    .fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(16.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -619,7 +619,7 @@ fun HomeScreen(
                                     text = "我的书架",
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = adaptiveTitleColor(),
                                     fontFamily = FontFamily.Serif
                                 )
 
@@ -912,7 +912,7 @@ fun HomeScreen(
                                 text = "阅读统计",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = adaptiveTitleColor(),
                                 fontFamily = FontFamily.Serif,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -920,8 +920,9 @@ fun HomeScreen(
                             GlassCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickableWithFeedback { onNavigateToStats() }
-                                    .shadow(8.dp, RoundedCornerShape(16.dp))
+                                    .clickableWithFeedback { onNavigateToStats() },
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(16.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1126,6 +1127,7 @@ private fun BookActionSheet(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .heightIn(max = 560.dp)
                         .offset { IntOffset(0, dragOffsetY.roundToInt()) }
                         .zIndex(1f)
                         // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
@@ -1238,6 +1240,12 @@ private fun BookActionSheet(
             modifier = Modifier.padding(horizontal = 20.dp)
         )
 
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+        ) {
         val primary = MaterialTheme.colorScheme.primary
         val error = MaterialTheme.colorScheme.error
         val onSurface = MaterialTheme.colorScheme.onSurface
@@ -1329,6 +1337,7 @@ private fun BookActionSheet(
             }
         }
         Spacer(modifier = Modifier.navigationBarsPadding())
+        }
             }
         }
     }

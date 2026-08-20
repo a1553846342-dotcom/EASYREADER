@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.MintPrimary
 import java.util.Calendar
 
@@ -37,27 +38,19 @@ fun ReadingCalendarCard(
     var viewMonth by remember { mutableIntStateOf(today.get(Calendar.MONTH)) }
     var showYear by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(20.dp)),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("阅读日历", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.weight(1f))
-                FilterChip(
-                    selected = !showYear,
-                    onClick = { showYear = false },
-                    label = { Text("月", fontSize = 12.sp) }
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                FilterChip(
-                    selected = showYear,
-                    onClick = { showYear = true },
-                    label = { Text("年", fontSize = 12.sp) }
+                SegmentedPillSelector(
+                    options = listOf(0 to "月", 1 to "年"),
+                    selected = if (showYear) 1 else 0,
+                    onSelect = { showYear = it == 1 },
+                    modifier = Modifier.width(120.dp)
                 )
             }
 
@@ -197,7 +190,7 @@ private fun DayCell(
                     Modifier
                 }
             )
-            .clickable(onClick = onClick),
+            .clickableWithFeedback(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -278,7 +271,7 @@ private fun YearHeatmap(
                                     if (isToday) Modifier.border(1.dp, MintPrimary, RoundedCornerShape(3.dp)) else Modifier
                                 )
                                 .then(
-                                    if (valid) Modifier.clickable { onDayClick(dateStr) } else Modifier
+                                    if (valid) Modifier.clickableWithFeedback { onDayClick(dateStr) } else Modifier
                                 )
                         )
                     }

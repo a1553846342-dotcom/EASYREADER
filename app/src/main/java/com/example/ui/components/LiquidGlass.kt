@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawBehind
@@ -41,6 +42,12 @@ import com.kashif_e.backdrop.highlight.Highlight
 import com.kashif_e.backdrop.highlight.HighlightStyle
 import com.kashif_e.backdrop.shadow.InnerShadow
 import com.kashif_e.backdrop.shadow.Shadow
+
+/**
+ * 当前窗口的玻璃采样源：由 MainActivity 在背景图/底色层上挂 layerBackdrop 后提供。
+ * 页面内容卡（GlassCard）用它做与底部 Tab 栏完全同源的真实内容模糊。
+ */
+val LocalGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
  * KMPLiquidGlass 官方 API 封装：

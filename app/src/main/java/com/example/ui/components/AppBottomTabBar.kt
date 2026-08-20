@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.onColor
 import com.kashif_e.backdrop.Backdrop
 import kotlin.math.roundToInt
 
@@ -123,7 +124,7 @@ fun AppBottomTabBar(
     // 并用与全软件一致的弹簧动画过渡。
     val barBase = lerp(MaterialTheme.colorScheme.surface, animatedPrimary, 0.30f)
     val contrast by animateColorAsState(
-        targetValue = barBase.contrastColor(),
+        targetValue = barBase.onColor(),
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -222,22 +223,6 @@ fun AppBottomTabBar(
         }
     }
 }
-
-/** 计算颜色的相对亮度，返回高对比前景色（白 / 深灰）。 */
-private fun Color.luminance(): Double {
-    fun linear(c: Float): Double {
-        val v = c
-        return if (v <= 0.03928f) {
-            v / 12.92
-        } else {
-            Math.pow(((v + 0.055f) / 1.055f).toDouble(), 2.4)
-        }
-    }
-    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
-}
-
-private fun Color.contrastColor(): Color =
-    if (luminance() > 0.5) Color(0xFF1A1A1E) else Color.White
 
 @Composable
 private fun TabIcon(

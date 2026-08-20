@@ -61,6 +61,11 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString("custom_app_background_uri", null)
         set(value) = prefs.edit().putString("custom_app_background_uri", value).apply()
 
+    /** 自定义背景上的深色遮罩强度（0-50，%），保证上层文字/卡片可读。 */
+    var appBackgroundDim: Int
+        get() = prefs.getInt("app_background_dim", 20)
+        set(value) = prefs.edit().putInt("app_background_dim", value.coerceIn(0, 50)).apply()
+
     var screenOrientationLock: Int
         get() = prefs.getInt("screen_orientation_lock", 0) // 0: 跟随系统, 1: 锁定竖屏, 2: 锁定横屏
         set(value) = prefs.edit().putInt("screen_orientation_lock", value).apply()

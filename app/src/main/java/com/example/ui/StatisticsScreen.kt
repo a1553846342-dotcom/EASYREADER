@@ -1,6 +1,10 @@
 package com.example.ui
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +39,8 @@ import com.example.data.Book
 import com.example.data.ReadingRecord
 import com.example.data.ReadingSession
 import com.example.ui.components.AcrylicBottomOverlay
+import com.example.ui.components.GlassCard
+import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.ReadingCalendarCard
 import com.example.ui.components.ReadingTrendCard
 import com.example.ui.components.WeeklyReadingChart
@@ -52,6 +59,8 @@ import com.example.ui.components.weekDatesOf
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
+import com.example.ui.theme.glassTitleColor
+import com.example.ui.mascot.MascotSpriteSheet
 import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,29 +102,44 @@ fun StatisticsScreen(
                 else MaterialTheme.colorScheme.background
             )
     ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("阅读统计", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onBackground)
-                            Text("STATISTICS & INSIGHTS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MintPrimary, letterSpacing = 1.5.sp)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.graphicsLayer { shadowElevation = 2f }
-                )
-            }
-        ) { padding ->
+        Scaffold(containerColor = Color.Transparent) { padding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(16.dp)
+                    .padding(bottom = 96.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // 书架同款顶部栏（毛玻璃卡 + 24dp 圆角 + 8dp 阴影 + Serif 标题层级）
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Text(
+                            text = "阅读统计",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = glassTitleColor(),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "STATISTICS & INSIGHTS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = glassTitleColor().copy(alpha = 0.75f),
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                }
+
                 if (totalReadTimeSeconds == 0L) {
                     com.example.ui.components.MascotEmptyState(
                         mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
@@ -150,6 +174,7 @@ fun StatisticsScreen(
                         text = "本周阅读明细",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
+                        color = adaptiveTitleColor(),
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
@@ -289,15 +314,30 @@ private fun PeriodOverviewCard(
         }
     }
     val goalProgress = (avgDaily / 3600f).coerceIn(0f, 1f)
+    // 复用全软件统一弹簧（AppBottomTabBar/DownloadGlassCard 同款：
+    // MediumBouncy + StiffnessMediumLow），切换周/月/年时数字与圆环平滑过渡。
+    val animatedGoal by animateFloatAsState(
+        targetValue = goalProgress,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "goalRingProgress"
+    )
+    val animatedPeriodTotal by animateFloatAsState(
+        targetValue = periodTotal.toFloat(),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "periodTotal"
+    )
     val periodName = listOf("本周", "本月", "今年")[period]
     val prevName = listOf("上周", "上月", "去年")[period]
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(20.dp)),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -315,8 +355,8 @@ private fun PeriodOverviewCard(
                     Text("${periodName}阅读时长", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = formatReadDuration(periodTotal),
-                        fontSize = 22.sp,
+                        text = formatReadDuration(animatedPeriodTotal.toLong()),
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -345,18 +385,18 @@ private fun PeriodOverviewCard(
                             useCenter = false,
                             style = Stroke(width = stroke)
                         )
-                        if (goalProgress > 0f) {
+                        if (animatedGoal > 0f) {
                             drawArc(
                                 brush = Brush.sweepGradient(listOf(primary, secondary)),
                                 startAngle = -90f,
-                                sweepAngle = 360f * goalProgress,
+                                sweepAngle = 360f * animatedGoal,
                                 useCenter = false,
                                 style = Stroke(width = stroke, cap = StrokeCap.Round)
                             )
                         }
                     }
                     Text(
-                        text = "${(goalProgress * 100).toInt()}%",
+                        text = "${(animatedGoal * 100).toInt()}%",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = MintPrimary
@@ -366,19 +406,12 @@ private fun PeriodOverviewCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                listOf("周", "月", "年").forEachIndexed { index, label ->
-                    FilterChip(
-                        selected = period == index,
-                        onClick = { period = index },
-                        label = { Text(label, fontSize = 13.sp) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+            SegmentedPillSelector(
+                options = listOf(0 to "周", 1 to "月", 2 to "年"),
+                selected = period,
+                onSelect = { period = it },
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -403,7 +436,7 @@ private fun PeriodOverviewCard(
             if (period == 0) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("本周点亮", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("本周点亮", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
                     val weekDates = remember { weekDatesOf(todayCalendar()).map { dateStrOf(it) } }
                     weekDates.forEach { date ->
@@ -411,15 +444,63 @@ private fun PeriodOverviewCard(
                         Box(
                             modifier = Modifier
                                 .padding(horizontal = 2.dp)
-                                .size(14.dp)
-                                .clip(RoundedCornerShape(7.dp))
+                                .size(16.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .then(
+                                    if (lit) Modifier.background(
+                                        Brush.linearGradient(listOf(MintPrimary, MintSecondary))
+                                    ) else Modifier
+                                )
                                 .background(
-                                    if (lit) MintPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    if (!lit) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f) else Color.Transparent
+                                )
+                                .then(
+                                    if (!lit) Modifier.border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                        RoundedCornerShape(5.dp)
+                                    ) else Modifier
                                 )
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    Text("$books.size 本藏书 · $finishedCount 本读完", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${books.size} 本藏书 · ${finishedCount} 本读完", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            // 数据很少时给一点情感引导，避免页面空洞
+            if (periodTotal in 1 until 300) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MintPrimary.copy(alpha = 0.08f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            painter = painterResource(id = MascotSpriteSheet.readingDrawable),
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                "${periodName}只读了 ${formatShortDuration(periodTotal)}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MintPrimary
+                            )
+                            Text(
+                                "Roxy 捧着魔法书等你翻开第一页～",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -440,20 +521,27 @@ private fun MiniStatCard(
     value: String,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.shadow(elevation = 2.dp, shape = RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) { icon() }
-            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) { icon() }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
             Column {
                 Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

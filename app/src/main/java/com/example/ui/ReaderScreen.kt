@@ -6,7 +6,13 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -39,6 +45,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -55,6 +62,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -86,12 +94,14 @@ import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
+import com.example.ui.theme.onColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,57 +190,80 @@ fun ReaderScreen(
     val scrollThresholdPx = with(LocalDensity.current) { 120.dp.toPx() }
     var overscrollPx by remember { mutableFloatStateOf(0f) }
     var overscrollDirection by remember { mutableIntStateOf(0) } // 1=下一章 -1=上一章 0=无
+    // 越界拉动时正文的实时位移（跟手反馈），松手未达阈值时弹簧归零
+    val overscrollOffset = remember { Animatable(0f) }
+    // 切章动画进行中：期间不再累积越界，避免连跳两章
+    var switchingChapter by remember { mutableStateOf(false) }
+    // 新章节入场动画（淡入 + 从对应方向滑入），记录上次切章方向决定滑动方向
+    var lastChapterSwitchDir by remember { mutableIntStateOf(1) }
+    val chapterEntryAlpha = remember { Animatable(1f) }
+    val chapterEntryOffsetY = remember { Animatable(0f) }
+    var skipFirstChapterEntry by remember { mutableStateOf(true) }
+    val chapterEntryPullPx = with(LocalDensity.current) { 42.dp.toPx() }
     // 翻页<->滚动模式切换时的位置锚点
     var pendingScrollRatio by remember { mutableFloatStateOf(-1f) }
     var pendingCharTarget by remember { mutableIntStateOf(-1) }
 
-    val scrollConnection = remember(scrollState, currentChapterIndex, chapters.size, scope) {
-        object : NestedScrollConnection {
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                val dy = available.y
-                if (source == NestedScrollSource.UserInput && dy != 0f) {
-                    val atBottom = scrollState.value >= scrollState.maxValue
-                    val atTop = scrollState.value <= 0
-                    when {
-                        // 已到章尾，继续向下拉（滚动正向）→ 累积到阈值进入下一章
-                        dy > 0 && atBottom && currentChapterIndex < chapters.size - 1 -> {
-                            overscrollPx += dy
-                            overscrollDirection = 1
-                        }
-                        // 已到章首，继续向上拉（滚动反向）→ 累积到阈值返回上一章
-                        dy < 0 && atTop && currentChapterIndex > 0 -> {
-                            overscrollPx -= dy
-                            overscrollDirection = -1
-                        }
-                        else -> {
-                            overscrollPx = 0f
-                            overscrollDirection = 0
-                        }
+    // 切章触发（只在“松手且拉满阈值”时调用一次）：
+    // 拉穿动画 → 切换章节 → 新章节入场动画
+    val triggerSwitch: (Int) -> Unit = { dir ->
+        if (!switchingChapter) {
+            overscrollPx = 0f
+            overscrollDirection = 0
+            switchingChapter = true
+            lastChapterSwitchDir = dir
+            scope.launch {
+                // 拉穿动画：正文先跟着手指方向冲一段（有翻页的“拉动感”）
+                val pullSign = if (dir == 1) -1f else 1f
+                overscrollOffset.animateTo(pullSign * 130f, tween(110))
+                when (dir) {
+                    1 -> if (currentChapterIndex < chapters.size - 1) {
+                        currentChapterIndex++
+                        scrollState.scrollTo(0)
                     }
-                    if (overscrollPx >= scrollThresholdPx) {
-                        val dir = overscrollDirection
-                        overscrollPx = 0f
-                        overscrollDirection = 0
-                        scope.launch {
-                            when (dir) {
-                                1 -> if (currentChapterIndex < chapters.size - 1) {
-                                    currentChapterIndex++
-                                    scrollState.scrollTo(0)
-                                }
-                                -1 -> if (currentChapterIndex > 0) {
-                                    currentChapterIndex--
-                                    scrollState.scrollTo(0)
-                                }
-                            }
-                        }
+                    -1 -> if (currentChapterIndex > 0) {
+                        currentChapterIndex--
+                        scrollState.scrollTo(0)
                     }
                 }
-                return Offset.Zero
+                switchingChapter = false
             }
+        }
+    }
+
+    // 松手/方向归零后，正文位移用弹簧平滑归零（拉穿切章时由 switchingChapter 延迟到切章后）
+    LaunchedEffect(overscrollDirection, switchingChapter) {
+        if (overscrollDirection == 0 && !switchingChapter) {
+            overscrollOffset.animateTo(
+                0f,
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    // 新章节入场：淡入 + 按切章方向滑入（复用全软件统一弹簧）
+    LaunchedEffect(currentChapterIndex, isScrollMode) {
+        if (!isScrollMode) return@LaunchedEffect
+        if (skipFirstChapterEntry) {
+            skipFirstChapterEntry = false
+            return@LaunchedEffect
+        }
+        chapterEntryAlpha.snapTo(0f)
+        chapterEntryOffsetY.snapTo(if (lastChapterSwitchDir == 1) chapterEntryPullPx else -chapterEntryPullPx)
+        launch {
+            chapterEntryAlpha.animateTo(1f, tween(220))
+        }
+        launch {
+            chapterEntryOffsetY.animateTo(
+                0f,
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
         }
     }
 
@@ -243,6 +276,22 @@ fun ReaderScreen(
         }
         onDispose {
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // 沉浸式阅读：整个阅读过程隐藏系统状态栏（松手/滑动都不会再“弹出状态栏”），
+    // 阅读菜单自带 safeDrawing 顶部留白，不需要系统状态栏；退出阅读器时恢复。
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        }
+        onDispose {
+            val w = (context as? Activity)?.window ?: return@onDispose
+            WindowCompat.getInsetsController(w, w.decorView)
+                .show(WindowInsetsCompat.Type.statusBars())
         }
     }
 
@@ -324,11 +373,6 @@ fun ReaderScreen(
         } else {
             currentChapter?.let { ch ->
                 onAddBookmark(currentBookId, currentChapterIndex, scrollState.value, ch.title, ch.content.take(60))
-                scope.launch {
-                    showEasterEgg = true
-                    delay(2500)
-                    showEasterEgg = false
-                }
             }
         }
     }
@@ -688,12 +732,12 @@ fun ReaderScreen(
                     Box(
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .statusBarsPadding()
-                                .navigationBarsPadding()
-                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    // 状态栏隐藏后仍保留刘海/导航栏留白，菜单与正文都不贴边
+                                    .safeDrawingPadding()
+                            ) {
                             if (prefs.showOverlayHeaderFooter && !showBars) {
                                 Row(
                                     modifier = Modifier
@@ -726,28 +770,73 @@ fun ReaderScreen(
                                             Column(
                                                 modifier = Modifier
                                                     .fillMaxSize()
-                                                    .nestedScroll(scrollConnection)
-                                                    .verticalScroll(scrollState)
-                                                    // 滚动模式：单击任意位置唤起/关闭菜单，不再与切章手势混用
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures(onTap = { showBars = !showBars })
+                                                    .graphicsLayer {
+                                                        // 越界拉动跟手位移 + 新章节入场动画叠加
+                                                        translationY = overscrollOffset.value + chapterEntryOffsetY.value
+                                                        alpha = chapterEntryAlpha.value
                                                     }
-                                                    // 手势结束（松手/取消）时清空过度滚动状态，提示不残留
-                                                    .pointerInput(Unit) {
+                                                    // 滚动模式统一手势（与 PageTurnContainer 拉下书签手势同款 awaitEachGesture 写法）：
+                                                    //  - 章节中部拖拽一律不消费，完全交给 verticalScroll，互不干扰；
+                                                    //  - 仅在章首/章尾继续越界拖动时接管（消费增量），累积到阈值切章；
+                                                    //  - 纯点击（无位移）唤起/关闭菜单。
+                                                    // 注意：本手势必须放在 verticalScroll 之前（外层），
+                                                    // 才能先于滚动组件接管边界拖拽，避免两套手势互相打架。
+                                                    .pointerInput(scrollState, currentChapterIndex, chapters.size) {
                                                         awaitEachGesture {
-                                                            awaitFirstDown(requireUnconsumed = false)
-                                                            do {
+                                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                                            var boundaryPulling = false
+                                                            while (true) {
                                                                 val event = awaitPointerEvent()
-                                                            } while (event.changes.any { it.pressed })
+                                                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                                                if (!change.pressed) break
+                                                                val deltaY = change.positionChange().y
+                                                                val atBottom = scrollState.value >= scrollState.maxValue
+                                                                val atTop = scrollState.value <= 0
+                                                                val pullNext = atBottom && deltaY < 0 &&
+                                                                    currentChapterIndex < chapters.size - 1 && !switchingChapter
+                                                                val pullPrev = atTop && deltaY > 0 &&
+                                                                    currentChapterIndex > 0 && !switchingChapter
+                                                                if (pullNext || pullPrev) {
+                                                                    boundaryPulling = true
+                                                                    change.consume()
+                                                                    overscrollPx += abs(deltaY)
+                                                                    overscrollDirection = if (pullNext) 1 else -1
+                                                                    scope.launch {
+                                                                        overscrollOffset.snapTo(
+                                                                            if (pullNext) -overscrollPx * 0.35f
+                                                                            else overscrollPx * 0.35f
+                                                                        )
+                                                                    }
+                                                                    // 只累积，不在这里切章——等松手再判定（避免“没松手就翻页”）
+                                                                } else if (boundaryPulling) {
+                                                                    // 手指反向离开边界：取消越界，交还滚动
+                                                                    boundaryPulling = false
+                                                                    overscrollPx = 0f
+                                                                    overscrollDirection = 0
+                                                                }
+                                                            }
+                                                            // 手势结束（松手）：边界拉满阈值 → 切章（拉穿动画 + 新章入场）。
+                                                            // 点击唤菜单交给独立的 detectTapGestures，滑动绝不会被误判成点击。
+                                                            if (boundaryPulling &&
+                                                                overscrollPx >= scrollThresholdPx &&
+                                                                !switchingChapter
+                                                            ) {
+                                                                triggerSwitch(overscrollDirection)
+                                                            }
                                                             overscrollPx = 0f
                                                             overscrollDirection = 0
                                                         }
                                                     }
+                                                    // 标准点击判定（自带 touchSlop 过滤）：只有真正的点按才唤起/关闭菜单
+                                                    .pointerInput(Unit) {
+                                                        detectTapGestures(onTap = { showBars = !showBars })
+                                                    }
+                                                    .verticalScroll(scrollState)
                                                     .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
                                             ) {
                                                 if (currentChapterIndex > 0 && !showBars) {
                                                     Text(
-                                                        text = "↑ 已到本章开头 · 继续下拉返回上一章",
+                                                        text = "↓ 已到本章开头 · 继续下拉返回上一章",
                                                         fontSize = 12.sp,
                                                         color = textColor.copy(alpha = 0.45f),
                                                         modifier = Modifier
@@ -785,7 +874,7 @@ fun ReaderScreen(
                                                 Spacer(modifier = Modifier.height(20.dp))
                                                 Text(
                                                     text = if (currentChapterIndex < chapters.size - 1) {
-                                                        "—— 本章完 · 继续下拉进入下一章 ——"
+                                                        "—— 本章完 · 继续上滑进入下一章 ——"
                                                     } else {
                                                         "—— 全书完 ——"
                                                     },
@@ -909,27 +998,65 @@ fun ReaderScreen(
                                 )
 
                                 // 滚动模式：章首/章尾继续拖拽时的切章提示
-                                if (isScrollMode && overscrollDirection != 0) {
-                                    val hintText = if (overscrollDirection == 1) {
-                                        "继续下拉进入下一章"
-                                    } else {
-                                        "继续下拉返回上一章"
-                                    }
+                                // （方向修正：章尾手指上滑→下一章；章首手指下拉→上一章）
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isScrollMode && overscrollDirection != 0 && !switchingChapter,
+                                    enter = fadeIn(tween(120)) + slideInVertically(
+                                        initialOffsetY = { if (overscrollDirection == 1) it / 2 else -it / 2 }
+                                    ),
+                                    exit = fadeOut(tween(100)),
+                                    modifier = Modifier
+                                        .align(if (overscrollDirection == 1) Alignment.BottomCenter else Alignment.TopCenter)
+                                ) {
+                                    val isNext = overscrollDirection == 1
+                                    val pullProgress = (overscrollPx / scrollThresholdPx).coerceIn(0f, 1f)
                                     Surface(
                                         shape = RoundedCornerShape(16.dp),
                                         color = MintPrimary.copy(alpha = 0.92f),
                                         shadowElevation = 6.dp,
-                                        modifier = Modifier
-                                            .align(if (overscrollDirection == 1) Alignment.BottomCenter else Alignment.TopCenter)
-                                            .padding(16.dp)
+                                        modifier = Modifier.padding(16.dp)
                                     ) {
-                                        Text(
-                                            text = hintText,
-                                            color = Color.White,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                        )
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = if (isNext) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = when {
+                                                        pullProgress >= 1f && isNext -> "松开切换下一章"
+                                                        pullProgress >= 1f -> "松开返回上一章"
+                                                        isNext -> "继续上滑进入下一章"
+                                                        else -> "继续下拉返回上一章"
+                                                    },
+                                                    color = Color.White,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            // 拉取进度条：跟手填充，拉满 100% 后松手即切章
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(120.dp)
+                                                    .height(3.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(Color.White.copy(alpha = 0.3f))
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxHeight()
+                                                        .fillMaxWidth(pullProgress)
+                                                        .background(Color.White.copy(alpha = 0.9f))
+                                                )
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1078,6 +1205,9 @@ fun ReaderScreen(
         }
 
         // Top and Bottom Bars
+        // 栏内文字/图标按栏背景实时取对比色（bgColor.onColor()），
+        // 无论选什么阅读主题/自定义背景都不会出现“黑字压黑底”。
+        val barContentColor = bgColor.onColor()
         Box(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
                 AnimatedVisibility(
@@ -1092,12 +1222,12 @@ fun ReaderScreen(
                                                 maxLines = 1,
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 18.sp,
-                                                color = textColor
+                                                color = barContentColor
                                             )
                                         },
                                         navigationIcon = {
                                             AppIconButton(onClick = onBack) {
-                                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = textColor)
+                                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = barContentColor)
                                             }
                                         },
                                         actions = {
@@ -1113,7 +1243,7 @@ fun ReaderScreen(
                                                         Icons.Filled.BookmarkBorder
                                                     },
                                                     contentDescription = "添加/取消书签",
-                                                    tint = if (currentBookmarked) MintGold else textColor
+                                                    tint = if (currentBookmarked) MintGold else barContentColor
                                                 )
                                             }
                                             AppIconButton(onClick = {
@@ -1128,20 +1258,20 @@ fun ReaderScreen(
                                                 Icon(
                                                     imageVector = if (isTtsPlaying) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Headphones,
                                                     contentDescription = "听书模式",
-                                                    tint = if (isTtsPlaying) MintGold else textColor
+                                                    tint = if (isTtsPlaying) MintGold else barContentColor
                                                 )
                                             }
                                             AppIconButton(onClick = { showSearchDialog = true }) {
-                                                Icon(Icons.Filled.Search, contentDescription = "搜索", tint = textColor)
+                                                Icon(Icons.Filled.Search, contentDescription = "搜索", tint = barContentColor)
                                             }
                                             AppIconButton(onClick = { showTocSheet = true }) {
-                                                Icon(Icons.Filled.Menu, contentDescription = "目录", tint = textColor)
+                                                Icon(Icons.Filled.Menu, contentDescription = "目录", tint = barContentColor)
                                             }
                                             AppIconButton(onClick = { showAnnotationsSheet = true }) {
-                                                Icon(Icons.Filled.Bookmark, contentDescription = "书签", tint = textColor)
+                                                Icon(Icons.Filled.Bookmark, contentDescription = "书签", tint = barContentColor)
                                             }
                                             AppIconButton(onClick = { showSettingsSheet = true }) {
-                                                Icon(Icons.Filled.Settings, contentDescription = "排版", tint = textColor)
+                                                Icon(Icons.Filled.Settings, contentDescription = "排版", tint = barContentColor)
                                             }
                                         },
                                         colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor),
@@ -1170,7 +1300,7 @@ fun ReaderScreen(
                                                     },
                                                     enabled = currentChapterIndex > 0
                                                 ) {
-                                                    Text("上一章", fontWeight = FontWeight.Bold, color = textColor)
+                                                    Text("上一章", fontWeight = FontWeight.Bold, color = barContentColor)
                                                 }
                 
                                                 Slider(
@@ -1193,7 +1323,7 @@ fun ReaderScreen(
                                                     },
                                                     enabled = currentChapterIndex < chapters.size - 1
                                                 ) {
-                                                    Text("下一章", fontWeight = FontWeight.Bold, color = textColor)
+                                                    Text("下一章", fontWeight = FontWeight.Bold, color = barContentColor)
                                                 }
                                             }
                 
@@ -1205,7 +1335,7 @@ fun ReaderScreen(
                                                 Text(
                                                     "第 ${currentChapterIndex + 1} / ${chapters.size} 章",
                                                     fontSize = 12.sp,
-                                                    color = textColor
+                                                    color = barContentColor
                                                 )
                 
                                                 FilledTonalButton(

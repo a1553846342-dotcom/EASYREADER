@@ -24,7 +24,9 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     val allReadingSessions: Flow<List<ReadingSession>> = bookDao.getAllReadingSessionsFlow()
 
     private fun detectCharset(context: Context, uri: Uri): java.nio.charset.Charset {
-        val buffer = ByteArray(8192)
+        // 采样更大范围（256KB），并做严格解码校验 + BOM 识别，
+        // 避免“文件前半段是 ASCII 后半段是 GBK”时被误判成 UTF-8 导致乱码。
+        val buffer = ByteArray(256 * 1024)
         var bytesRead = 0
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -36,21 +38,42 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
 
         if (bytesRead <= 0) return java.nio.charset.StandardCharsets.UTF_8
 
-        val decoder = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
-        decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-        decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        val data = if (bytesRead < buffer.size) buffer.copyOf(bytesRead) else buffer
 
-        return try {
-            val byteBuffer = java.nio.ByteBuffer.wrap(buffer, 0, bytesRead)
-            decoder.decode(byteBuffer)
-            java.nio.charset.StandardCharsets.UTF_8
-        } catch (e: Exception) {
-            android.util.Log.d("BookImport", "UTF-8 decoding failed, falling back to GBK")
-            try {
-                java.nio.charset.Charset.forName("GBK")
-            } catch (ex: Exception) {
-                java.nio.charset.StandardCharsets.UTF_8
+        // BOM 优先
+        if (data.size >= 3 && data[0] == 0xEF.toByte() && data[1] == 0xBB.toByte() && data[2] == 0xBF.toByte()) {
+            return java.nio.charset.StandardCharsets.UTF_8
+        }
+        if (data.size >= 2 &&
+            ((data[0] == 0xFF.toByte() && data[1] == 0xFE.toByte()) ||
+                (data[0] == 0xFE.toByte() && data[1] == 0xFF.toByte()))
+        ) {
+            return java.nio.charset.Charset.forName(
+                if (data[0] == 0xFF.toByte()) "UTF-16LE" else "UTF-16BE"
+            )
+        }
+
+        fun decodesCleanly(charset: java.nio.charset.Charset): Boolean {
+            return try {
+                val decoder = charset.newDecoder()
+                decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                decoder.decode(java.nio.ByteBuffer.wrap(data))
+                true
+            } catch (e: Exception) {
+                false
             }
+        }
+
+        if (decodesCleanly(java.nio.charset.StandardCharsets.UTF_8)) {
+            return java.nio.charset.StandardCharsets.UTF_8
+        }
+        // UTF-8 严格解码失败：优先 GB18030（GBK 超集），避免中文乱码
+        return try {
+            val gb = java.nio.charset.Charset.forName("GB18030")
+            if (decodesCleanly(gb)) gb else java.nio.charset.StandardCharsets.UTF_8
+        } catch (e: Exception) {
+            java.nio.charset.StandardCharsets.UTF_8
         }
     }
 

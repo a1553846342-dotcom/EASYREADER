@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +46,9 @@ import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.ColorMorphSwatch
 import com.example.ui.components.AppLiquidButton
 import com.example.ui.components.AppLiquidSwitch
+import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.DialogLiquidGlass
+import com.example.ui.components.GlassCard
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
@@ -54,6 +57,8 @@ import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.theme.onColor
+import com.example.ui.theme.glassTitleColor
 import com.example.ui.help.LibraryHelpBottomSheet
 import kotlinx.coroutines.launch
 
@@ -100,6 +105,7 @@ fun SettingsTabScreen(
     var splashPureMode by remember { mutableStateOf(prefs.splashPureMode) }
     var appBgMode by remember { mutableIntStateOf(prefs.appBackgroundMode) }
     var appBgUri by remember { mutableStateOf(prefs.customAppBackgroundUri) }
+    var appBgDim by remember { mutableIntStateOf(prefs.appBackgroundDim) }
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
@@ -143,7 +149,7 @@ fun SettingsTabScreen(
                 prefs.customAppBackgroundUri = localUriStr
                 prefs.appBackgroundMode = 1
                 appBgMode = 1
-                AppBackgroundController.update(1, localUriStr)
+                AppBackgroundController.update(1, localUriStr, appBgDim)
                 Toast.makeText(context, "背景已设置（横竖屏自动裁剪填充）", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "背景设置失败", Toast.LENGTH_SHORT).show()
@@ -162,24 +168,48 @@ fun SettingsTabScreen(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text("设置", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onBackground)
-                    },
-                    navigationIcon = {
+                // 仿书架页顶部栏：毛玻璃卡 + Serif 标题层级（HomeScreen 顶部栏同款）
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         if (onBack != null) {
                             AppIconButton(onClick = onBack) {
                                 Icon(
-                                    Icons.Filled.ArrowBack,
+                                    Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "返回",
-                                    tint = MaterialTheme.colorScheme.onBackground
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                    modifier = Modifier.graphicsLayer { shadowElevation = 1f }
-                )
+                        Column {
+                            Text(
+                                text = "设置",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = glassTitleColor(),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "SETTINGS & PREFERENCES",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = glassTitleColor().copy(alpha = 0.75f),
+                                letterSpacing = 1.5.sp
+                            )
+                        }
+                    }
+                }
             }
         ) { padding ->
             LazyColumn(
@@ -193,15 +223,13 @@ fun SettingsTabScreen(
 
                 // Section 1: Splash Poster
                 item {
-                    Text("开屏海报设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)
+                    Text("开屏海报设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -283,15 +311,13 @@ fun SettingsTabScreen(
 
                 // Section: 软件背景
                 item {
-                    Text("软件背景设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)
+                    Text("软件背景设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("软件背景", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -301,46 +327,89 @@ fun SettingsTabScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                listOf(0 to "默认", 1 to "自定义").forEach { (mode, label) ->
-                                    FilterChip(
-                                        selected = appBgMode == mode,
-                                        onClick = {
-                                            appBgMode = mode
-                                            prefs.appBackgroundMode = mode
-                                            AppBackgroundController.update(
-                                                mode,
-                                                if (mode == 1) appBgUri else null
-                                            )
-                                        },
-                                        label = { Text(label, fontSize = 13.sp) },
-                                        modifier = Modifier.weight(1f)
+                            SegmentedPillSelector(
+                                options = listOf(0 to "默认", 1 to "自定义"),
+                                selected = appBgMode,
+                                onSelect = { mode ->
+                                    appBgMode = mode
+                                    prefs.appBackgroundMode = mode
+                                    AppBackgroundController.update(
+                                        mode,
+                                        if (mode == 1) appBgUri else null,
+                                        if (mode == 1) appBgDim else 0
                                     )
-                                }
-                            }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
                             if (appBgMode == 1) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 if (!appBgUri.isNullOrEmpty()) {
+                                    // 预览模拟卡：文字颜色实时按卡片底色取对比色
+                                    val previewCardColor = Color.White.copy(alpha = 0.92f)
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(140.dp)
+                                            .height(160.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(MaterialTheme.colorScheme.surfaceVariant),
-                                        contentAlignment = Alignment.Center
                                     ) {
+                                        // 实时预览：背景图 + 遮罩 + 模拟内容卡片，直观感受可读性
                                         AsyncImage(
                                             model = appBgUri,
                                             contentDescription = "背景预览",
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier.fillMaxSize()
                                         )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = appBgDim / 100f))
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.Center)
+                                                .fillMaxWidth()
+                                                .padding(20.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(previewCardColor)
+                                                .padding(12.dp)
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    "预览",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = previewCardColor.onColor()
+                                                )
+                                                Text(
+                                                    "背景遮罩 ${appBgDim}% · 文字与卡片保持清晰",
+                                                    fontSize = 11.sp,
+                                                    color = previewCardColor.onColor().copy(alpha = 0.65f)
+                                                )
+                                            }
+                                        }
                                     }
                                     Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("背景遮罩强度", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
+                                    }
+                                    JunoSlider(
+                                        value = appBgDim / 50f,
+                                        onValueChange = {
+                                            appBgDim = (it * 50).toInt().coerceIn(0, 50)
+                                            prefs.appBackgroundDim = appBgDim
+                                            if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
+                                                AppBackgroundController.update(1, appBgUri, appBgDim)
+                                            }
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
                                 Row(modifier = Modifier.fillMaxWidth()) {
                                     AppActionButton(
@@ -359,7 +428,7 @@ fun SettingsTabScreen(
                                                 prefs.customAppBackgroundUri = null
                                                 prefs.appBackgroundMode = 0
                                                 appBgMode = 0
-                                                AppBackgroundController.update(0, null)
+                                                AppBackgroundController.update(0, null, appBgDim)
                                                 Toast.makeText(context, "已恢复默认背景", Toast.LENGTH_SHORT).show()
                                             },
                                             variant = AppButtonVariant.Secondary,
@@ -375,15 +444,13 @@ fun SettingsTabScreen(
 
                 // Section: 外观与主题自定义
                 item {
-                    Text("外观与主题", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                    Text("外观与主题", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -439,13 +506,10 @@ fun SettingsTabScreen(
 
                             Text("实时配色预览卡片", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Card(
+                            GlassCard(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                                ),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
@@ -496,11 +560,9 @@ fun SettingsTabScreen(
 
                 if (showAdultSourceCard) {
                     item {
-                        Card(
+                        GlassCard(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -534,15 +596,13 @@ fun SettingsTabScreen(
 
                 // Section 2: Orientation Lock
                 item {
-                    Text("屏幕方向", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                    Text("屏幕方向", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -570,15 +630,13 @@ fun SettingsTabScreen(
 
                 // Section 3: Page Turn Effect
                 item {
-                    Text("翻页效果", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                    Text("翻页效果", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -601,15 +659,13 @@ fun SettingsTabScreen(
 
                 // Section 5: Health & Eye Protection
                 item {
-                    Text("护眼与提醒", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                    Text("护眼与提醒", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -721,18 +777,16 @@ fun SettingsTabScreen(
 
                 // Section 6: Library Help & Manual
                 item {
-                    Text("帮助手册", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MintPrimary)
+                    Text("帮助手册", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
                 }
 
                 item {
-                    Card(
+                    GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickableWithFeedback { showHelpBottomSheet = true }
                             .testTag("library_help_entry_card"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),

@@ -1,7 +1,12 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -10,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -22,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ReadingSession
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
+import com.example.ui.theme.clickableWithFeedback
 import java.util.Calendar
 
 /**
@@ -35,6 +42,8 @@ fun ReadingTrendCard(
     modifier: Modifier = Modifier
 ) {
     var tab by remember { mutableIntStateOf(0) } // 0=周 1=月 2=年
+    var selectedPoint by remember { mutableIntStateOf(-1) }
+    var selectedHour by remember { mutableIntStateOf(-1) }
     val today = remember { todayCalendar() }
 
     val series = remember(dailyTotals, tab) {
@@ -58,25 +67,20 @@ fun ReadingTrendCard(
     val peakMaxHour = peak.indices.maxByOrNull { peak[it] }
     val peakTotal = peak.sum()
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(20.dp)),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("阅读趋势", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(modifier = Modifier.weight(1f))
-                listOf("周", "月", "年").forEachIndexed { index, label ->
-                    FilterChip(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        label = { Text(label, fontSize = 12.sp) },
-                        modifier = Modifier.padding(start = if (index > 0) 6.dp else 0.dp)
-                    )
-                }
+                SegmentedPillSelector(
+                    options = listOf(0 to "周", 1 to "月", 2 to "年"),
+                    selected = tab,
+                    onSelect = { tab = it },
+                    modifier = Modifier.width(150.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -93,7 +97,30 @@ fun ReadingTrendCard(
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            TrendLineChart(series = series, modifier = Modifier.fillMaxWidth().height(150.dp))
+            if (selectedPoint in series.indices) {
+                val (date, sec) = series[selectedPoint]
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MintPrimary.copy(alpha = 0.12f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text(
+                        text = "$date · ${formatShortDuration(sec)}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MintPrimary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            TrendLineChart(
+                series = series,
+                selectedIndex = selectedPoint,
+                onSelectIndex = { selectedPoint = it },
+                modifier = Modifier.fillMaxWidth().height(150.dp)
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -112,7 +139,28 @@ fun ReadingTrendCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (peakTotal > 0) {
-                PeakHoursBars(peak = peak, modifier = Modifier.fillMaxWidth().height(72.dp))
+                if (selectedHour in 0..23 && peak[selectedHour] > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MintGold.copy(alpha = 0.14f),
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text(
+                            text = "${selectedHour}:00 - ${selectedHour + 1}:00 · ${formatShortDuration(peak[selectedHour])}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MintGold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                PeakHoursBars(
+                    peak = peak,
+                    selectedHour = selectedHour,
+                    onSelectHour = { selectedHour = it },
+                    modifier = Modifier.fillMaxWidth().height(72.dp)
+                )
             } else {
                 Text(
                     text = "暂无时段数据（更新后开始记录每次阅读的起止时间）",
@@ -128,15 +176,42 @@ fun ReadingTrendCard(
 @Composable
 private fun TrendLineChart(
     series: List<Pair<String, Long>>,
+    selectedIndex: Int,
+    onSelectIndex: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 复用全软件统一弹簧（AppBottomTabBar/DownloadGlassCard 同款：
+    // MediumBouncy + StiffnessMediumLow），选中点切换时做一次扩散脉冲反馈。
+    val pointPulse = remember { Animatable(0f) }
+    LaunchedEffect(selectedIndex) {
+        pointPulse.snapTo(0f)
+        pointPulse.animateTo(
+            1f,
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        )
+    }
     val maxVal = (series.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
     val primary = MintPrimary
-    Canvas(modifier = modifier) {
+    val peakIndex = series.indices.maxByOrNull { series[it].second }
+    Canvas(
+        modifier = modifier.pointerInput(series.size) {
+            detectTapGestures { offset ->
+                if (series.size > 1) {
+                    val w = size.width
+                    val stepX = w / (series.size - 1)
+                    val idx = (offset.x / stepX).toInt().coerceIn(0, series.size - 1)
+                    onSelectIndex(idx)
+                }
+            }
+        }
+    ) {
         if (series.size < 2) return@Canvas
         val w = size.width
         val h = size.height
-        val topPad = 8f
+        val topPad = 10f
         val bottomPad = 8f
         val stepX = w / (series.size - 1)
         val points = series.mapIndexed { i, (_, v) ->
@@ -156,19 +231,37 @@ private fun TrendLineChart(
         drawPath(
             path = fillPath,
             brush = Brush.verticalGradient(
-                colors = listOf(primary.copy(alpha = 0.32f), Color.Transparent)
+                colors = listOf(primary.copy(alpha = 0.30f), Color.Transparent)
             )
         )
         drawPath(path = linePath, color = primary, style = Stroke(width = 2.5f))
-        // 起点/终点小圆点
-        drawCircle(primary, radius = 4f, center = points.first())
-        drawCircle(primary, radius = 4f, center = points.last())
+        // 峰值金色强调
+        peakIndex?.let { pi ->
+            drawCircle(MintGold, radius = 7f, center = points[pi])
+            drawCircle(Color.White, radius = 3f, center = points[pi])
+        }
+        // 选中点
+        if (selectedIndex in points.indices) {
+            val p = points[selectedIndex]
+            drawCircle(
+                color = primary.copy(alpha = 0.35f * (1f - pointPulse.value)),
+                radius = 5f + 7f * pointPulse.value,
+                center = p
+            )
+            drawCircle(primary, radius = 5f, center = p)
+            drawCircle(Color.White, radius = 2f, center = p)
+        } else {
+            drawCircle(primary, radius = 4f, center = points.first())
+            drawCircle(primary, radius = 4f, center = points.last())
+        }
     }
 }
 
 @Composable
 private fun PeakHoursBars(
     peak: LongArray,
+    selectedHour: Int,
+    onSelectHour: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val max = (peak.maxOrNull() ?: 1L).coerceAtLeast(1L)
@@ -180,7 +273,8 @@ private fun PeakHoursBars(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .clickableWithFeedback { onSelectHour(hour) },
                 contentAlignment = Alignment.BottomCenter
             ) {
                 Box(
@@ -190,7 +284,11 @@ private fun PeakHoursBars(
                         .fillMaxHeight(ratio.coerceAtLeast(0.04f))
                         .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
                         .background(
-                            if (isMax) MintGold.copy(alpha = 0.9f)
+                            if (selectedHour == hour) {
+                                MintGold.copy(alpha = 0.95f)
+                            } else if (isMax) {
+                                MintGold.copy(alpha = 0.65f)
+                            }
                             else MintPrimary.copy(alpha = 0.55f)
                         )
                 )

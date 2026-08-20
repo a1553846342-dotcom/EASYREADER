@@ -98,6 +98,7 @@ import com.example.source.BookSource
 import com.example.source.ComicSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
+import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.PlayPauseMorphButton
@@ -113,6 +114,7 @@ import com.example.ui.components.ShimmerBox
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
+import com.example.ui.theme.glassTitleColor
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.source.ZLibraryLoginDialog
@@ -342,18 +344,38 @@ fun LibraryScreen(
                         if (showLoginDialog || showDownloadPanel) Modifier.haze(hazeState) else Modifier
                     )
             ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().statusBarsPadding(),
-                color = MaterialTheme.colorScheme.background
+            // 仿书架页顶部栏：毛玻璃卡 + Serif 标题层级（HomeScreen 顶部栏同款）
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                shape = RoundedCornerShape(24.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("书库", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Column {
+                        Text(
+                            text = "书库",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = glassTitleColor(),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "LIBRARY & SEARCH",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = glassTitleColor().copy(alpha = 0.75f),
+                            letterSpacing = 1.5.sp
+                        )
+                    }
                     Spacer(modifier = Modifier.weight(1f))
                     val latestSt = activeDownloadBook?.let { downloadStates[it.id] }
                     val comicActive = comicDownloading.isNotEmpty()
@@ -465,9 +487,9 @@ fun LibraryScreen(
 
                     if (errorMessage != null) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        GlassCard(
                             shape = RoundedCornerShape(12.dp),
+                            tint = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -1454,13 +1476,12 @@ fun LibraryWelcomeScreen(
         Spacer(modifier = Modifier.height(32.dp))
         
         // Option 1: Local Reading
-        Card(
+        GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onImportLocal() }
                 .testTag("welcome_import_local_card"),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            shape = RoundedCornerShape(16.dp)
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1489,13 +1510,12 @@ fun LibraryWelcomeScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // Option 2: Online Search
-        Card(
+        GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onOnlineSearch() }
                 .testTag("welcome_online_search_card"),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            shape = RoundedCornerShape(16.dp)
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1528,13 +1548,12 @@ fun LibraryWelcomeScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // Option 3: Advanced Source Management
-        Card(
+        GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onSourceManage() }
                 .testTag("welcome_source_manage_card"),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            shape = RoundedCornerShape(16.dp)
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1589,10 +1608,9 @@ fun LibraryBookCard(
     onResumeDownload: () -> Unit,
     onCancelDownload: () -> Unit
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier

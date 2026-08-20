@@ -12,6 +12,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
@@ -35,9 +36,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
 import dev.liquidglass.compose.liquidGlassProvider
 import dev.liquidglass.compose.rememberLiquidGlassProviderState
 import com.example.ui.components.LocalLiquidGlassState
+import com.example.ui.components.LocalGlassBackdrop
 import com.example.ui.components.AppBottomTabBar
 import com.example.ui.components.AppTabItem
 import com.example.ui.components.rememberTabBarCollapseState
@@ -48,6 +52,7 @@ import androidx.navigation.compose.*
 import com.example.ui.*
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.luminance
 import coil.compose.rememberAsyncImagePainter
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -123,22 +128,58 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val bgConfig by AppBackgroundController.config.collectAsState()
                         val bgActive = bgConfig.mode == 1 && !bgConfig.uri.isNullOrBlank()
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            if (bgActive) {
-                                Image(
-                                    painter = rememberAsyncImagePainter(bgConfig.uri),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                        // 页面有效背景平均亮度（已含遮罩）：标题文字据此实时取对比色
+                        val bgTone: Float = if (bgActive) {
+                            val appContext = LocalContext.current.applicationContext
+                            val loaded by produceState(0.5f, bgConfig.uri, bgConfig.dim) {
+                                value = loadBackgroundAvgLuminance(
+                                    appContext,
+                                    bgConfig.uri.orEmpty(),
+                                    bgConfig.dim
                                 )
                             }
-                            CompositionLocalProvider(LocalAppBackgroundActive provides bgActive) {
+                            loaded
+                        } else {
+                            MaterialTheme.colorScheme.background.luminance()
+                        }
+                        // 玻璃采样源：把背景层挂上 layerBackdrop（与底部 Tab 栏同机制的真实内容采样），
+                        // 页面内容卡（GlassCard）据此复用 Tab 栏同一套 KMPLiquidGlass 模糊实现。
+                        val bgBackdrop = rememberLayerBackdrop()
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .layerBackdrop(bgBackdrop)
+                            ) {
+                                if (bgActive) {
+                                    Image(
+                                        painter = rememberAsyncImagePainter(bgConfig.uri),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    if (bgConfig.dim > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = bgConfig.dim / 100f))
+                                        )
+                                    }
+                                }
+                            }
+                            CompositionLocalProvider(
+                                LocalAppBackgroundActive provides bgActive,
+                                LocalBackgroundTone provides bgTone,
+                                LocalGlassBackdrop provides bgBackdrop
+                            ) {
                         val navController = rememberNavController()
                         // 启动时用持久化配置初始化背景（设置页改动会通过 AppBackgroundController 实时更新）
                         LaunchedEffect(Unit) {
                             AppBackgroundController.update(
                                 viewModel.prefs.appBackgroundMode,
-                                viewModel.prefs.customAppBackgroundUri
+                                viewModel.prefs.customAppBackgroundUri,
+                                viewModel.prefs.appBackgroundDim
                             )
                         }
 
