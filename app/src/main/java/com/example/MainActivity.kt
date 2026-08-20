@@ -11,7 +11,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Book
@@ -46,6 +48,7 @@ import androidx.navigation.compose.*
 import com.example.ui.*
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MyApplicationTheme
+import coil.compose.rememberAsyncImagePainter
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
@@ -118,7 +121,26 @@ class MainActivity : ComponentActivity() {
                         },
                         color = MaterialTheme.colorScheme.background
                     ) {
+                        val bgConfig by AppBackgroundController.config.collectAsState()
+                        val bgActive = bgConfig.mode == 1 && !bgConfig.uri.isNullOrBlank()
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (bgActive) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(bgConfig.uri),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            CompositionLocalProvider(LocalAppBackgroundActive provides bgActive) {
                         val navController = rememberNavController()
+                        // 启动时用持久化配置初始化背景（设置页改动会通过 AppBackgroundController 实时更新）
+                        LaunchedEffect(Unit) {
+                            AppBackgroundController.update(
+                                viewModel.prefs.appBackgroundMode,
+                                viewModel.prefs.customAppBackgroundUri
+                            )
+                        }
 
                     DisposableEffect(orientationLock) {
                         requestedOrientation = when (orientationLock) {
@@ -207,6 +229,7 @@ class MainActivity : ComponentActivity() {
                             val books by viewModel.allBooks.collectAsState()
                             val categories by viewModel.allCategories.collectAsState()
                             val readingRecords by viewModel.allReadingRecords.collectAsState()
+                            val readingSessions by viewModel.allReadingSessions.collectAsState()
                             val tabBarCollapseState = rememberTabBarCollapseState()
                             // Tab 栏专用背景采样（书源选择弹窗同款手法）：
                             // layerBackdrop 捕获页面真实内容，Tab 栏 drawBackdrop 模糊它。
@@ -252,6 +275,11 @@ class MainActivity : ComponentActivity() {
                                     .layerBackdrop(tabBackdrop)
                             ) {
                             Scaffold(
+                                containerColor = if (LocalAppBackgroundActive.current) {
+                                    Color.Transparent
+                                } else {
+                                    MaterialTheme.colorScheme.background
+                                },
                                 snackbarHost = {
                                     SnackbarHost(
                                         hostState = snackbarHostState,
@@ -345,6 +373,7 @@ class MainActivity : ComponentActivity() {
                                                 books = books,
                                                 totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
                                                 readingRecords = readingRecords,
+                                                readingSessions = readingSessions,
                                                 onGoToShelf = { selectedTab = 1 },
                                                 onDeleteRecord = { viewModel.deleteReadingRecord(it.id) },
                                                 recordCovers = libraryViewModel.recordCovers.collectAsState().value,
@@ -490,6 +519,9 @@ class MainActivity : ComponentActivity() {
                                 onRecordTime = { seconds ->
                                     viewModel.recordTime(seconds)
                                 },
+                                onSessionEnd = { session ->
+                                    viewModel.addReadingSession(session)
+                                },
                             )
                         }
  }
@@ -530,6 +562,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onRecordTime = { seconds ->
                                     viewModel.recordTime(seconds)
+                                },
+                                onSessionEnd = { session ->
+                                    viewModel.addReadingSession(session)
                                 }
                             )
                         } }
@@ -626,6 +661,9 @@ class MainActivity : ComponentActivity() {
                                 onRecordTime = { seconds ->
                                     viewModel.recordTime(seconds, comicBook?.title ?: activeChapter?.title)
                                 },
+                                onSessionEnd = { session ->
+                                    viewModel.addReadingSession(session)
+                                },
                                 onBack = { navController.popBackStack() },
                                 onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
                             )
@@ -641,10 +679,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            com.example.ui.mascot.MascotOverlay()
+                        com.example.ui.mascot.MascotOverlay()
+                    }
+                }
+            }
         }
     }
-}
 }
 }
 }

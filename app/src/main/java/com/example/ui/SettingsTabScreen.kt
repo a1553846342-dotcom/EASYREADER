@@ -98,6 +98,8 @@ fun SettingsTabScreen(
 
     var splashPosterUri by remember { mutableStateOf(prefs.customSplashPosterUri) }
     var splashPureMode by remember { mutableStateOf(prefs.splashPureMode) }
+    var appBgMode by remember { mutableIntStateOf(prefs.appBackgroundMode) }
+    var appBgUri by remember { mutableStateOf(prefs.customAppBackgroundUri) }
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
@@ -125,10 +127,37 @@ fun SettingsTabScreen(
         }
     }
 
+    // 软件背景：选择图片后复制到私有目录（横竖屏统一 Crop 填充，不拉伸变形）
+    val bgLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(it)
+                val file = java.io.File(context.filesDir, "custom_app_bg.jpg")
+                inputStream?.use { input ->
+                    file.outputStream().use { output -> input.copyTo(output) }
+                }
+                val localUriStr = Uri.fromFile(file).toString()
+                appBgUri = localUriStr
+                prefs.customAppBackgroundUri = localUriStr
+                prefs.appBackgroundMode = 1
+                appBgMode = 1
+                AppBackgroundController.update(1, localUriStr)
+                Toast.makeText(context, "背景已设置（横竖屏自动裁剪填充）", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "背景设置失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                if (LocalAppBackgroundActive.current) Color.Transparent
+                else MaterialTheme.colorScheme.background
+            )
     ) {
         Scaffold(
             containerColor = Color.Transparent,
@@ -247,6 +276,98 @@ fun SettingsTabScreen(
                                         prefs.splashPureMode = it
                                     }
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // Section: 软件背景
+                item {
+                    Text("软件背景设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MintPrimary)
+                }
+
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("软件背景", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(
+                                "选择默认主题色，或自定义一张背景图（横竖屏自动裁剪铺满）",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                listOf(0 to "默认", 1 to "自定义").forEach { (mode, label) ->
+                                    FilterChip(
+                                        selected = appBgMode == mode,
+                                        onClick = {
+                                            appBgMode = mode
+                                            prefs.appBackgroundMode = mode
+                                            AppBackgroundController.update(
+                                                mode,
+                                                if (mode == 1) appBgUri else null
+                                            )
+                                        },
+                                        label = { Text(label, fontSize = 13.sp) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+
+                            if (appBgMode == 1) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                if (!appBgUri.isNullOrEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        AsyncImage(
+                                            model = appBgUri,
+                                            contentDescription = "背景预览",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                }
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    AppActionButton(
+                                        text = if (appBgUri.isNullOrEmpty()) "选择背景图片" else "更换图片",
+                                        onClick = { bgLauncher.launch("image/*") },
+                                        variant = AppButtonVariant.Primary,
+                                        buttonSize = AppButtonSize.Small,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (!appBgUri.isNullOrEmpty()) {
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        AppActionButton(
+                                            text = "恢复默认",
+                                            onClick = {
+                                                appBgUri = null
+                                                prefs.customAppBackgroundUri = null
+                                                prefs.appBackgroundMode = 0
+                                                appBgMode = 0
+                                                AppBackgroundController.update(0, null)
+                                                Toast.makeText(context, "已恢复默认背景", Toast.LENGTH_SHORT).show()
+                                            },
+                                            variant = AppButtonVariant.Secondary,
+                                            buttonSize = AppButtonSize.Small,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

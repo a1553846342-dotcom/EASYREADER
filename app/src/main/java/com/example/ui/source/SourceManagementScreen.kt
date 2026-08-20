@@ -336,7 +336,7 @@ fun SourceManagementScreen(
             if (customSources.isEmpty()) {
                 item {
                     com.example.ui.components.MascotEmptyState(
-                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.idleDrawable,
+                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
                         title = "暂无自定义书源",
                         description = "导入 JSON 配置文件添加自定义书源",
                         actionLabel = "导入 JSON 书源文件",

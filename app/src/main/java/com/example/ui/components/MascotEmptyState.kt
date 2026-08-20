@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintPrimary
+import com.example.ui.mascot.MascotMood
+import com.example.ui.mascot.mascotMoodOf
 
 @Composable
 fun MascotEmptyState(
@@ -31,17 +33,67 @@ fun MascotEmptyState(
     onActionClick: (() -> Unit)? = null,
     testTagPrefix: String = "mascot_empty_state"
 ) {
-    // Floating transition for Mascot to feel alive and breathing
+    // 根据素材情绪选择动效：呼吸/漂浮/弹跳/奔跑抖动/低落摇摆，让静态图“活”起来
+    val mood = mascotMoodOf(mascotResId)
     val infiniteTransition = rememberInfiniteTransition(label = "mascot_float")
     val floatOffset by infiniteTransition.animateFloat(
         initialValue = -6f,
         targetValue = 6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = EaseInOutSine),
+            animation = tween(
+                durationMillis = if (mood == MascotMood.SAD) 3200 else 2200,
+                easing = EaseInOutSine
+            ),
             repeatMode = RepeatMode.Reverse
         ),
         label = "mascot_float_anim"
     )
+    val breath by infiniteTransition.animateFloat(
+        initialValue = 0.97f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = if (mood == MascotMood.SAD) 3600 else 2400,
+                easing = EaseInOutSine
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mascot_breath_anim"
+    )
+    val happyBounce by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mascot_bounce_anim"
+    )
+    val runJitter by infiniteTransition.animateFloat(
+        initialValue = -4f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(260, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mascot_run_anim"
+    )
+    val sadAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mascot_sad_alpha"
+    )
+
+    val scale = when (mood) {
+        MascotMood.HAPPY -> happyBounce
+        else -> breath
+    }
+    val shiftX = if (mood == MascotMood.RUN) runJitter else 0f
+    val alpha = if (mood == MascotMood.SAD) sadAlpha else 1f
 
     Card(
         modifier = modifier
@@ -83,6 +135,10 @@ fun MascotEmptyState(
                         .size(110.dp)
                         .graphicsLayer {
                             translationY = floatOffset.dp.toPx()
+                            translationX = shiftX.dp.toPx()
+                            scaleX = scale
+                            scaleY = scale
+                            this.alpha = alpha
                         }
                         .testTag("${testTagPrefix}_mascot_image")
                 )

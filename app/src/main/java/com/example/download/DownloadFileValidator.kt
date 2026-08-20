@@ -145,11 +145,21 @@ object DownloadFileValidator {
             }
         }
 
+        // FB2（FictionBook）：XML 根 <FictionBook>
+        if (head.size >= 64) {
+            val sample = String(head, 0, minOf(head.size, 4096), Charsets.UTF_8).lowercase()
+            if (sample.contains("<?xml") && sample.contains("<fictionbook")) {
+                return "fb2"
+            }
+        }
+
         // ZIP：EPUB（含 container.xml/mimetype）；否则只有含图片的才可能是漫画 CBZ
         if (head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()) {
             return try {
                 ZipFile(file).use { zip ->
-                    if (zip.getEntry("META-INF/container.xml") != null ||
+                    if (zip.getEntry("word/document.xml") != null) {
+                        "docx"
+                    } else if (zip.getEntry("META-INF/container.xml") != null ||
                         zip.getEntry("mimetype") != null ||
                         zip.entries().asSequence().any { entry ->
                             !entry.isDirectory && (

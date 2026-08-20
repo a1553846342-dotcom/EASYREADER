@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.Book
 import com.example.data.Chapter
+import com.example.data.ReadingSession
 import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
@@ -57,7 +58,8 @@ fun ComicReaderScreen(
     chapters: List<Chapter>,
     onBack: () -> Unit,
     onUpdateProgress: (bookId: Int, pageIndex: Int, scrollOffset: Int, isFinished: Boolean) -> Unit,
-    onRecordTime: (seconds: Long) -> Unit
+    onRecordTime: (seconds: Long) -> Unit,
+    onSessionEnd: (ReadingSession) -> Unit = {}
 ) {
     val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
     val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
@@ -82,26 +84,16 @@ fun ComicReaderScreen(
 
     val totalPages = chapters.size
 
-    // Reading Timer
-    var readSeconds by remember { mutableLongStateOf(0L) }
-    var lastFlush by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            readSeconds += 1L
-            // 每 30 秒上报一次，统计页更新及时
-            if (readSeconds - lastFlush >= 30L) {
-                onRecordTime(readSeconds - lastFlush)
-                lastFlush = readSeconds
-            }
-        }
-    }
+    // 阅读计时：只在 App 前台 + 屏幕亮着时累计（修复后台/锁屏虚增时长 bug）
+    ReadingTimerEffect(
+        bookId = book.id,
+        bookTitle = book.title,
+        onFlush = { seconds -> onRecordTime(seconds) },
+        onSessionEnd = { session -> onSessionEnd(session) }
+    )
 
     DisposableEffect(Unit) {
         onDispose {
-            if (readSeconds - lastFlush > 0) {
-                onRecordTime(readSeconds - lastFlush)
-            }
             onUpdateProgress(book.id, currentPageIndex, 0, currentPageIndex >= totalPages - 1)
         }
     }

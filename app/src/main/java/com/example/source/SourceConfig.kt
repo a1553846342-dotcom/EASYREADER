@@ -74,5 +74,7 @@ data class SourceConfig(
     val enabled: Boolean = true,
     val priority: Int = 0,
     val isCustom: Boolean = true,
-    val insecureTls: Boolean = false
+    val insecureTls: Boolean = false,
+    /** 可选：显式声明内容类型 "comic"/"novel"/"text"，不声明时按规则自动判断。 */
+    val type: String? = null
 )

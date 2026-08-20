@@ -48,7 +48,7 @@ fun OnboardingScreen(
             OnboardingPage(
     title = "欢迎来到 Ciallo阅读",
                 description = "这是一款专为阅读爱好者打造的沉浸式小说与网络文学阅读器。高颜值、极速、无广告，带给您最纯粹的阅读享受。",
-                imageRes = MascotSpriteSheet.happyDrawable,
+                imageRes = MascotSpriteSheet.idleDrawable,
                 badgeText = "全新体验"
             ),
             OnboardingPage(
@@ -60,13 +60,13 @@ fun OnboardingScreen(
             OnboardingPage(
                 title = "极致交互，沉浸阅读",
                 description = "搭载 3D 仿真翻页 (PageCurl)、平滑覆盖滚动等多种翻页效果，支持防蓝光护眼模式与自动夜间主题，守护您的双眼。",
-                imageRes = MascotSpriteSheet.bookmarkDrawable,
+                imageRes = MascotSpriteSheet.readingDrawable,
                 badgeText = "个性定制"
             ),
             OnboardingPage(
                 title = "Roxy 灵动吉祥物",
                 description = "Roxy 将在您的阅读旅程中时刻陪伴！当您添加书签、归档或删除书籍时，Roxy 都会用俏皮的肢体动画给您最生动的反馈。",
-                imageRes = MascotSpriteSheet.idleDrawable,
+                imageRes = MascotSpriteSheet.happyDrawable,
                 badgeText = "趣味交互"
             )
         )

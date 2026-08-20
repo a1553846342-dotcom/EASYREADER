@@ -100,11 +100,37 @@ interface BookDao {
 
     @Query("SELECT * FROM reading_records ORDER BY dateStr DESC")
     fun getAllReadingRecordsFlow(): Flow<List<ReadingRecord>>
+
+    // ---------------- 阅读会话（新统计口径） ----------------
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReadingSession(session: ReadingSession)
+
+    @Query("SELECT * FROM reading_sessions WHERE dateStr = :dateStr ORDER BY startTimeMs ASC")
+    suspend fun getReadingSessionsForDate(dateStr: String): List<ReadingSession>
+
+    @Query("SELECT * FROM reading_sessions WHERE dateStr BETWEEN :from AND :to ORDER BY startTimeMs ASC")
+    suspend fun getReadingSessionsBetween(from: String, to: String): List<ReadingSession>
+
+    @Query("SELECT dateStr AS dateStr, SUM(durationSeconds) AS totalSeconds FROM reading_sessions WHERE dateStr BETWEEN :from AND :to GROUP BY dateStr")
+    suspend fun getDailyTotalsBetween(from: String, to: String): List<DailyReadingTotal>
+
+    @Query("SELECT substr(dateStr, 1, 7) AS month, SUM(durationSeconds) AS totalSeconds FROM reading_sessions WHERE dateStr LIKE :prefix GROUP BY month ORDER BY month")
+    suspend fun getMonthlyTotals(prefix: String): List<MonthlyReadingTotal>
+
+    @Query("SELECT substr(dateStr, 1, 4) AS year, SUM(durationSeconds) AS totalSeconds FROM reading_sessions GROUP BY year ORDER BY year")
+    suspend fun getYearlyTotals(): List<YearlyReadingTotal>
+
+    @Query("DELETE FROM reading_sessions WHERE bookId = :bookId")
+    suspend fun deleteReadingSessionsForBook(bookId: Int)
+
+    @Query("SELECT * FROM reading_sessions ORDER BY startTimeMs DESC")
+    fun getAllReadingSessionsFlow(): Flow<List<ReadingSession>>
 }
 
 @Database(
-    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class, com.example.download.DownloadTaskEntity::class],
-    version = 5,
+    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class, ReadingSession::class, com.example.download.DownloadTaskEntity::class],
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(com.example.download.DownloadTypeConverters::class)
@@ -116,6 +142,23 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /** v5 -> v6：新增 reading_sessions 表，保留既有数据。 */
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reading_sessions` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`bookId` INTEGER, " +
+                        "`bookTitle` TEXT NOT NULL, " +
+                        "`dateStr` TEXT NOT NULL, " +
+                        "`startTimeMs` INTEGER NOT NULL, " +
+                        "`endTimeMs` INTEGER NOT NULL, " +
+                        "`durationSeconds` INTEGER NOT NULL, " +
+                        "`startHour` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun getDatabase(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -123,6 +166,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader.db"
                 )
+                    .addMigrations(MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

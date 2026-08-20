@@ -24,7 +24,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.draw.alpha
@@ -51,6 +55,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -69,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.*
 import com.example.ui.pageturn.PageTurnContainer
 import com.example.ui.pageturn.PageTurnType
+import com.example.ui.mascot.MascotSpriteSheet
 import com.example.ui.components.CustomSwitch
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppActionButton
@@ -105,7 +113,8 @@ fun ReaderScreen(
     searchResults: List<SearchResultItem>,
     isSearching: Boolean,
     onSearch: (String) -> Unit,
-    onRecordTime: (Long) -> Unit
+    onRecordTime: (Long) -> Unit,
+    onSessionEnd: (ReadingSession) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
@@ -167,6 +176,64 @@ fun ReaderScreen(
     val currentChapter = chapters.getOrNull(currentChapterIndex)
     val scrollState = rememberScrollState()
 
+    // 滚动阅读：章末/章首继续拖拽切章的阈值与状态
+    val scrollThresholdPx = with(LocalDensity.current) { 120.dp.toPx() }
+    var overscrollPx by remember { mutableFloatStateOf(0f) }
+    var overscrollDirection by remember { mutableIntStateOf(0) } // 1=下一章 -1=上一章 0=无
+    // 翻页<->滚动模式切换时的位置锚点
+    var pendingScrollRatio by remember { mutableFloatStateOf(-1f) }
+    var pendingCharTarget by remember { mutableIntStateOf(-1) }
+
+    val scrollConnection = remember(scrollState, currentChapterIndex, chapters.size, scope) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                val dy = available.y
+                if (source == NestedScrollSource.UserInput && dy != 0f) {
+                    val atBottom = scrollState.value >= scrollState.maxValue
+                    val atTop = scrollState.value <= 0
+                    when {
+                        // 已到章尾，继续向下拉（滚动正向）→ 累积到阈值进入下一章
+                        dy > 0 && atBottom && currentChapterIndex < chapters.size - 1 -> {
+                            overscrollPx += dy
+                            overscrollDirection = 1
+                        }
+                        // 已到章首，继续向上拉（滚动反向）→ 累积到阈值返回上一章
+                        dy < 0 && atTop && currentChapterIndex > 0 -> {
+                            overscrollPx -= dy
+                            overscrollDirection = -1
+                        }
+                        else -> {
+                            overscrollPx = 0f
+                            overscrollDirection = 0
+                        }
+                    }
+                    if (overscrollPx >= scrollThresholdPx) {
+                        val dir = overscrollDirection
+                        overscrollPx = 0f
+                        overscrollDirection = 0
+                        scope.launch {
+                            when (dir) {
+                                1 -> if (currentChapterIndex < chapters.size - 1) {
+                                    currentChapterIndex++
+                                    scrollState.scrollTo(0)
+                                }
+                                -1 -> if (currentChapterIndex > 0) {
+                                    currentChapterIndex--
+                                    scrollState.scrollTo(0)
+                                }
+                            }
+                        }
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
     DisposableEffect(prefs.keepScreenOn) {
         val activity = context as? Activity
         if (prefs.keepScreenOn) {
@@ -179,20 +246,20 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        var elapsedSeconds = 0L
-        while (true) {
-            delay(1000)
-            elapsedSeconds++
-            if (elapsedSeconds % 30 == 0L) {
-                onRecordTime(30)
-            }
+    // 阅读计时：只在 App 前台 + 屏幕亮着时累计（修复后台/锁屏虚增时长 bug），
+    // 每 30 秒上报，离开时写一条阅读会话供日历时段/高峰时段统计。
+    ReadingTimerEffect(
+        bookId = book?.id,
+        bookTitle = currentChapter?.title ?: bookTitle,
+        onFlush = { seconds -> onRecordTime(seconds) },
+        onSessionEnd = { session -> onSessionEnd(session) },
+        onRestTick = { elapsedSec ->
             val restMins = prefs.restReminderMinutes
-            if (restMins > 0 && elapsedSeconds > 0 && elapsedSeconds % (restMins * 60) == 0L) {
+            if (restMins > 0 && elapsedSec > 0 && elapsedSec % (restMins * 60) == 0L) {
                 showRestDialog = true
             }
         }
-    }
+    )
 
     LaunchedEffect(book, chapters) {
         if (book != null && chapters.isNotEmpty() && book.scrollOffset > 0) {
@@ -245,6 +312,49 @@ fun ReaderScreen(
         }
     }
 
+    // 书签切换（滚动模式停用下拉手势后，菜单按钮作为唯一入口）
+    val toggleBookmark: () -> Unit = {
+        val currentBookId = book?.id ?: 0
+        val existingBookmark = bookmarks.find {
+            (it.bookId == currentBookId || it.bookId == 0) && it.chapterIndex == currentChapterIndex
+        }
+        if (existingBookmark != null) {
+            onDeleteBookmark(existingBookmark.id)
+            Toast.makeText(context, "已取消书签", Toast.LENGTH_SHORT).show()
+        } else {
+            currentChapter?.let { ch ->
+                onAddBookmark(currentBookId, currentChapterIndex, scrollState.value, ch.title, ch.content.take(60))
+                scope.launch {
+                    showEasterEgg = true
+                    delay(2500)
+                    showEasterEgg = false
+                }
+            }
+        }
+    }
+
+    // 切换阅读模式：翻页 <-> 滚动时按比例映射当前阅读位置，切完后由 LaunchedEffect 锚定
+    val switchPageMode: (Int) -> Unit = { newModeId ->
+        val oldScroll = pageTurnMode == PageTurnType.SCROLL.id
+        val newScroll = newModeId == PageTurnType.SCROLL.id
+        if (oldScroll != newScroll) {
+            val contentLen = currentChapter?.content?.length ?: 0
+            if (newScroll) {
+                val ratio = if (contentLen > 0) currentCharOffset.toFloat() / contentLen else 0f
+                pendingScrollRatio = ratio
+            } else {
+                val ratio = if (scrollState.maxValue > 0) {
+                    scrollState.value.toFloat() / scrollState.maxValue
+                } else {
+                    0f
+                }
+                pendingCharTarget = (contentLen * ratio).toInt()
+            }
+        }
+        pageTurnMode = newModeId
+        prefs.pageTurnMode = newModeId
+    }
+
     val (bgColor, textColor) = when (readerTheme) {
         0 -> Color.White to Color(0xFF18191C) // Pure Light
         1 -> Color.White to Color(0xFF18191C) // Default White
@@ -285,6 +395,22 @@ fun ReaderScreen(
         formattedContent = formatted
         scrollChunks = chunks
         contentReady = true
+    }
+
+    // 翻页 <-> 滚动模式切换后，把当前阅读位置按比例映射到新模式（同一章内锚定）
+    LaunchedEffect(isScrollMode, contentReady, scrollState.maxValue) {
+        if (isScrollMode && contentReady && scrollState.maxValue > 0 && pendingScrollRatio >= 0f) {
+            val ratio = pendingScrollRatio.coerceIn(0f, 1f)
+            pendingScrollRatio = -1f
+            val target = (scrollState.maxValue * ratio).toInt().coerceIn(0, scrollState.maxValue)
+            scrollState.scrollTo(target)
+        }
+    }
+    LaunchedEffect(isScrollMode, contentReady) {
+        if (!isScrollMode && contentReady && pendingCharTarget >= 0) {
+            currentCharOffset = pendingCharTarget
+            pendingCharTarget = -1
+        }
     }
 
     // 共享封面转场：封面先随共享元素缩放进场，随后正文从右侧轻轻滑入叠在封面上，
@@ -594,14 +720,41 @@ fun ReaderScreen(
                                 PageTurnContainer(
                                     pageTurnMode = pageTurnMode,
                                     pageKey = "$currentChapterIndex-$activeSubPageIndex",
+                                    menuVisible = showBars,
                                     currentContent = {
                                         if (isScrollMode) {
                                             Column(
                                                 modifier = Modifier
                                                     .fillMaxSize()
+                                                    .nestedScroll(scrollConnection)
                                                     .verticalScroll(scrollState)
+                                                    // 滚动模式：单击任意位置唤起/关闭菜单，不再与切章手势混用
+                                                    .pointerInput(Unit) {
+                                                        detectTapGestures(onTap = { showBars = !showBars })
+                                                    }
+                                                    // 手势结束（松手/取消）时清空过度滚动状态，提示不残留
+                                                    .pointerInput(Unit) {
+                                                        awaitEachGesture {
+                                                            awaitFirstDown(requireUnconsumed = false)
+                                                            do {
+                                                                val event = awaitPointerEvent()
+                                                            } while (event.changes.any { it.pressed })
+                                                            overscrollPx = 0f
+                                                            overscrollDirection = 0
+                                                        }
+                                                    }
                                                     .padding(horizontal = marginHorizontal.dp, vertical = 16.dp)
                                             ) {
+                                                if (currentChapterIndex > 0 && !showBars) {
+                                                    Text(
+                                                        text = "↑ 已到本章开头 · 继续下拉返回上一章",
+                                                        fontSize = 12.sp,
+                                                        color = textColor.copy(alpha = 0.45f),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(bottom = 12.dp)
+                                                    )
+                                                }
                                                 Text(
                                                     text = chapter.title,
                                                     style = MaterialTheme.typography.headlineSmall,
@@ -628,6 +781,19 @@ fun ReaderScreen(
                                                         }
                                                     }
                                                 }
+
+                                                Spacer(modifier = Modifier.height(20.dp))
+                                                Text(
+                                                    text = if (currentChapterIndex < chapters.size - 1) {
+                                                        "—— 本章完 · 继续下拉进入下一章 ——"
+                                                    } else {
+                                                        "—— 全书完 ——"
+                                                    },
+                                                    fontSize = 13.sp,
+                                                    color = textColor.copy(alpha = 0.5f),
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
                                             }
                                         } else {
                                             RenderSinglePage(
@@ -739,25 +905,33 @@ fun ReaderScreen(
                                     onClickLeft = handlePrevPage,
                                     onClickRight = handleNextPage,
                                     isBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex },
-                                    onToggleBookmark = {
-                                        val currentBookId = book?.id ?: 0
-                                        val existingBookmark = bookmarks.find { (it.bookId == currentBookId || it.bookId == 0) && it.chapterIndex == currentChapterIndex }
-                                        if (existingBookmark != null) {
-                                            onDeleteBookmark(existingBookmark.id)
-                                            Toast.makeText(context, "已取消书签", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            currentChapter?.let { ch ->
-                                                val snippet = ch.content.take(60)
-                                                onAddBookmark(currentBookId, currentChapterIndex, scrollState.value, ch.title, snippet)
-                                                scope.launch {
-                                                    showEasterEgg = true
-                                                    delay(2500)
-                                                    showEasterEgg = false
-                                                }
-                                            }
-                                        }
-                                    }
+                                    onToggleBookmark = toggleBookmark
                                 )
+
+                                // 滚动模式：章首/章尾继续拖拽时的切章提示
+                                if (isScrollMode && overscrollDirection != 0) {
+                                    val hintText = if (overscrollDirection == 1) {
+                                        "继续下拉进入下一章"
+                                    } else {
+                                        "继续下拉返回上一章"
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MintPrimary.copy(alpha = 0.92f),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier
+                                            .align(if (overscrollDirection == 1) Alignment.BottomCenter else Alignment.TopCenter)
+                                            .padding(16.dp)
+                                    ) {
+                                        Text(
+                                            text = hintText,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                        )
+                                    }
+                                }
 
                                 val isCurrentBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex }
                                 androidx.compose.animation.AnimatedVisibility(
@@ -893,6 +1067,13 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.6f))
+                    // 菜单打开时点击空白处只关闭菜单，绝不触发翻页/切章
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showBars = false
+                    }
             )
         }
 
@@ -920,6 +1101,21 @@ fun ReaderScreen(
                                             }
                                         },
                                         actions = {
+                                            val currentBookmarked = bookmarks.any {
+                                                (it.bookId == (book?.id ?: 0) || it.bookId == 0) &&
+                                                    it.chapterIndex == currentChapterIndex
+                                            }
+                                            AppIconButton(onClick = { toggleBookmark() }) {
+                                                Icon(
+                                                    imageVector = if (currentBookmarked) {
+                                                        Icons.Filled.Bookmark
+                                                    } else {
+                                                        Icons.Filled.BookmarkBorder
+                                                    },
+                                                    contentDescription = "添加/取消书签",
+                                                    tint = if (currentBookmarked) MintGold else textColor
+                                                )
+                                            }
                                             AppIconButton(onClick = {
                                                 showTtsBar = true
                                                 if (!isTtsPlaying) {
@@ -1181,7 +1377,7 @@ fun ReaderScreen(
                         PageTurnType.entries.take(3).forEach { modeType ->
                             FilterChip(
                                 selected = pageTurnMode == modeType.id,
-                                onClick = { pageTurnMode = modeType.id; prefs.pageTurnMode = modeType.id },
+                                onClick = { switchPageMode(modeType.id) },
                                 label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -1191,7 +1387,7 @@ fun ReaderScreen(
                         PageTurnType.entries.drop(3).forEach { modeType ->
                             FilterChip(
                                 selected = pageTurnMode == modeType.id,
-                                onClick = { pageTurnMode = modeType.id; prefs.pageTurnMode = modeType.id },
+                                onClick = { switchPageMode(modeType.id) },
                                 label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -1378,7 +1574,7 @@ fun ReaderScreen(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Image(
-                painter = painterResource(id = R.drawable.roxy_happy),
+                painter = painterResource(id = MascotSpriteSheet.celebrateDrawable),
                 contentDescription = "Anime Mascot Easter Egg",
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

@@ -30,7 +30,7 @@ TXT / EPUB / 漫画阅读
 
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
-![Release](https://img.shields.io/badge/Release-v0.99-orange)
+![Release](https://img.shields.io/badge/Release-v0.99.10-orange)
 ![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)
@@ -84,7 +84,7 @@ TXT / EPUB / 漫画阅读
 - **护眼模式原理**：夜间模式走深色配色 + 降低屏幕亮度的刺眼感；护眼滤镜叠加暖色调色（0–65% 可调），配合 Juno 风格滑块实时预览强度，长时间夜读不刺眼。
 - **定时休息**：15/30/45/60 分钟预设或自定义任意时长，到点弹窗提醒，强制你离开屏幕歇眼睛。
 - **TTS 朗读**：系统引擎无缝接入，边听边看；支持书签、划线高亮、全文搜索、进度自动保存。
-- **阅读统计**：每日/每周阅读时长图表、连续打卡、最近阅读横向轮播。
+- **阅读统计**：周/月/年周期总览、日历热力图（月/年视图）、阅读趋势图、高峰时段分布、连续打卡、最近阅读横向轮播。
 
 </details>
 
@@ -129,6 +129,7 @@ TXT / EPUB / 漫画阅读
 - **主题配色**：主色/强调色自由搭配，全软件颜色弹簧过渡，切换不重启。
 - **屏幕方向**：跟随系统 / 锁定竖屏 / 锁定横屏，切换立即生效。
 - **开屏海报**：自定义海报 + 纯净模式（直进软件，无任何开屏）。
+- **软件背景**：默认主题色或自定义背景图，横竖屏自动裁剪铺满。
 - **字体**：系统字体即用，自定义字体包导入见 Roadmap。
 - **TTS 朗读**：语速、音量跟随系统，阅读器内一键开关。
 
@@ -138,7 +139,7 @@ TXT / EPUB / 漫画阅读
 <summary>🌟 其他亮点</summary>
 
 - **液态玻璃整套 UI**：悬浮收缩 Tab 栏（真实背景模糊 + 虹彩描边 + 自动对比色图标）、亚克力弹窗、果冻开关、凝胶按钮、ChasingDots 加载动画。
-- **吉祥物动画**：mascot 与阅读事件联动，让 App 有点人情味。
+- **吉祥物动画**：蓝发巫师少女 Roxy 五套姿态（待机/欢呼/奔跑/捧书/低落）按场景自动切换，配合呼吸、漂浮、弹跳、抖动等微动效，让 App 有点人情味。
 
 </details>
 

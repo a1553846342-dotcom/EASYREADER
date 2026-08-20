@@ -32,6 +32,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import com.example.library.MhttuImageDecryptor
 import com.example.library.ImageBytes
+import com.example.data.ReadingSession
 import com.example.source.js.JsImageProcessor
 import com.example.source.js.JsCookieJar
 import okhttp3.OkHttpClient
@@ -63,6 +64,7 @@ fun OnlineComicReaderScreen(
     resolveImage: (suspend (String) -> String?)? = null,
     resolveImageHeaders: (suspend (String) -> Map<String, String>)? = null,
     onRecordTime: (Long) -> Unit = {},
+    onSessionEnd: (ReadingSession) -> Unit = {},
     onBack: () -> Unit,
     onRetry: () -> Unit
 ) {
@@ -71,26 +73,13 @@ fun OnlineComicReaderScreen(
     var showBars by remember { mutableStateOf(true) }
     var currentPage by remember { mutableIntStateOf(0) }
 
-    // 在线阅读计时：每 30 秒上报一次阅读统计，离开时补报剩余时长
-    var readSeconds by remember { mutableLongStateOf(0L) }
-    var lastFlush by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            readSeconds += 1L
-            if (readSeconds - lastFlush >= 30L) {
-                onRecordTime(readSeconds - lastFlush)
-                lastFlush = readSeconds
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            if (readSeconds - lastFlush > 0) {
-                onRecordTime(readSeconds - lastFlush)
-            }
-        }
-    }
+    // 在线阅读计时：只在 App 前台 + 屏幕亮着时累计（修复后台/锁屏虚增时长 bug）
+    ReadingTimerEffect(
+        bookId = null,
+        bookTitle = title,
+        onFlush = { seconds -> onRecordTime(seconds) },
+        onSessionEnd = { session -> onSessionEnd(session) }
+    )
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

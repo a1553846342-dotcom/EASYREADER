@@ -63,6 +63,8 @@ fun PageTurnContainer(
     isBookmarked: Boolean = false,
     onToggleBookmark: (() -> Unit)? = null,
     pageKey: Any = Unit,
+    /** 菜单（顶/底栏）打开时不再响应点击翻页/切章，避免“想关菜单却切了章”。 */
+    menuVisible: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -80,6 +82,7 @@ fun PageTurnContainer(
     val latestOnClickLeft by rememberUpdatedState(onClickLeft)
     val latestOnClickRight by rememberUpdatedState(onClickRight)
     val latestOnToggleBookmark by rememberUpdatedState(onToggleBookmark)
+    val latestMenuVisible by rememberUpdatedState(menuVisible)
 
     // Reset offsets when pageKey changes (page turned)
     LaunchedEffect(pageKey) {
@@ -95,6 +98,11 @@ fun PageTurnContainer(
             .fillMaxSize()
             .clipToBounds()
             .pointerInput(pageTurnMode) {
+                // 滚动阅读模式：手势完全交给阅读器自身的滚动容器处理，
+                // 这里不再拦截点击/拖拽，避免“下滑误触菜单/误切章节”。
+                if (mode == PageTurnType.SCROLL) {
+                    return@pointerInput
+                }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     touchDownY = down.position.y
@@ -185,7 +193,7 @@ fun PageTurnContainer(
                                 }
                             }
                         }
-                    } else {
+                    } else if (!latestMenuVisible) {
                         val tapX = down.position.x
                         val leftZone = screenWidth * 0.35f
                         val rightZone = screenWidth * 0.65f

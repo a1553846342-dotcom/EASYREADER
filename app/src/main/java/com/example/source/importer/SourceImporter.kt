@@ -322,7 +322,8 @@ object SourceImporter {
                 htmlContent = htmlContent,
                 enabled = true,
                 isCustom = true,
-                insecureTls = obj.optBoolean("insecureTls", false)
+                insecureTls = obj.optBoolean("insecureTls", false),
+                type = obj.optString("type", null).ifBlank { null }
             )
 
             return SourceResult.Success(JsonBookSource(config))

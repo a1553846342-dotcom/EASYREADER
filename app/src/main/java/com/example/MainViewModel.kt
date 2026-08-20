@@ -117,6 +117,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+    val allReadingSessions: StateFlow<List<ReadingSession>> = repository.allReadingSessions.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _selectedBook = MutableStateFlow<Book?>(null)
     val selectedBook: StateFlow<Book?> = _selectedBook
@@ -332,6 +337,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .edit()
                 .remove(id.toString())
                 .apply()
+        }
+    }
+
+    /** 记录一次完整阅读会话（阅读器可见且前台期间），供日历时段/高峰时段使用。 */
+    fun addReadingSession(session: ReadingSession) {
+        if (session.durationSeconds <= 0) return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                repository.addReadingSession(session)
+            }.onFailure {
+                android.util.Log.e("MainViewModel", "Error saving reading session", it)
+            }
         }
     }
 

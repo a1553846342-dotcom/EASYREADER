@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.ui.LocalAppBackgroundActive
 import com.example.ui.theme.DarkCharcoal
 import com.example.ui.theme.MintPrimary
 
@@ -37,7 +38,9 @@ fun StarryNightBackground(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(
+                if (LocalAppBackgroundActive.current) Color.Transparent else bgColor
+            )
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (showLamp) {

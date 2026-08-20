@@ -1428,7 +1428,7 @@ fun LibraryWelcomeScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Image(
-            painter = painterResource(id = com.example.ui.mascot.MascotSpriteSheet.happyDrawable),
+            painter = painterResource(id = com.example.ui.mascot.MascotSpriteSheet.idleDrawable),
             contentDescription = "Roxy",
             modifier = Modifier.size(120.dp)
         )

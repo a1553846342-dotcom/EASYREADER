@@ -69,9 +69,33 @@ class JsonBookSource(
 
     override val id: String = config.id
     override val name: String = config.name
+
+    /**
+     * 是否漫画源：
+     * 1. 配置里显式声明 type=comic/novel 时以声明为准；
+     * 2. 否则看正文规则是否在提取“图片”（img/@src/data-src 等选择器）。
+     * 文本源即使配置了 htmlChapters/htmlContent（章节/正文规则），也不会被误判成漫画。
+     */
+    private val isComicLike: Boolean = when (config.type?.lowercase()) {
+        "comic", "漫画" -> true
+        "novel", "text", "小说", "文本" -> false
+        else -> {
+            val sel = config.htmlContent?.imageSelector?.lowercase() ?: ""
+            sel.contains("@src") ||
+                sel.contains("data-src") ||
+                sel.contains("data-original") ||
+                sel.contains("lazy") ||
+                sel.contains("img") ||
+                sel.contains("amp-img") ||
+                sel.contains("mip-img") ||
+                sel.contains("image") ||
+                sel.contains("pic")
+        }
+    }
+
     override val capabilities: SourceCapabilities = SourceCapabilities(
         supportImport = true,
-        supportComic = config.htmlChapters != null || config.htmlContent != null
+        supportComic = isComicLike
     )
 
     override suspend fun search(keyword: String): SourceResult<List<SearchBook>> {
@@ -227,7 +251,7 @@ class JsonBookSource(
                     author = selectValue(el, rule.authorSelector) ?: "未知作者",
                     cover = coverRaw?.let { resolveUrl(it) },
                     description = selectValue(el, rule.introSelector),
-                    format = "漫画"
+                    format = if (isComicLike) "漫画" else config.download.defaultFormat.ifBlank { "" }
                 )
             )
         }
@@ -250,7 +274,7 @@ class JsonBookSource(
                     author = resolveJsonTemplate(item, rule.authorSelector) ?: "未知作者",
                     cover = coverRaw?.let { resolveUrl(it) },
                     description = resolveJsonTemplate(item, rule.introSelector),
-                    format = "漫画"
+                    format = if (isComicLike) "漫画" else config.download.defaultFormat.ifBlank { "" }
                 )
             )
         }

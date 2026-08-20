@@ -14,13 +14,14 @@ import java.util.regex.Pattern
 class BookRepository(private val context: Context, private val bookDao: BookDao) {
 
     private val unsupportedBinaryExtensions = listOf(
-        ".pdf", ".kfx", ".djvu", ".fb2",
-        ".docx", ".doc", ".rtf", ".chm"
+        ".pdf", ".kfx", ".djvu",
+        ".doc", ".rtf", ".chm"
     )
 
     val allBooks: Flow<List<Book>> = bookDao.getAllBooks()
     val allCategories: Flow<List<CategoryEntity>> = bookDao.getAllCategories()
     val allReadingRecords: Flow<List<ReadingRecord>> = bookDao.getAllReadingRecordsFlow()
+    val allReadingSessions: Flow<List<ReadingSession>> = bookDao.getAllReadingSessionsFlow()
 
     private fun detectCharset(context: Context, uri: Uri): java.nio.charset.Charset {
         val buffer = ByteArray(8192)
@@ -103,6 +104,13 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
             // MOBI / AZW3 / AZW：支持解析正文章节并直接阅读
             if (MobiParser.isMobiFile(fileName)) {
                 return@withContext MobiParser.importMobi(context, uri, fileName, bookDao)
+            }
+            // FB2 / DOCX：XML 电子书与 Word 文档正文提取
+            if (Fb2Parser.isFb2File(fileName)) {
+                return@withContext Fb2Parser.importFb2(context, uri, fileName, bookDao)
+            }
+            if (DocxParser.isDocxFile(fileName)) {
+                return@withContext DocxParser.importDocx(context, uri, fileName, bookDao)
             }
             if (unsupportedBinaryExtensions.any { fileName.lowercase().endsWith(it) }) {
                 return@withContext importUnsupportedFormat(uri, fileName)
@@ -356,9 +364,18 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
 
     suspend fun deleteBook(book: Book) {
         bookDao.nullifyBookIdInReadingRecords(book.id)
+        bookDao.deleteReadingSessionsForBook(book.id)
         bookDao.deleteChaptersForBook(book.id)
         bookDao.deleteBook(book)
         deleteBookFiles(book)
+    }
+
+    suspend fun addReadingSession(session: ReadingSession) {
+        bookDao.insertReadingSession(session)
+    }
+
+    suspend fun getReadingSessionsForDate(dateStr: String): List<ReadingSession> {
+        return bookDao.getReadingSessionsForDate(dateStr)
     }
 
     /** 删除书籍时彻底清理磁盘文件（书本体、封面、下载任务与残留缓存），避免“删了但内存还在涨”。 */

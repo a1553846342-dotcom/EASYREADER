@@ -51,6 +51,16 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean("splash_pure_mode", false)
         set(value) = prefs.edit().putBoolean("splash_pure_mode", value).apply()
 
+    /** 软件背景：0=默认（主题色），1=自定义图片。 */
+    var appBackgroundMode: Int
+        get() = prefs.getInt("app_background_mode", 0)
+        set(value) = prefs.edit().putInt("app_background_mode", value).apply()
+
+    /** 自定义背景图片本地路径（file://...），横竖屏统一按 Crop 填充。 */
+    var customAppBackgroundUri: String?
+        get() = prefs.getString("custom_app_background_uri", null)
+        set(value) = prefs.edit().putString("custom_app_background_uri", value).apply()
+
     var screenOrientationLock: Int
         get() = prefs.getInt("screen_orientation_lock", 0) // 0: 跟随系统, 1: 锁定竖屏, 2: 锁定横屏
         set(value) = prefs.edit().putInt("screen_orientation_lock", value).apply()
