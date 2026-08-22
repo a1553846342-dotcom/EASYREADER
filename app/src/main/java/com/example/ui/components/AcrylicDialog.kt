@@ -12,7 +12,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -22,47 +25,69 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-/** 亚克力立牌面板：品牌色 tint + 颗粒噪点 + 虹彩描边 + 双层阴影。 */
+/** 亚克力立牌面板：品牌色 tint + 镜面光束 + 顶棱聚光 + 颗粒噪点 + 水晶棱镜描边 + 倒角高光 + 双层阴影。 */
 @Composable
 fun Modifier.acrylicPanel(
     shape: Shape = RoundedCornerShape(24.dp),
-    surfaceAlpha: Float = 0.40f
+    surfaceAlpha: Float = 0.50f
 ): Modifier {
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
-    val iridescent = rememberIridescentColors()
+    val prismColors = rememberCrystalPrismColors()
     val surface = MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha)
     return this
         .shadow(
             elevation = 32.dp,
             shape = shape,
-            ambientColor = primary.copy(alpha = 0.12f),
-            spotColor = primary.copy(alpha = 0.12f)
+            ambientColor = primary.copy(alpha = 0.14f),
+            spotColor = primary.copy(alpha = 0.18f)
         )
         .shadow(
             elevation = 8.dp,
             shape = shape,
-            ambientColor = Color.Black.copy(alpha = 0.20f),
-            spotColor = Color.Black.copy(alpha = 0.20f)
+            ambientColor = Color.Black.copy(alpha = 0.18f),
+            spotColor = Color.Black.copy(alpha = 0.22f)
         )
         .clip(shape)
         .background(surface)
-        .background(
-            Brush.linearGradient(
-                listOf(
-                    primary.copy(alpha = 0.06f),
-                    Color.Transparent,
-                    secondary.copy(alpha = 0.05f)
+        .drawBehind {
+            // 顶棱抛光聚光带
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.08f),
+                        Color.White.copy(alpha = 0.50f),
+                        Color.White.copy(alpha = 0.72f),
+                        Color.White.copy(alpha = 0.50f),
+                        Color.White.copy(alpha = 0.08f)
+                    )
+                ),
+                topLeft = androidx.compose.ui.geometry.Offset.Zero,
+                size = androidx.compose.ui.geometry.Size(size.width, 2.5.dp.toPx())
+            )
+            // 125° 对角镜面光束与底部微晕染
+            drawRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.20f),
+                        Color.White.copy(alpha = 0.05f),
+                        Color.Transparent,
+                        primary.copy(alpha = 0.035f),
+                        secondary.copy(alpha = 0.055f)
+                    ),
+                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(size.width, size.height)
                 )
             )
-        )
-        .filmGrain(alpha = 0.04f)
+        }
+        .filmGrain(alpha = 0.035f)
         .iridescentBorder(
             shape = shape,
-            colors = iridescent,
-            width = 2.dp,
-            alpha = 0.22f
+            colors = prismColors,
+            width = 1.5.dp,
+            alpha = 0.38f
         )
+        .crystalInnerBevel(shape = shape, width = 1.dp)
 }
 
 /** 统一亚克力弹窗：径向遮罩 + 玻璃面板 + 主题一致的按钮区。 */

@@ -260,6 +260,41 @@ fun Modifier.iridescentBorder(
     }
 }
 
+/**
+ * 物理厚度倒角高光（Inner Bevel Lighting）：
+ * 左上受光面珍珠白柔光，右下背光面暗调接触线，赋予玻璃卡片真实的毫米级切角晶体厚度感。
+ */
+fun Modifier.crystalInnerBevel(
+    shape: Shape,
+    width: Dp = 1.dp
+): Modifier = this.drawWithCache {
+    val outline = shape.createOutline(size, layoutDirection, this)
+    val lightBrush = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.35f),
+            Color.White.copy(alpha = 0.12f),
+            Color.Transparent,
+            Color.Black.copy(alpha = 0.08f)
+        ),
+        start = Offset(0f, 0f),
+        end = Offset(size.width, size.height)
+    )
+    onDrawBehind {
+        when (outline) {
+            is Outline.Rounded -> drawRoundRect(
+                brush = lightBrush,
+                cornerRadius = outline.roundRect.topLeftCornerRadius,
+                style = Stroke(width.toPx())
+            )
+            is Outline.Rectangle -> drawRect(
+                brush = lightBrush,
+                style = Stroke(width.toPx())
+            )
+            else -> Unit
+        }
+    }
+}
+
 /** 径向渐变背景遮罩：中心（弹窗位置）亮、四周暗，模拟聚光灯打在立牌上。 */
 fun Modifier.radialGlassScrim(): Modifier = this.drawBehind {
     drawRect(
@@ -288,3 +323,23 @@ fun rememberIridescentColors(): List<Color> {
         listOf(primary, warm, secondary, cool, primary)
     }
 }
+
+/**
+ * 顶级水晶棱镜多段色散（模拟施华洛世奇光学晶体 / VisionOS 玻璃边缘的分光色散）。
+ * 色散序列：主色 -> 晨曦金 -> 珍珠白高光 -> 翡翠水绿 -> 薰衣草紫 -> 主色
+ */
+@Composable
+fun rememberCrystalPrismColors(): List<Color> {
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    return remember(primary, secondary) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(primary.toArgb(), hsv)
+        val hue = hsv[0]
+        val warmGold = Color.hsv((hue + 32f) % 360f, 0.40f, 1f)
+        val pearlSheen = Color(0xFFEAF5F8)
+        val coolViolet = Color.hsv((hue - 32f + 360f) % 360f, 0.38f, 1f)
+        listOf(primary, warmGold, pearlSheen, secondary, coolViolet, primary)
+    }
+}
+
