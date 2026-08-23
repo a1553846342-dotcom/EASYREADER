@@ -1,21 +1,26 @@
-﻿package com.example.ui.components
+package com.example.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
@@ -24,8 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -36,17 +46,17 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.Book
 import com.example.data.ReadingRecord
-import com.example.ui.components.AcrylicDialog
+import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
 
 /**
- * Reusable Weekly Reading Duration Bar Chart Component (周一至周日阅读时长统计图)
- *
- * @param minutesPerDay Reading minutes for Monday to Sunday (7 integers, default 0s)
- * @param bookTitlesPerDay Titles of books read on corresponding days (7 strings, default empty)
- * @param todayIndex Index of current day of week (0 = Monday ... 6 = Sunday)
+ * 旗舰级实体数据雕刻周阅读统计图 (Weekly Reading Duration Narrative Chart)
+ * - 纯实体设计语言，彻底抛弃毛玻璃依赖；
+ * - 动态阶梯错落生长动画 (Staggered Column Growth)；
+ * - 峰值高光徽标 (Peak Highlight Tag) + 选中日精准联动；
+ * - 深度打磨空状态与极少量数据状态，呈现高质感数据故事。
  */
 @Composable
 fun WeeklyReadingChart(
@@ -67,25 +77,33 @@ fun WeeklyReadingChart(
 ) {
     val dayNames = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
     var selectedDayIndex by remember { mutableIntStateOf(todayIndex.coerceIn(0, 6)) }
-    
+
     val totalMinutes = remember(minutesPerDay) { minutesPerDay.sum() }
     val maxMinutes = remember(minutesPerDay) { (minutesPerDay.maxOrNull() ?: 1).coerceAtLeast(1) }
+    val peakIndex = remember(minutesPerDay) {
+        val maxVal = minutesPerDay.maxOrNull() ?: 0
+        if (maxVal > 0) minutesPerDay.indexOf(maxVal) else -1
+    }
+
     val chartPrimary = MaterialTheme.colorScheme.primary
     val chartSecondary = MaterialTheme.colorScheme.secondary
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Staggered entrance animation factors for 7 bars
+    // 错落生长的 7 根柱体动效
     val barAnimatables = remember { List(7) { Animatable(0f) } }
-    
+
     LaunchedEffect(minutesPerDay) {
-        // Defer chart bar growth animation until page switch transition completes (250-300ms)
-        delay(320L)
+        barAnimatables.forEach { it.snapTo(0f) }
+        delay(150L)
         barAnimatables.forEachIndexed { index, animatable ->
-            delay((index * 40).toLong())
+            delay(28L)
             animatable.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = 400,
-                    easing = FastOutSlowInEasing
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow
                 )
             )
         }
@@ -96,14 +114,14 @@ fun WeeklyReadingChart(
             .fillMaxWidth()
             .shadow(elevation = 3.dp, shape = RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = surfaceColor)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp)
         ) {
-            // Header Row: Title & Total Minutes
+            // 头部标题与本周总览
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -111,15 +129,15 @@ fun WeeklyReadingChart(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        shape = CircleShape,
-                        color = MintPrimary.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        color = chartPrimary.copy(alpha = 0.12f),
                         modifier = Modifier.size(36.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Filled.BarChart,
                                 contentDescription = null,
-                                tint = MintPrimary,
+                                tint = chartPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -127,163 +145,167 @@ fun WeeklyReadingChart(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "本周阅读趋势",
+                            text = "本周阅读分布",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = onSurfaceColor
                         )
                         Text(
-                            text = "周一 至 周日",
+                            text = if (totalMinutes > 0) "日均 ${(totalMinutes / 7)} 分钟" else "暂无记录，翻开一本好书吧",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = onSurfaceVariantColor
                         )
                     }
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (totalMinutes > 0) chartPrimary.copy(alpha = 0.12f) else onSurfaceVariantColor.copy(alpha = 0.10f)
                 ) {
-                    Text(
-                        text = "本周共 ${totalMinutes} 分钟",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MintPrimary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (totalMinutes >= 120) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = MintGold,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text(
+                            text = "共 ${totalMinutes} 分钟",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (totalMinutes > 0) chartPrimary else onSurfaceVariantColor
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Chart Bars Row
-            Row(
+            // 柱状图主区域（实体几何柱体 + 峰值皇冠标记 + 基准线）
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                    .height(130.dp)
             ) {
-                dayNames.forEachIndexed { index, dayName ->
-                    val mins = minutesPerDay.getOrElse(index) { 0 }
-                    val isToday = index == todayIndex
-                    val isSelected = index == selectedDayIndex
-                    
-                    val rawFraction = if (maxMinutes <= 0 || mins <= 0) 0f else (mins.toFloat() / maxMinutes.toFloat()).coerceIn(0.04f, 1f)
-                    val animatedFraction = rawFraction * barAnimatables[index].value
-
-                    val scaleState by animateFloatAsState(
-                        targetValue = if (isSelected) 1.08f else 1.0f,
-                        animationSpec = tween(durationMillis = 150),
-                        label = "barScale"
+                // 背景刻度参考线
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height - 24.dp.toPx()
+                    val lineY1 = h * 0.25f
+                    val lineY2 = h * 0.70f
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.04f),
+                        start = Offset(0f, lineY1),
+                        end = Offset(w, lineY1),
+                        strokeWidth = 1.dp.toPx()
                     )
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.04f),
+                        start = Offset(0f, lineY2),
+                        end = Offset(w, lineY2),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
 
-                    val barGradient = when {
-                        isToday || isSelected -> listOf(chartSecondary, chartPrimary)
-                        mins > 0 -> listOf(
-                            chartSecondary.copy(alpha = 0.65f),
-                            chartPrimary.copy(alpha = 0.45f)
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    dayNames.forEachIndexed { index, dayName ->
+                        val mins = minutesPerDay.getOrElse(index) { 0 }
+                        val isToday = index == todayIndex
+                        val isSelected = index == selectedDayIndex
+                        val isPeak = index == peakIndex && mins > 0
+
+                        val rawFraction = if (maxMinutes <= 0 || mins <= 0) 0.03f else (mins.toFloat() / maxMinutes.toFloat()).coerceIn(0.06f, 1f)
+                        val animatedFraction = rawFraction * barAnimatables[index].value
+
+                        val scaleState by animateFloatAsState(
+                            targetValue = if (isSelected) 1.08f else 1.0f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                            label = "barScale"
                         )
-                        else -> listOf(Color.LightGray.copy(alpha = 0.4f), Color.LightGray.copy(alpha = 0.2f))
-                    }
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                selectedDayIndex = index
-                            }
-                    ) {
-                        // 1. Top duration label box aligned at 20.dp height
-                        Box(
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(20.dp),
-                            contentAlignment = Alignment.BottomCenter
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    selectedDayIndex = index
+                                }
                         ) {
-                            Text(
-                                text = if (mins > 0) "${mins}分" else "-",
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isToday) MintPrimary else if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 2. Bar Container strictly 100.dp height
-                        Box(
-                            modifier = Modifier
-                                .width(22.dp)
-                                .height(100.dp),
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            // Baseline for 0-minute days
+                            // 柱体顶部数值/峰值徽标
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(3.dp)
+                                    .height(22.dp),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                if (isPeak) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MintGold,
+                                        shadowElevation = 2.dp
+                                    ) {
+                                        Text(
+                                            text = "峰值",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                } else if (mins > 0 && (isSelected || isToday)) {
+                                    Text(
+                                        text = "${mins}m",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) chartPrimary else onSurfaceVariantColor
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // 实体柱体
+                            Box(
+                                modifier = Modifier
+                                    .width(if (isSelected) 22.dp else 16.dp)
+                                    .height((90 * animatedFraction).dp.coerceAtLeast(6.dp))
+                                    .graphicsLayer {
+                                        scaleX = scaleState
+                                        scaleY = scaleState
+                                    }
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 4.dp, bottomEnd = 4.dp))
                                     .background(
-                                        color = Color.LightGray.copy(alpha = 0.4f),
-                                        shape = RoundedCornerShape(2.dp)
+                                        when {
+                                            isPeak -> Brush.verticalGradient(listOf(MintGold, chartPrimary))
+                                            isSelected -> Brush.verticalGradient(listOf(chartPrimary, chartSecondary))
+                                            isToday -> Brush.verticalGradient(listOf(chartPrimary.copy(alpha = 0.85f), chartSecondary.copy(alpha = 0.65f)))
+                                            mins > 0 -> Brush.verticalGradient(listOf(chartPrimary.copy(alpha = 0.45f), chartSecondary.copy(alpha = 0.30f)))
+                                            else -> Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.06f), Color.Black.copy(alpha = 0.04f)))
+                                        }
                                     )
                             )
 
-                            // Animated bar inside 100dp container
-                            if (animatedFraction > 0.01f) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .fillMaxHeight(animatedFraction.coerceAtLeast(0.04f))
-                                        .then(
-                                            if (isSelected) {
-                                                Modifier.shadow(
-                                                    elevation = 6.dp,
-                                                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp),
-                                                    ambientColor = chartPrimary.copy(alpha = 0.30f),
-                                                    spotColor = chartPrimary.copy(alpha = 0.30f)
-                                                )
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
-                                        .graphicsLayer {
-                                            scaleX = scaleState
-                                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
-                                        }
-                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                        .background(brush = Brush.verticalGradient(colors = barGradient))
-                                )
-                            }
-                        }
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 3. Day label tag at bottom
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = when {
-                                isToday -> MintPrimary
-                                isSelected -> MintSecondary.copy(alpha = 0.2f)
-                                else -> Color.Transparent
-                            }
-                        ) {
+                            // 底部星期标签
                             Text(
-                                text = dayName,
+                                text = if (isToday) "今天" else dayName,
                                 fontSize = 11.sp,
-                                fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = when {
-                                    isToday -> Color.White
-                                    isSelected -> MintSecondary
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) chartPrimary else if (isToday) onSurfaceColor else onSurfaceVariantColor
                             )
                         }
                     }
@@ -292,328 +314,78 @@ fun WeeklyReadingChart(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Detail Popover Card for Selected Day
-            val selMins = minutesPerDay.getOrElse(selectedDayIndex) { 0 }
-            val selRecords = dayRecords.getOrElse(selectedDayIndex) { emptyList() }
-            val selDayName = dayNames.getOrElse(selectedDayIndex) { "" }
+            // 选中单日明细看板 (Narrative Day Detail Card)
+            val selectedMins = minutesPerDay.getOrElse(selectedDayIndex) { 0 }
+            val selectedDayName = dayNames.getOrElse(selectedDayIndex) { "" }
+            val selectedRecords = dayRecords.getOrElse(selectedDayIndex) { emptyList() }
 
             Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Filled.MenuBook,
-                            contentDescription = null,
-                            tint = MintPrimary,
-                            modifier = Modifier.size(16.dp)
+                        Text(
+                            text = "${selectedDayName} · 阅读明细",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor
                         )
                         Text(
-                            text = "${selDayName}阅读记录：",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (selMins > 0 && selRecords.isNotEmpty()) {
-                                "共 ${selRecords.size} 本 · 详情见下方封面"
-                            } else if (selMins > 0) {
-                                "自选阅读"
-                            } else {
-                                "无阅读记录"
-                            },
+                            text = if (selectedMins > 0) "专注时长 $selectedMins 分钟" else "当日未阅读",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (selMins > 0) MintPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (selectedMins > 0) chartPrimary else onSurfaceVariantColor
                         )
                     }
 
-                    Text(
-                        text = if (selMins > 0) "共 ${selMins} 分钟" else "0 分钟",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            // 选中日封面轮播：周几阅读记录直接接入漫画封面
-            DayCoverCarousel(
-                records = dayRecords.getOrElse(selectedDayIndex) { emptyList() },
-                books = books,
-                recordCovers = recordCovers,
-                recordBooks = recordBooks,
-                onDeleteRecord = onDeleteRecord,
-                onOpenRecordDetail = onOpenRecordDetail,
-                onOpenBook = onOpenBook
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DayCoverCarousel(
-    records: List<ReadingRecord>,
-    books: List<Book>,
-    recordCovers: Map<Int, String>,
-    recordBooks: Map<Int, com.example.source.SearchBook>,
-    onDeleteRecord: (ReadingRecord) -> Unit,
-    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit,
-    onOpenBook: (Book) -> Unit
-) {
-    if (records.isEmpty()) return
-    val listState = rememberLazyListState()
-    // 5 秒无操作后自动平滑滚动；用户拖动时暂停
-    LaunchedEffect(records.size) {
-        if (records.size <= 1) return@LaunchedEffect
-        while (true) {
-            delay(5000)
-            if (listState.isScrollInProgress) continue
-            val next = (listState.firstVisibleItemIndex + 1) % records.size
-            listState.animateScrollToItem(next)
-        }
-    }
-    Spacer(modifier = Modifier.height(12.dp))
-    LazyRow(
-        state = listState,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        items(records, key = { it.id }) { record ->
-            DayCoverCard(
-                record = record,
-                books = books,
-                recordCovers = recordCovers,
-                recordBooks = recordBooks,
-                onDeleteRecord = onDeleteRecord,
-                onOpenRecordDetail = onOpenRecordDetail,
-                onOpenBook = onOpenBook
-            )
-        }
-    }
-}
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun DayCoverCard(
-    record: ReadingRecord,
-    books: List<Book>,
-    recordCovers: Map<Int, String>,
-    recordBooks: Map<Int, com.example.source.SearchBook>,
-    onDeleteRecord: (ReadingRecord) -> Unit,
-    onOpenRecordDetail: (com.example.source.SearchBook) -> Unit,
-    onOpenBook: (Book) -> Unit
-) {
-    val book = books.firstOrNull { it.id == record.bookId }
-    val recordBook = recordBooks[record.id]
-    var showMenu by remember { mutableStateOf(false) }
-    var showDetail by remember { mutableStateOf(false) }
-    val remoteCover = recordBook?.cover ?: recordCovers[record.id]
-    Column(
-        modifier = Modifier
-            .width(84.dp)
-            .combinedClickable(
-                onClick = {
-                    when {
-                        book != null -> onOpenBook(book)
-                        recordBook != null -> onOpenRecordDetail(recordBook)
-                        else -> showDetail = true
-                    }
-                },
-                onLongClick = { showMenu = true }
-            )
-    ) {
-        Box(
-            modifier = Modifier
-                .width(84.dp)
-                .height(112.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(MintSecondary.copy(alpha = 0.55f), MintPrimary.copy(alpha = 0.65f))
-                    )
-                )
-        ) {
-            val coverData = remember(book?.coverUri, book?.isCoverValid, remoteCover) {
-                if (book == null || book.coverUri.isNullOrEmpty()) {
-                    remoteCover
-                } else if (book.coverUri!!.startsWith("content://")) {
-                    android.net.Uri.parse(book.coverUri!!)
-                } else if (book.isCoverValid) {
-                    val p = if (book.coverUri!!.startsWith("file://")) {
-                        book.coverUri!!.substring(7)
-                    } else {
-                        book.coverUri!!
-                    }
-                    java.io.File(p)
-                } else {
-                    null
-                }
-            }
-            if (coverData != null) {
-                AsyncImage(
-                    model = coverData,
-                    contentDescription = record.bookTitle,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.MenuBook,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(3.dp),
-                shape = RoundedCornerShape(50),
-                color = Color.Black.copy(alpha = 0.38f)
-            ) {
-                Text(
-                    text = "${(record.durationSeconds / 60).coerceAtLeast(1)}分",
-                    fontSize = 9.sp,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = record.bookTitle,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
-
-    if (showMenu) {
-        AcrylicDialog(
-            onDismissRequest = { showMenu = false },
-            title = {
-                Text(
-                    text = record.bookTitle,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            text = {
-                Column {
-                    MenuActionRow(
-                        label = "前往阅读",
-                        enabled = book != null || recordBook != null,
-                        onClick = {
-                            showMenu = false
-                            if (book != null) onOpenBook(book)
-                            else if (recordBook != null) onOpenRecordDetail(recordBook)
+                    if (selectedRecords.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(selectedRecords) { record ->
+                                val matchedBook = books.firstOrNull { it.id == record.bookId }
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = surfaceColor,
+                                    shadowElevation = 1.dp,
+                                    modifier = Modifier.clickable {
+                                        matchedBook?.let { onOpenBook(it) }
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.MenuBook,
+                                            contentDescription = null,
+                                            tint = chartPrimary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = record.bookTitle,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    )
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                    )
-                    MenuActionRow(
-                        label = "阅读详情",
-                        onClick = {
-                            showMenu = false
-                            showDetail = true
-                        }
-                    )
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                    )
-                    MenuActionRow(
-                        label = "删除阅读历史",
-                        destructive = true,
-                        onClick = {
-                            showMenu = false
-                            onDeleteRecord(record)
-                        }
-                    )
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showMenu = false }) { Text("取消") }
-            }
-        )
-    }
-
-    if (showDetail) {
-        AcrylicDialog(
-            onDismissRequest = { showDetail = false },
-            title = {
-                Text(
-                    text = record.bookTitle,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            text = {
-                Column {
-                    Text("阅读日期：${record.dateStr}")
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("时长：${(record.durationSeconds / 60).coerceAtLeast(1)} 分钟")
-                    if (book == null && recordBook == null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "该书已不在书库中",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDetail = false }) { Text("关闭") }
             }
-        )
-    }
-}
-
-@Composable
-private fun MenuActionRow(
-    label: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    destructive: Boolean = false
-) {
-    val color = when {
-        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        destructive -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = color
-        )
+        }
     }
 }

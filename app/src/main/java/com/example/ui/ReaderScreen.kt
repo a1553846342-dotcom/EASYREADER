@@ -89,6 +89,7 @@ import com.example.ui.components.CustomSwitch
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
+import com.example.ui.components.TactileSlider
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.MintGold
@@ -1303,7 +1304,7 @@ fun ReaderScreen(
                                                     Text("上一章", fontWeight = FontWeight.Bold, color = barContentColor)
                                                 }
                 
-                                                Slider(
+                                                TactileSlider(
                                                     value = currentChapterIndex.toFloat(),
                                                     onValueChange = {
                                                         currentChapterIndex = it.toInt()
@@ -1311,7 +1312,8 @@ fun ReaderScreen(
                                                     },
                                                     valueRange = 0f..(chapters.size - 1).coerceAtLeast(1).toFloat(),
                                                     steps = (chapters.size - 2).coerceAtLeast(0),
-                                                    modifier = Modifier.weight(1f)
+                                                    valueFormatter = { "第 ${(it.toInt() + 1)} 章" },
+                                                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                                                 )
                 
                                                 TextButton(
@@ -1436,28 +1438,31 @@ fun ReaderScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text("字号: ${fontSize.toInt()} sp", fontWeight = FontWeight.Medium)
-                Slider(
+                TactileSlider(
                     value = fontSize,
                     onValueChange = { fontSize = it; prefs.fontSize = it },
-                    valueRange = 12f..36f
+                    valueRange = 12f..36f,
+                    valueFormatter = { "${it.toInt()} sp" }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text("行间距: ${lineHeight.toInt()} sp", fontWeight = FontWeight.Medium)
-                Slider(
+                TactileSlider(
                     value = lineHeight,
                     onValueChange = { lineHeight = it; prefs.lineHeight = it },
-                    valueRange = 20f..48f
+                    valueRange = 20f..48f,
+                    valueFormatter = { "${it.toInt()} sp" }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text("页边距: ${marginHorizontal} dp", fontWeight = FontWeight.Medium)
-                Slider(
+                TactileSlider(
                     value = marginHorizontal.toFloat(),
                     onValueChange = { marginHorizontal = it.toInt(); prefs.marginHorizontal = it.toInt() },
-                    valueRange = 8f..48f
+                    valueRange = 8f..48f,
+                    valueFormatter = { "${it.toInt()} dp" }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
