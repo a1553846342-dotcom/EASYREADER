@@ -16,7 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -93,52 +93,52 @@ fun GlassCard(
                 }
             )
             // Layer 2, 3, 4: 物理光路（对角高光 + 顶棱聚光 + 底部焦散晕染）
-            .drawBehind {
+            // 性能优化：drawWithCache 按尺寸缓存 Brush，滚动/动画期间不再每帧重建渐变对象，
+            // 视觉输出与原先 drawBehind 完全一致。
+            .drawWithCache {
                 val w = size.width
                 val h = size.height
 
                 // 2. 125° 晶体对角镜面光束
-                drawRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isPressed) 0.30f else 0.20f),
-                            Color.White.copy(alpha = 0.06f),
-                            Color.Transparent,
-                            Color.White.copy(alpha = 0.025f),
-                            Color.Transparent
-                        ),
-                        start = Offset(0f, 0f),
-                        end = Offset(w * 0.95f, h * 0.95f)
-                    )
+                val beamBrush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = if (isPressed) 0.30f else 0.20f),
+                        Color.White.copy(alpha = 0.06f),
+                        Color.Transparent,
+                        Color.White.copy(alpha = 0.025f),
+                        Color.Transparent
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(w * 0.95f, h * 0.95f)
                 )
 
                 // 3. 顶部倒角抛光边缘反光带（Top Chamfered Bevel Rim）
-                drawRect(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.06f),
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.68f),
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.06f)
-                        )
-                    ),
-                    topLeft = Offset.Zero,
-                    size = Size(w, 2.5.dp.toPx())
+                val bevelBrush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.06f),
+                        Color.White.copy(alpha = 0.45f),
+                        Color.White.copy(alpha = 0.68f),
+                        Color.White.copy(alpha = 0.45f),
+                        Color.White.copy(alpha = 0.06f)
+                    )
                 )
 
                 // 4. 底部次表面焦散色散光晕（Sub-surface Caustic Pool）
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            primary.copy(alpha = 0.035f),
-                            secondary.copy(alpha = 0.065f)
-                        ),
-                        startY = h * 0.55f,
-                        endY = h
-                    )
+                val causticBrush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        primary.copy(alpha = 0.035f),
+                        secondary.copy(alpha = 0.065f)
+                    ),
+                    startY = h * 0.55f,
+                    endY = h
                 )
+
+                onDrawBehind {
+                    drawRect(brush = beamBrush)
+                    drawRect(brush = bevelBrush, topLeft = Offset.Zero, size = Size(w, 2.5.dp.toPx()))
+                    drawRect(brush = causticBrush)
+                }
             }
             // Layer 5: 微结构噪点纹理（Film Grain）
             .filmGrain(alpha = 0.032f)
