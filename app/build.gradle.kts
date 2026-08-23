@@ -35,8 +35,8 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 190
-    versionName = "0.99.18"
+    versionCode = 191
+    versionName = "0.99.19"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -165,7 +165,4 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
 }
 
-tasks.withType<JavaCompile>().configureEach {
-  enabled = false
-}
 

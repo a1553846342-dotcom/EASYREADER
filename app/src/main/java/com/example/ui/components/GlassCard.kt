@@ -1,8 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,7 +23,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 
 /**
@@ -62,24 +58,11 @@ fun GlassCard(
     val prismColors = rememberCrystalPrismColors()
     val backdrop = LocalGlassBackdrop.current
 
-    // 可选交互：凝胶微缩放与按压触感反馈
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by if (onClick != null) interactionSource.collectIsPressedAsState() else remember { mutableStateOf(false) }
-    val gelScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.982f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "glassCardGel"
-    )
 
     Column(
         modifier = modifier
-            .graphicsLayer {
-                scaleX = gelScale
-                scaleY = gelScale
-            }
             // Layer 7A: 宽域环境扩散彩色柔光（Atmospheric Bloom）
             .shadow(
                 elevation = 12.dp,
