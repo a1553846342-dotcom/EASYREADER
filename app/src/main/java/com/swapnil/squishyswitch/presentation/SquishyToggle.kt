@@ -59,7 +59,7 @@ fun SquishyToggleSwitch(
 
     val transition = updateTransition(targetState = isToggled, label = "Switch Transition")
     val trackColor by transition.animateColor(
-        transitionSpec = { tween(durationMillis = 1200) },
+        transitionSpec = { tween(durationMillis = 250) },
         label = "Track Color"
     ) { checked -> if (checked) color else Color.LightGray }
 
@@ -75,37 +75,33 @@ fun SquishyToggleSwitch(
     fun animateToggle(targetState: Boolean) {
         val targetValue = if (targetState) 1f else 0f
         scope.launch {
-            // Step 1: Slight Stretch before movement
+            // Step 1+2 并行：拉伸 + 移动（压缩总时长至 ~400ms）
             val stretchXJob = launch {
-                squishX.animateTo(1.20f, animationSpec = tween(300, easing = stretchEasing))
+                squishX.animateTo(1.15f, animationSpec = tween(180, easing = stretchEasing))
             }
             val compressYJob = launch {
-                squishY.animateTo(0.9f, animationSpec = tween(300, easing = stretchEasing))
+                squishY.animateTo(0.92f, animationSpec = tween(180, easing = stretchEasing))
             }
-            // joinAll(stretchXJob, compressYJob)
-
-            // Step 2: Move while keeping squish
             val moveJob = launch {
                 thumbPosition.animateTo(
                     targetValue,
-                    animationSpec = tween(350, easing = compressEasing)
+                    animationSpec = tween(250, easing = compressEasing)
                 )
             }
+            joinAll(stretchXJob, compressYJob, moveJob)
 
-            joinAll(stretchXJob, compressYJob,moveJob)
-
-            // Step 3: Gentle Squash after reaching the other side
+            // Step 3: Squash on arrival
             val squashXJob = launch {
-                squishX.animateTo(0.95f, animationSpec = tween(300, easing = compressEasing))
+                squishX.animateTo(0.95f, animationSpec = tween(150, easing = compressEasing))
             }
             val expandYJob = launch {
-                squishY.animateTo(1.05f, animationSpec = tween(300, easing = compressEasing))
+                squishY.animateTo(1.05f, animationSpec = tween(150, easing = compressEasing))
             }
             joinAll(squashXJob, expandYJob)
 
-            // Step 4: Restore to normal
-            launch { squishX.animateTo(1f, animationSpec = tween(350)) }
-            launch { squishY.animateTo(1f, animationSpec = tween(350)) }
+            // Step 4: Restore
+            launch { squishX.animateTo(1f, animationSpec = tween(200)) }
+            launch { squishY.animateTo(1f, animationSpec = tween(200)) }
         }
     }
 
