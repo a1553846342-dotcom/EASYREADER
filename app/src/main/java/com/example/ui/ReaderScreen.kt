@@ -1237,35 +1237,54 @@ fun ReaderScreen(
                                     enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
                                     exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
                                 ) {
-                                    TopAppBar(
-                                        title = {
-                                            Text(
-                                                currentChapter?.title ?: bookTitle,
-                                                maxLines = 1,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 18.sp,
-                                                color = barContentColor
-                                            )
-                                        },
-                                        navigationIcon = {
-                                            AppIconButton(onClick = onBack) {
-                                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = barContentColor)
+                                    // ── 定制阅读器顶栏：圆角浮层 + 章节进度 + 主题自适应色 ──
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(bgColor.copy(alpha = 0.97f))
+                                            .drawBehind {
+                                                drawLine(
+                                                    color = barContentColor.copy(alpha = 0.08f),
+                                                    start = Offset(0f, size.height - 0.5f),
+                                                    end = Offset(size.width, size.height - 0.5f),
+                                                    strokeWidth = 0.8f
+                                                )
                                             }
-                                        },
-                                        actions = {
+                                            .statusBarsPadding()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            AppIconButton(onClick = onBack) {
+                                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回", tint = barContentColor, modifier = Modifier.size(22.dp))
+                                            }
+                                            Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp)) {
+                                                Text(
+                                                    currentChapter?.title ?: bookTitle,
+                                                    maxLines = 1,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 16.sp,
+                                                    color = barContentColor,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                                Spacer(modifier = Modifier.height(1.dp))
+                                                Text(
+                                                    text = "${currentChapterIndex + 1}/${chapters.size} 章",
+                                                    fontSize = 11.sp,
+                                                    color = barContentColor.copy(alpha = 0.55f)
+                                                )
+                                            }
                                             val currentBookmarked = bookmarks.any {
                                                 (it.bookId == (book?.id ?: 0) || it.bookId == 0) &&
                                                     it.chapterIndex == currentChapterIndex
                                             }
                                             AppIconButton(onClick = { toggleBookmark() }) {
                                                 Icon(
-                                                    imageVector = if (currentBookmarked) {
-                                                        Icons.Filled.Bookmark
-                                                    } else {
-                                                        Icons.Filled.BookmarkBorder
-                                                    },
-                                                    contentDescription = "添加/取消书签",
-                                                    tint = if (currentBookmarked) MintGold else barContentColor
+                                                    imageVector = if (currentBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                                    contentDescription = "书签",
+                                                    tint = if (currentBookmarked) MintGold else barContentColor,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
                                             AppIconButton(onClick = {
@@ -1273,32 +1292,22 @@ fun ReaderScreen(
                                                 if (!isTtsPlaying) {
                                                     currentChapter?.let { ch ->
                                                         ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
-                                                        Toast.makeText(context, "已开启语音听书：${ch.title}", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "已开启语音听书", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                             }) {
                                                 Icon(
                                                     imageVector = if (isTtsPlaying) Icons.AutoMirrored.Filled.VolumeUp else Icons.Filled.Headphones,
-                                                    contentDescription = "听书模式",
-                                                    tint = if (isTtsPlaying) MintGold else barContentColor
+                                                    contentDescription = "听书",
+                                                    tint = if (isTtsPlaying) MintGold else barContentColor,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
-                                            AppIconButton(onClick = { showSearchDialog = true }) {
-                                                Icon(Icons.Filled.Search, contentDescription = "搜索", tint = barContentColor)
-                                            }
-                                            AppIconButton(onClick = { showTocSheet = true }) {
-                                                Icon(Icons.Filled.Menu, contentDescription = "目录", tint = barContentColor)
-                                            }
-                                            AppIconButton(onClick = { showAnnotationsSheet = true }) {
-                                                Icon(Icons.Filled.Bookmark, contentDescription = "书签", tint = barContentColor)
-                                            }
                                             AppIconButton(onClick = { showSettingsSheet = true }) {
-                                                Icon(Icons.Filled.Settings, contentDescription = "排版", tint = barContentColor)
+                                                Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
-                                        },
-                                        colors = TopAppBarDefaults.topAppBarColors(containerColor = bgColor),
-                                        modifier = Modifier.graphicsLayer { shadowElevation = 4f }
-                                    )
+                                        }
+                                    }
                                 }
             }
             Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
