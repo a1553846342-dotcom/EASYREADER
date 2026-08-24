@@ -459,13 +459,18 @@ class MainActivity : ComponentActivity() {
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.MoveBook)
                                                 },
                                             )
-                                            2 -> StatisticsScreen(
-                                                books = books,
-                                                totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
-                                                readingRecords = readingRecords,
-                                                readingSessions = readingSessions,
-                                                dailyGoalMinutes = viewModel.prefs.dailyGoalMinutes,
-                                                onGoalChange = { viewModel.prefs.dailyGoalMinutes = it },
+                                            2 -> {
+                                                var dailyGoalState by remember { mutableIntStateOf(viewModel.prefs.dailyGoalMinutes) }
+                                                StatisticsScreen(
+                                                    books = books,
+                                                    totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
+                                                    readingRecords = readingRecords,
+                                                    readingSessions = readingSessions,
+                                                    dailyGoalMinutes = dailyGoalState,
+                                                    onGoalChange = {
+                                                        viewModel.prefs.dailyGoalMinutes = it
+                                                        dailyGoalState = it  // 触发重组刷新目标环
+                                                    },
                                                 onGoToShelf = { selectedTab = 1 },
                                                 onDeleteRecord = { viewModel.deleteReadingRecord(it.id) },
                                                 recordCovers = libraryViewModel.recordCovers.collectAsState().value,
@@ -483,8 +488,9 @@ class MainActivity : ComponentActivity() {
                                                         navController.navigate("reader")
                                                     }
                                                 }
-                                            )
-                                                3 -> SettingsTabScreen(
+                                                )
+                                            }
+                                            3 -> SettingsTabScreen(
                                                     prefs = viewModel.prefs,
                                                     backupManager = viewModel.backupManager,
                                                     categories = categories,
