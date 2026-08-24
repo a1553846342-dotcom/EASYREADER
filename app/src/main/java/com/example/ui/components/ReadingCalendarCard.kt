@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import com.example.ui.components.AppIconButton
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -85,7 +86,7 @@ fun ReadingCalendarCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = {
+                AppIconButton(onClick = {
                     if (showYear) viewYear-- else {
                         if (viewMonth == Calendar.JANUARY) { viewMonth = Calendar.DECEMBER; viewYear-- } else viewMonth--
                     }
@@ -99,7 +100,7 @@ fun ReadingCalendarCard(
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center
                 )
-                IconButton(onClick = {
+                AppIconButton(onClick = {
                     if (showYear) viewYear++ else {
                         if (viewMonth == Calendar.DECEMBER) { viewMonth = Calendar.JANUARY; viewYear++ } else viewMonth++
                     }

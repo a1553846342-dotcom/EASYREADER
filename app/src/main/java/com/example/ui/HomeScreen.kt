@@ -345,7 +345,7 @@ fun HomeScreen(
                                 .height(56.dp)
                                 .padding(end = 8.dp),
                             trailingIcon = {
-                                IconButton(onClick = {
+                                AppIconButton(onClick = {
                                     searchQuery = ""
                                     isSearchExpanded = false
                                 }) {

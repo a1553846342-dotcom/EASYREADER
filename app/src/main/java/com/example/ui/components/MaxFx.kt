@@ -1,9 +1,9 @@
 /*
- * MAX 画质专属特效：
- *  - Modifier.glassSheen()：玻璃卡表面周期性掠过的高光带（旋转渐变）
+ * MAX 画质专属特效集：
+ *  - Modifier.glassSheen()：卡面周期性掠过的高光带
+ *  - Modifier.maxCardAura(primary, secondary)：动态虹彩边框 + 外圈呼吸辉光
  *
- * 说明：此前的重力粒子系统已按用户反馈移除，开关/按钮的"液体感"
- * 由 LiquidBlob.drawLiquidBlob 液桥 + 弹性挤压承担。
+ * 仅在 RenderQuality.MAX 时生效，其余档位零开销。
  */
 package com.example.ui.components
 
@@ -21,12 +21,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
- * MAX 档专属：每 ~6.5s 一道柔和光带斜向掠过卡面。
- * 必须挂在卡片 `.clip(shape)` 之后（自动被卡片圆角裁剪）。
- * 流畅/均衡/高档位为空 Modifier（零开销）。
+ * MAX 档专属：每 ~6s 一道柔和光带斜向掠过卡面。
+ * 必须挂在卡片 `.clip(shape)` 之后（自动被圆角裁剪）。
  */
 @Composable
 fun Modifier.glassSheen(): Modifier {
@@ -35,7 +39,7 @@ fun Modifier.glassSheen(): Modifier {
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(6500, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Restart),
         label = "glassSheenPhase"
     )
     return this.drawBehind {
@@ -47,8 +51,8 @@ fun Modifier.glassSheen(): Modifier {
                 brush = Brush.horizontalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.White.copy(alpha = 0.085f),
-                        Color.White.copy(alpha = 0.13f),
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.22f),
                         Color.Transparent
                     ),
                     startX = x,
@@ -60,3 +64,70 @@ fun Modifier.glassSheen(): Modifier {
         }
     }
 }
+
+/**
+ * MAX 档专属：卡片外圈的虹彩呼吸辉光。
+ *
+ * 视觉效果：
+ *  · 3 层递减 alpha 的彩色描边（外→内渐隐），颜色沿 primary↔secondary 缓慢摆动；
+ *  · 呼吸：alpha 以 sin 波动 ±30%，周期 ~3s；
+ *  · 色相偏移：hue 随时间缓慢旋转，产生彩虹边缘感。
+ *
+ * 必须挂在 `.clip(shape)` **之前**（光晕要溢出卡片边界）。
+ */
+@Composable
+fun Modifier.maxCardAura(
+    primary: Color,
+    secondary: Color,
+    cornerRadiusDp: Float = 24f
+): Modifier {
+    if (LocalRenderQuality.current != RenderQuality.MAX) return this
+    val transition = rememberInfiniteTransition(label = "cardAura")
+    val breathe by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "auraBreathe"
+    )
+    val hueShift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing), RepeatMode.Restart),
+        label = "auraHue"
+    )
+
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val radiusPx = with(density) { cornerRadiusDp.dp.toPx() }
+
+    return this.drawBehind {
+        val breathAlpha = 0.35f + 0.25f * sin(breathe * PI.toFloat()).let { if (it < 0) -it else it }
+        // 色相插值：primary → secondary → primary 循环
+        val shift = hueShift
+        val c1 = lerpColor(primary, secondary, shift)
+        val c2 = lerpColor(secondary, primary, shift)
+
+        val maxGlow = 18.dp.toPx()
+        for (i in 3 downTo 1) {
+            val glowAlpha = breathAlpha / i
+            val expand = maxGlow * i / 3f
+            drawRoundRect(
+                brush = Brush.sweepGradient(
+                    colors = listOf(c1.copy(alpha = glowAlpha), c2.copy(alpha = glowAlpha), c1.copy(alpha = glowAlpha)),
+                    center = center
+                ),
+                topLeft = Offset(-expand, -expand),
+                size = Size(size.width + expand * 2, size.height + expand * 2),
+                cornerRadius = CornerRadius(radiusPx + expand),
+                style = Stroke(width = maxGlow / i)
+            )
+        }
+    }
+}
+
+private fun lerpColor(a: Color, b: Color, t: Float): Color =
+    Color(
+        red = a.red + (b.red - a.red) * t,
+        green = a.green + (b.green - a.green) * t,
+        blue = a.blue + (b.blue - a.blue) * t,
+        alpha = a.alpha
+    )

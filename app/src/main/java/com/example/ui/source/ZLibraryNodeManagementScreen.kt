@@ -35,9 +35,13 @@ import com.example.source.zlibrary.ZLibraryWebViewHelper
 import com.example.source.zlibrary.network.ZLibraryHttpClient
 import com.example.source.zlibrary.parser.ZLibraryParserManager
 import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.DialogLiquidGlass
+import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -195,7 +199,7 @@ fun ZLibraryNodeManagementScreen(
                 TopAppBar(
                     title = { Text("节点管理", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        AppIconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
                     },
@@ -483,7 +487,7 @@ private fun NodeCard(
                 )
                 if (canDelete) {
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDelete) {
+                    AppIconButton(onClick = onDelete) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "删除节点",

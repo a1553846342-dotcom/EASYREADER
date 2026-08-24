@@ -37,13 +37,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AcrylicDialog
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.GradientActionButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.JellySwitch
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppActionButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonSize
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.SourceAvatar
+import com.example.ui.components.AppIconButton
 import com.example.library.LibraryLoginDialog
 import com.example.library.ZLibraryNodeConfig
 import com.example.source.BookSource
@@ -158,7 +166,7 @@ fun SourceManagementScreen(
                 TopAppBar(
                     title = { Text("书源管理", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        AppIconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
                     },
@@ -690,7 +698,7 @@ fun SourceItemCard(
 
                 if (isCustom) {
                     Spacer(modifier = Modifier.width(4.dp))
-                    IconButton(onClick = onDelete) {
+                    AppIconButton(onClick = onDelete) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "删除书源",

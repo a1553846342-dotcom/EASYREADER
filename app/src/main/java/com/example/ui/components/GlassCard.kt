@@ -169,6 +169,14 @@ fun GlassCard(
                         )
                 }
             )
+            // MAX 档：虹彩呼吸辉光（画在 clip 之前，光晕溢出边界）
+            .then(
+                if (quality == RenderQuality.MAX) {
+                    Modifier.maxCardAura(primary = primary, secondary = secondary)
+                } else {
+                    Modifier
+                }
+            )
             .clip(shape)
             // Layer 1: 真实背景采样模糊（高/极致）｜半透明基底（流畅/均衡，不做实时模糊）
             .then(

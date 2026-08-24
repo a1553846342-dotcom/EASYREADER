@@ -86,7 +86,7 @@ fun ComicChaptersScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    AppIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",
@@ -605,7 +605,7 @@ private fun ChapterItem(
                     }
                 }
                 !chapter.external -> {
-                    IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
+                    AppIconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Filled.Download,
                             contentDescription = "下载本章",

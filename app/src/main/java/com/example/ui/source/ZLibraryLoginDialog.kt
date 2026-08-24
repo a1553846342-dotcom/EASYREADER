@@ -36,13 +36,21 @@ import com.example.source.SourceResult
 import com.example.library.ZLibraryNodeConfig
 import dev.chrisbanes.haze.HazeState
 import com.example.ui.components.liquidGlass
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.filmGrain
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.iridescentBorder
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.rememberIridescentColors
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.rememberThemedGlassBackdrop
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.DialogLiquidGlass
+import com.example.ui.components.AppIconButton
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,7 +165,7 @@ fun ZLibraryLoginDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.weight(1f))
-                        IconButton(onClick = onDismiss) {
+                        AppIconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

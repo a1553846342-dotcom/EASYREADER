@@ -40,7 +40,9 @@ import okhttp3.Protocol
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import com.example.ui.components.ChasingDots
+import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -301,26 +303,26 @@ fun OnlineComicReaderScreen(
                             )
                         },
                         navigationIcon = {
-                            IconButton(onClick = onBack) {
+                            AppIconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Color.White)
                             }
                         },
                         actions = {
-                            IconButton(onClick = { readingMode = ComicReadingMode2.HORIZONTAL }) {
+                            AppIconButton(onClick = { readingMode = ComicReadingMode2.HORIZONTAL }) {
                                 Icon(
                                     Icons.Filled.ViewWeek,
                                     contentDescription = "横向",
                                     tint = if (readingMode == ComicReadingMode2.HORIZONTAL) MintPrimary else Color.White
                                 )
                             }
-                            IconButton(onClick = { readingMode = ComicReadingMode2.VERTICAL }) {
+                            AppIconButton(onClick = { readingMode = ComicReadingMode2.VERTICAL }) {
                                 Icon(
                                     Icons.Filled.ViewDay,
                                     contentDescription = "纵向",
                                     tint = if (readingMode == ComicReadingMode2.VERTICAL) MintPrimary else Color.White
                                 )
                             }
-                            IconButton(onClick = { isRightToLeft = !isRightToLeft }) {
+                            AppIconButton(onClick = { isRightToLeft = !isRightToLeft }) {
                                 Icon(
                                     Icons.Filled.MenuBook,
                                     contentDescription = "阅读方向",

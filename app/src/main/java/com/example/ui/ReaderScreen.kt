@@ -1640,7 +1640,7 @@ fun ReaderScreen(
                                     Text(bm.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text(bm.snippet, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 }
-                                IconButton(onClick = { onDeleteBookmark(bm.id) }) {
+                                AppIconButton(onClick = { onDeleteBookmark(bm.id) }) {
                                     Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
