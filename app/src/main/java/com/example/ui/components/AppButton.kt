@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.trishiraj.shadowglow.shadowGlow
 import dev.liquidglass.compose.GlassHighlight
 import dev.liquidglass.compose.GlassRefraction
 import dev.liquidglass.compose.GlassShape
@@ -174,6 +175,25 @@ fun AppActionButton(
                     shape = shape,
                     ambientColor = colors.primary.copy(alpha = 0.35f),
                     spotColor = colors.primary.copy(alpha = 0.35f)
+                )
+                // D1 极致档：ShadowGlow 辉光（呼吸+光尾），其余档位零开销
+                .then(
+                    if (LocalRenderQuality.current == RenderQuality.MAX) {
+                        Modifier.shadowGlow(
+                            color = colors.primary.copy(alpha = 0.55f),
+                            borderRadius = 50.dp,
+                            blurRadius = 22.dp,
+                            offsetY = 6.dp,
+                            spread = 2.dp,
+                            enableBreathingEffect = true,
+                            breathingEffectIntensity = 5.dp,
+                            enableGlowTrail = true,
+                            glowTrailWidth = 6.dp,
+                            glowTrailAlpha = 0.7f
+                        )
+                    } else {
+                        Modifier
+                    }
                 )
                 .then(
                     if (glass != null) {

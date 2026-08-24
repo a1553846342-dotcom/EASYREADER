@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
+import com.example.ui.pageturn.PageCurlReaderContainer
 import com.example.ui.pageturn.PageTurnContainer
 import com.example.ui.pageturn.PageTurnType
 import com.example.ui.mascot.MascotSpriteSheet
@@ -761,11 +762,9 @@ fun ReaderScreen(
                                         }
                                     }
                             ) {
-                                PageTurnContainer(
-                                    pageTurnMode = pageTurnMode,
-                                    pageKey = "$currentChapterIndex-$activeSubPageIndex",
-                                    menuVisible = showBars,
-                                    currentContent = {
+                                // C1 pagecurl 引擎插槽化：三个页面槽提取为局部 Composable，
+                                // SIMULATE 档走 pagecurl 卷页引擎，其余档位保持原容器
+                                val currentSlot: @Composable () -> Unit = {
                                         if (isScrollMode) {
                                             Column(
                                                 modifier = Modifier
@@ -898,8 +897,9 @@ fun ReaderScreen(
                                                 showBars = showBars
                                             )
                                         }
-                                    },
-                                    nextContent = {
+                                    }
+
+                                    val nextSlot: @Composable () -> Unit = {
                                         if (!isScrollMode) {
                                             if (activeSubPageIndex < pagesList.size - 1) {
                                                 RenderSinglePage(
@@ -942,8 +942,9 @@ fun ReaderScreen(
                                                 )
                                             }
                                         }
-                                    },
-                                    prevContent = {
+                                    }
+
+                                    val prevSlot: @Composable () -> Unit = {
                                         if (!isScrollMode) {
                                             if (activeSubPageIndex > 0) {
                                                 RenderSinglePage(
@@ -987,15 +988,36 @@ fun ReaderScreen(
                                                 )
                                             }
                                         }
-                                    },
-                                    onNextPage = handleNextPage,
-                                    onPrevPage = handlePrevPage,
-                                    onClickCenter = { showBars = !showBars },
-                                    onClickLeft = handlePrevPage,
-                                    onClickRight = handleNextPage,
-                                    isBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex },
-                                    onToggleBookmark = toggleBookmark
-                                )
+                                    }
+
+                                    if (!isScrollMode && pageTurnMode == PageTurnType.SIMULATE.id) {
+                                        // C1 pagecurl 引擎（SIMULATE 专用）：三页窗口 + 中央点击唤出菜单
+                                        PageCurlReaderContainer(
+                                            currentContent = currentSlot,
+                                            nextContent = nextSlot,
+                                            prevContent = prevSlot,
+                                            onNextPage = handleNextPage,
+                                            onPrevPage = handlePrevPage,
+                                            onClickCenter = { showBars = !showBars },
+                                            menuVisible = showBars
+                                        )
+                                    } else {
+                                        PageTurnContainer(
+                                            pageTurnMode = pageTurnMode,
+                                            pageKey = "$currentChapterIndex-$activeSubPageIndex",
+                                            menuVisible = showBars,
+                                            currentContent = currentSlot,
+                                            nextContent = nextSlot,
+                                            prevContent = prevSlot,
+                                            onNextPage = handleNextPage,
+                                            onPrevPage = handlePrevPage,
+                                            onClickCenter = { showBars = !showBars },
+                                            onClickLeft = handlePrevPage,
+                                            onClickRight = handleNextPage,
+                                            isBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex },
+                                            onToggleBookmark = toggleBookmark
+                                        )
+                                    }
 
                                 // 滚动模式：章首/章尾继续拖拽时的切章提示
                                 // （方向修正：章尾手指上滑→下一章；章首手指下拉→上一章）

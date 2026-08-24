@@ -49,10 +49,12 @@ import com.example.ui.components.AppLiquidSwitch
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.GlassCard
-import com.example.ui.components.InkSlider
 import com.example.ui.components.LocalRenderQuality
 import com.example.ui.components.RenderQuality
 import com.example.ui.components.SegmentedPillSelector
+import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
+import com.ramotion.fluidslider.FluidSlider
+import com.ramotion.fluidslider.FluidSliderSize
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
 import com.example.ui.components.JunoSlider
@@ -302,7 +304,8 @@ fun SettingsTabScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("纯净模式", fontWeight = FontWeight.SemiBold)
-                                AppLiquidSwitch(
+                                SquishyToggleSwitch(
+                                    color = MintPrimary,
                                     checked = splashPureMode,
                                     onCheckedChange = {
                                         splashPureMode = it
@@ -404,15 +407,22 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
-                                    InkSlider(
-                                        value = appBgDim / 50f,
-                                        onValueChange = {
+                                    FluidSlider(
+                                        position = appBgDim / 50f,
+                                        onPositionChange = {
                                             appBgDim = (it * 50).toInt().coerceIn(0, 50)
                                             prefs.appBackgroundDim = appBgDim
                                             if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
                                                 AppBackgroundController.update(1, appBgUri, appBgDim)
                                             }
-                                        }
+                                        },
+                                        bubbleText = "$appBgDim%",
+                                        startText = "0",
+                                        endText = "50",
+                                        colorBar = MintPrimary,
+                                        colorBubble = Color.White,
+                                        colorBubbleText = MintPrimary,
+                                        colorBarText = glassTitleColor()
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                 }
@@ -584,7 +594,8 @@ fun SettingsTabScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("带你登大郎~~~", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                     }
-                                    AppLiquidSwitch(
+                                    SquishyToggleSwitch(
+                                        color = MintPrimary,
                                         checked = showAdultSources,
                                         onCheckedChange = {
                                             showAdultSources = it
@@ -788,7 +799,8 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("夜间模式", fontWeight = FontWeight.SemiBold)
                                 }
-                                AppLiquidSwitch(
+                                SquishyToggleSwitch(
+                                    color = MintPrimary,
                                     checked = autoNightMode,
                                     onCheckedChange = {
                                         autoNightMode = it
@@ -811,7 +823,8 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("护眼滤镜", fontWeight = FontWeight.SemiBold)
                                 }
-                                AppLiquidSwitch(
+                                SquishyToggleSwitch(
+                                    color = MintPrimary,
                                     checked = blueLightFilter,
                                     onCheckedChange = {
                                         blueLightFilter = it
@@ -836,12 +849,20 @@ fun SettingsTabScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
-                                InkSlider(
-                                    value = blueLightAlpha,
-                                    onValueChange = {
+                                FluidSlider(
+                                    position = blueLightAlpha,
+                                    onPositionChange = {
                                         blueLightAlpha = it
                                         onBlueLightAlphaChange(it)
-                                    }
+                                    },
+                                    bubbleText = "${(blueLightAlpha * 100).toInt()}%",
+                                    startText = "0",
+                                    endText = "100",
+                                    colorBar = MintPrimary,
+                                    colorBubble = Color.White,
+                                    colorBubbleText = MintPrimary,
+                                    colorBarText = glassTitleColor(),
+                                    barSize = FluidSliderSize.SMALL
                                 )
                             }
                         }
