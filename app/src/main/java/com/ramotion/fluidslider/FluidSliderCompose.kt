@@ -115,7 +115,7 @@ fun FluidSlider(
     val topCD = barH * TOP_CIRCLE_DIAMETER          // 气泡直径 = barH
     val botCD = barH * BOTTOM_CIRCLE_DIAMETER       // 底池直径 = barH×25（不可见）
     val touchD = barH * TOUCH_CIRCLE_DIAMETER
-    val labelD = barH - LABEL_CIRCLE_DIAMETER * dF  // 数值圆直径
+    val labelD = barH - with(density) { 6.dp.toPx() }  // 数值圆直径（薄色环）
     val riseDist = barH * METABALL_RISE_DISTANCE    // 升起量
     val barCR = barH / 2f  // 全胶囊：端面半圆
     val textOffPx = TEXT_OFFSET_DP * dF
@@ -219,15 +219,14 @@ fun FluidSlider(
             drawEndLabel(endText, alignRight = true)
 
             // ── 3. Metaball 液态连接 ──
-            // topCircle 从 vOff 升至 vOff - riseDist
+            // 钳位连接点到胶囊直线段范围（避开圆弧端面，消除矩形凹口）
+            val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
             val topCircleCY = vOff + topCD / 2f - riseVal
-            val topCircleCenter = Offset(thumbCX, topCircleCY)
+            val topCircleCenter = Offset(clampedThumbX, topCircleCY)
             // bottomCircle 巨圆圆心在 vOff + botCD/2（原版布局：top 对齐轨道顶，圆体向下延伸）
-            val botCircleCenter = Offset(thumbCX, vOff + botCD / 2f)
+            val botCircleCenter = Offset(clampedThumbX, vOff + botCD / 2f)
 
             if (riseVal > 1f) {
-                // 边缘渐隐：frac 接近 0/1 时液桥淡出（避免圆弧端面处的矩形凸出）
-                val edgeFade = min(frac / 0.08f, (1f - frac) / 0.08f).coerceIn(0f, 1f)
                 drawMetaballFaithful(
                     c1Center = botCircleCenter,
                     c1Radius = botCD / 2f,
@@ -237,14 +236,33 @@ fun FluidSlider(
                     riseDist = riseDist,
                     maxDist = barH * METABALL_MAX_DISTANCE,
                     cornerRadius = barCR,
-                    paintColor = colorBar.copy(alpha = edgeFade)
+                    paintColor = colorBar
                 )
             }
 
-            // ── 4. 白色数值圆盘（在气泡内部居中）──
+            // ── 4. 白色数值气泡（薄色环 + 高光 + 底影 → 泡泡质感）──
             val labelTop = vOff + (topCD - labelD) / 2f - riseVal
-            val labelCenter = Offset(thumbCX, labelTop + labelD / 2f)
+            val labelCenter = Offset(clampedThumbX, labelTop + labelD / 2f)
+
+            // 底部微阴影（立体感）
+            drawCircle(
+                Color.Black.copy(alpha = 0.10f),
+                radius = labelD / 2f * 1.04f,
+                center = Offset(labelCenter.x, labelCenter.y + 1.5f)
+            )
+            // 白色主体
             drawCircle(color = colorBubble, radius = labelD / 2f, center = labelCenter)
+            // 左上高光点（泡泡反光）
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.95f), Color.Transparent),
+                    center = Offset(labelCenter.x - labelD * 0.18f, labelCenter.y - labelD * 0.22f),
+                    radius = labelD * 0.28f
+                ),
+                radius = labelD * 0.28f,
+                center = Offset(labelCenter.x - labelD * 0.18f, labelCenter.y - labelD * 0.22f)
+            )
+
             val txt = bubbleText ?: "${(frac * 100).roundToInt()}"
             val bStyle = TextStyle(color = colorBubbleText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
