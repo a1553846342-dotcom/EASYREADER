@@ -177,19 +177,23 @@ fun AppActionButton(
                     spotColor = colors.primary.copy(alpha = 0.35f)
                 )
                 // D1 极致档：ShadowGlow 辉光（呼吸+光尾），其余档位零开销
+                // 参数拉满确保肉眼可见：大 blur + 大 spread + 高 alpha + 宽光尾
                 .then(
                     if (LocalRenderQuality.current == RenderQuality.MAX) {
                         Modifier.shadowGlow(
-                            color = colors.primary.copy(alpha = 0.55f),
+                            color = colors.primary.copy(alpha = 0.85f),
                             borderRadius = 50.dp,
-                            blurRadius = 22.dp,
-                            offsetY = 6.dp,
-                            spread = 2.dp,
+                            blurRadius = 48.dp,
+                            offsetY = 8.dp,
+                            spread = 12.dp,
                             enableBreathingEffect = true,
-                            breathingEffectIntensity = 5.dp,
+                            breathingEffectIntensity = 14.dp,
+                            breathingDurationMillis = 1200,
                             enableGlowTrail = true,
-                            glowTrailWidth = 6.dp,
-                            glowTrailAlpha = 0.7f
+                            glowTrailWidth = 14.dp,
+                            glowTrailBlurRadius = 28.dp,
+                            glowTrailLengthDegrees = 90f,
+                            glowTrailAlpha = 0.9f
                         )
                     } else {
                         Modifier

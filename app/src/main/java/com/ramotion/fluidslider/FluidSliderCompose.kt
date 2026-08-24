@@ -59,6 +59,8 @@ fun FluidSliderCompose(
         modifier = modifier.fillMaxWidth(),
         factory = { ctx ->
             val slider = FluidSlider(ctx, size = barSize.toViewSize())
+            // 关键：View 默认背景不透明 → 在玻璃卡上显示为白色矩形。必须设为透明。
+            slider.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             slider.colorBar = colorBar.toArgb()
             slider.colorBubble = colorBubble.toArgb()
             slider.colorBubbleText = colorBubbleText.toArgb()
