@@ -26,6 +26,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
+/**
+ * 缓存管理页面：查看并清理应用产生的各类缓存数据。
+ *
+ * UI 结构（存储管理风格）：总览大字 + 比例色带图例 + 五分类逐项删除 + 一键清理。
+ * 清理操作在 Dispatchers.IO 执行，完成后通过 scanTrigger 自动重新扫描刷新数据。
+ *
+ * @param onBack 返回上一页回调
+ */
 @Composable
 fun CacheManagementScreen(
     onBack: () -> Unit

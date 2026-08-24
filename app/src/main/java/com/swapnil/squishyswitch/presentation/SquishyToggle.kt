@@ -43,6 +43,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
+/**
+ * 弹性挤压开关：切换时圆形滑块经历 拉伸→移动→挤压→恢复 四阶段动画。
+ *
+ * 支持受控/非受控双模式：
+ *  - 受控：传入 [checked] + [onCheckedChange]，状态由调用方持有（设置页使用）；
+ *  - 非受控：不传 checked，内部维护开关状态。
+ */
 @Composable
 fun SquishyToggleSwitch(
     color: Color,
