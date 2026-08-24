@@ -1248,6 +1248,32 @@ fun ReaderScreen(
             }
         }
 
+        // 滚动模式：滚过 20% 时显示"回到顶部"按钮
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isScrollMode && !isAutoScrolling && scrollState.value > scrollState.maxValue * 0.2f,
+            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.8f),
+            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.8f),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 80.dp)
+        ) {
+            Surface(
+                onClick = { scope.launch { scrollState.animateScrollTo(0) } },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MintPrimary.copy(alpha = 0.5f)),
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.KeyboardArrowUp,
+                        contentDescription = "回到顶部",
+                        tint = MintPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
         // Reader Overlay (Background Mask)
         AnimatedVisibility(
             visible = showBars,
