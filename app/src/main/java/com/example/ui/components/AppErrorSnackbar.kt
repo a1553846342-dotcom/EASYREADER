@@ -146,7 +146,7 @@ fun AppErrorSnackbar(
                 
                 // Manual dismiss if actionLabel says "我知道了" or if no action exists but fatal dismiss is required
                 if (onDismissClick != null) {
-                    IconButton(
+                    AppIconButton(
                         onClick = onDismissClick,
                         modifier = Modifier.size(28.dp)
                     ) {

@@ -637,7 +637,7 @@ fun HomeScreen(
 
                                     Spacer(modifier = Modifier.width(4.dp))
 
-                                    IconButton(
+                                    AppIconButton(
                                         onClick = { showAddCategoryDialog = true },
                                         modifier = Modifier.size(28.dp)
                                     ) {

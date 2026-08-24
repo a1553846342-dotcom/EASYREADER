@@ -25,6 +25,7 @@ import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
 import java.io.File
+import com.example.ui.components.AppIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +79,7 @@ fun LibraryHelpBottomSheet(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(
+                    AppIconButton(
                         onClick = onDismissRequest,
                         modifier = Modifier.testTag("close_help_bottom_sheet_button")
                     ) {

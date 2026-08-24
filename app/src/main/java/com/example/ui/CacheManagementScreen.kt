@@ -228,7 +228,7 @@ fun CacheManagementScreen(
                             color = if (size > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                         Spacer(Modifier.width(12.dp))
-                        IconButton(
+                        AppIconButton(
                             onClick = { clearCategory(name) },
                             enabled = !isScanning && size > 0
                         ) {

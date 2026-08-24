@@ -259,7 +259,7 @@ fun ComicReaderScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // Switch Reading Mode (Horizontal vs Vertical)
-                        IconButton(
+                        AppIconButton(
                             onClick = {
                                 readingMode = if (readingMode == ComicReadingMode.HORIZONTAL) {
                                     ComicReadingMode.VERTICAL
@@ -277,7 +277,7 @@ fun ComicReaderScreen(
 
                         // Switch Right-to-Left Direction (Manga R-to-L)
                         if (readingMode == ComicReadingMode.HORIZONTAL) {
-                            IconButton(
+                            AppIconButton(
                                 onClick = { isRightToLeft = !isRightToLeft }
                             ) {
                                 Icon(
