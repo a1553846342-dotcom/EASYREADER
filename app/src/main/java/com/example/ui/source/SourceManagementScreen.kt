@@ -42,7 +42,7 @@ import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GradientActionButton
 import com.example.ui.components.AppIconButton
-import com.example.ui.components.JellySwitch
+import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.AppIconButton
@@ -691,9 +691,10 @@ fun SourceItemCard(
                         )
                 }
 
-                JellySwitch(
+                SquishyToggleSwitch(
+                    color = MintPrimary,
                     checked = isEnabled,
-                    onCheckedChange = onToggleEnable
+                    onCheckedChange = { onToggleEnable(it) }
                 )
 
                 if (isCustom) {
