@@ -136,3 +136,48 @@ Round2：SegmentedPillSelector/JunoSlider 触控目标提至 48dp；CustomSwitch
 AppLiquidSwitch 关闭态灰阶由硬编码改为主题 outlineVariant/surfaceVariant（修暗色缺陷）。
 
 验证工具：项目根 `verify_perf.ps1`（install / gfxreset / gfx / shot / diff 子命令）。
+
+## UI/UX 全面重构（设计攻坚阶段，40+ commits）
+
+### 滑条体系（FluidSlider 复刻 + 自研 InkSlider）
+- **FluidSlider**：纯 Canvas 忠实复刻 Ramotion FluidSlider——胶囊轨道、按下气泡 Overshoot 升起、
+  metaball 液态连接（bottomCircle 圆心必须在 `vOff+botCD/2`）、数值圆盘、OvershootEasing。
+  已修：maxMove coerceAtLeast(1f) 防窄容器反转；触控区扩大 ±0.5×barH。
+- **InkSlider**（已删除）：被 FluidSlider 完全替代。
+- **排版面板 3 个 Material3 Slider**：统一 MintPrimary 主题色。
+- **阅读器底栏章节 Slider**：barContentColor 主题色。
+
+### 开关体系（全统一为 SquishyToggleSwitch）
+- 从 [Swapnil-J-Patil/Switch-Animation-Jetpack-Compose](https://github.com/Swapnil-J-Patil/Switch-Animation-Jetpack-Compose/) 原样拷贝并适配：
+  受控模式(checked/onCheckedChange)、Role.Switch 语义、触觉反馈、动画提速 1300→550ms。
+- 替换位置：设置页×4、书源管理×1、排版面板×1。JellySwitch 仅作无玻璃回退。
+
+### 阅读器重构
+- **顶栏**：定制 Column（非 TopAppBar），章节标题+进度副标，hairline 底线，
+  图标 20dp 统一。移除低频操作（搜索/目录/标注），保留 书签/听书/排版 三键。
+- **底栏**：与顶栏同风格，navigationBarsPadding。
+- **新增功能**：
+  - 自动滚屏模式（顶栏⬍按钮，60fps dispatchRawDelta，浮停指示器点击停止）；
+  - 目录自动定位当前章节（LazyListState.scrollToItem）；
+  - 字体切换（默认/衬线/黑体/等宽 FilterChip）；
+  - TTS 按钮/章节滑条主题化 barContentColor。
+
+### MAX 卡片四层特效
+1. `maxCardAura`：虹彩呼吸辉光（3层描边外扩，sin alpha 波动，primary↔secondary 色相插值）；
+2. `chromaFlowEdge`：边缘光弧巡游（sweepGradient + rotate(phase×360°)——**注意 phase 必须作用于绘制**）；
+3. `glassSheen`：高光带扫过（已验证正确）；
+4. `shimmerPearl`：珠光漂移（radialGradient 光斑 cx/cy 缓移）。
+全部仅在 RenderQuality.MAX 时激活，其余档位返回 this（零开销）。
+
+### 新增功能页
+- **缓存管理** (`CacheManagementScreen`)：总览大字→比例色带+图例→五分类逐项🗑→一键清理。
+  scanTrigger 驱动重扫；Dispatchers.IO + Main 切换；per-category delete。
+- **每日阅读目标**：`prefs.dailyGoalMinutes`(5-480)，统计页目标环按此计算，±15min 步进器调整。
+- **设置关于区块**：App 名 + PackageManager 版本号 + 标语。
+
+### 全局一致性
+- IconButton → AppIconButton：全局审计通过（0 raw remaining）；
+- 触觉反馈：`clickableWithFeedback` 补充 haptic tick（29+ 调用点受益）；
+- 搜索防抖：HomeScreen 300ms debounce；
+- 除零保护：chapters.size/maxMove 全部加 guard；
+- contentDescription=null 均为装饰性图标（合规）。
