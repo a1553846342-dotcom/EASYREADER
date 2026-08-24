@@ -119,7 +119,14 @@ fun HomeScreen(
     }
 
     var searchQuery by remember { mutableStateOf("") }
+    var debouncedQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
+
+    // 搜索防抖 300ms：避免大书库逐键触发全量过滤
+    LaunchedEffect(searchQuery) {
+        kotlinx.coroutines.delay(300)
+        debouncedQuery = searchQuery
+    }
     var selectedCategory by remember { mutableStateOf("全部") }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToMove by remember { mutableStateOf<Book?>(null) }
@@ -140,12 +147,12 @@ fun HomeScreen(
         }
     }
 
-    // Filter books by category and search query
-    val filteredBooks = remember(books, selectedCategory, searchQuery) {
+    // Filter books by category and search query (debounced)
+    val filteredBooks = remember(books, selectedCategory, debouncedQuery) {
         books.filter { book ->
             val matchesCategory = (selectedCategory == "全部") || (book.category == selectedCategory)
-            val matchesSearch = book.title.contains(searchQuery, ignoreCase = true) || 
-                                book.author.contains(searchQuery, ignoreCase = true)
+            val matchesSearch = book.title.contains(debouncedQuery, ignoreCase = true) || 
+                                book.author.contains(debouncedQuery, ignoreCase = true)
             matchesCategory && matchesSearch
         }
     }
