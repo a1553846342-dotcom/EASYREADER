@@ -73,6 +73,7 @@ fun SegmentedPillSelector(
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
+    val quality = LocalRenderQuality.current
     val positions = remember { mutableStateMapOf<Int, Rect>() }
     val textWidths = remember { mutableStateMapOf<Int, Float>() }
     var trackWidth by remember { mutableStateOf(0) }
@@ -117,6 +118,19 @@ fun SegmentedPillSelector(
                     .offset { IntOffset(animatedX.roundToInt(), 2) }
                     .width(with(density) { animatedW.toDp() })
                     .height(36.dp)
+                    // 极致档：选中指示器带主题色光晕（HWUI 投影，单节点开销）
+                    .then(
+                        if (quality == RenderQuality.MAX) {
+                            Modifier.shadow(
+                                elevation = 10.dp,
+                                shape = shape,
+                                ambientColor = primary.copy(alpha = 0.55f),
+                                spotColor = primary.copy(alpha = 0.55f)
+                            )
+                        } else {
+                            Modifier
+                        }
+                    )
                     .clip(shape)
                     // 半透明玻璃质感：能看到底下的文字，不遮内容
                     .background(

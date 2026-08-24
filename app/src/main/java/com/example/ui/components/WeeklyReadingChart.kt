@@ -1,4 +1,4 @@
-﻿package com.example.ui.components
+package com.example.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -370,9 +370,11 @@ private fun DayCoverCarousel(
 ) {
     if (records.isEmpty()) return
     val listState = rememberLazyListState()
-    // 5 秒无操作后自动平滑滚动；用户拖动时暂停
-    LaunchedEffect(records.size) {
-        if (records.size <= 1) return@LaunchedEffect
+    // 5 秒无操作后自动平滑滚动；用户拖动时暂停。
+    // 流畅档（渲染画质=低）：关闭自动轮播，只保留手动滑动。
+    val carouselAutoScroll = LocalRenderQuality.current != RenderQuality.LOW
+    LaunchedEffect(records.size, carouselAutoScroll) {
+        if (records.size <= 1 || !carouselAutoScroll) return@LaunchedEffect
         while (true) {
             delay(5000)
             if (listState.isScrollInProgress) continue

@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.kashif_e.backdrop.Backdrop
+import com.kashif_e.backdrop.BackdropEffectScope
 import com.kashif_e.backdrop.backdrops.CanvasBackdrop
+import com.kashif_e.backdrop.backdrops.PreBlurredBackdrop
 import com.kashif_e.backdrop.backdrops.rememberLayerBackdrop
 import com.kashif_e.backdrop.drawBackdrop
 import com.kashif_e.backdrop.effects.blur
@@ -48,6 +50,12 @@ import com.kashif_e.backdrop.shadow.Shadow
  * 页面内容卡（GlassCard）用它做与底部 Tab 栏完全同源的真实内容模糊。
  */
 val LocalGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
+ * 静态背景的预烘焙模糊 backdrop（由 MainActivity 提供）。
+ * 玻璃卡用它做"整屏只模糊一次"的贴图采样；null 或未就绪时自动回退实时模糊。
+ */
+val LocalPreBlurredGlass = staticCompositionLocalOf<PreBlurredBackdrop?> { null }
 
 /**
  * KMPLiquidGlass 官方 API 封装：
@@ -148,7 +156,10 @@ fun Modifier.liquidGlass(
     shape: Shape,
     surfaceColor: Color = Color.Transparent,
     blurRadius: Dp = 18.dp,
-    refraction: Boolean = false
+    refraction: Boolean = false,
+    saturation: Float = 1.30f,
+    refractionHeight: Dp = 16.dp,
+    refractionAmount: Dp = 28.dp
 ): Modifier = drawBackdrop(
     backdrop = backdrop,
     shape = { shape },
@@ -156,14 +167,14 @@ fun Modifier.liquidGlass(
         colorControls(
             brightness = 0.04f,
             contrast = 1.02f,
-            saturation = 1.30f
+            saturation = saturation
         )
         vibrancy()
         blur(radius = blurRadius.toPx())
         if (refraction) {
             lens(
-                refractionHeight = 16.dp.toPx(),
-                refractionAmount = 28.dp.toPx(),
+                refractionHeight = refractionHeight.toPx(),
+                refractionAmount = refractionAmount.toPx(),
                 depthEffect = true,
                 chromaticAberration = false
             )
@@ -200,6 +211,57 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawThemeGradient(
         )
     )
 }
+
+/**
+ * 预烘焙路径的效果链：必须与 [Modifier.liquidGlass] 的实时链逐参数一致，
+ * 这样烘焙位图与实时回退的输出才完全相同。lambda 需被 remember 保持实例稳定。
+ */
+@Composable
+fun rememberGlassFxChain(blurRadiusPx: Float): BackdropEffectScope.() -> Unit =
+    remember(blurRadiusPx) {
+        {
+            colorControls(
+                brightness = 0.04f,
+                contrast = 1.02f,
+                saturation = 1.30f
+            )
+            vibrancy()
+            blur(radius = blurRadiusPx)
+        }
+    }
+
+/**
+ * 玻璃卡静态采样：效果已整屏预烘焙进 [PreBlurredBackdrop] 的位图，
+ * 此处效果链仅复刻 blur 造成的外扩（padding），保证采样窗口与实时路径一致。
+ * 位图未就绪时 backdrop 内部自动回退实时路径，视觉与旧行为一致。
+ */
+fun Modifier.liquidGlassStatic(
+    backdrop: PreBlurredBackdrop,
+    shape: Shape,
+    surfaceColor: Color,
+    blurRadiusPx: Float
+): Modifier = drawBackdrop(
+    backdrop = backdrop,
+    shape = { shape },
+    effects = {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+            blurRadiusPx > padding
+        ) {
+            padding = blurRadiusPx
+        }
+    },
+    highlight = {
+        Highlight(
+            width = 1.2.dp,
+            blurRadius = 1.dp,
+            alpha = 0.8f,
+            style = HighlightStyle.Default
+        )
+    },
+    shadow = { Shadow(radius = 24.dp, color = Color.Black.copy(alpha = 0.16f)) },
+    innerShadow = { InnerShadow(radius = 5.dp, color = Color.Black.copy(alpha = 0.10f)) },
+    onDrawSurface = { drawRect(surfaceColor) }
+)
 
 private var grainBitmap: Bitmap? = null
 

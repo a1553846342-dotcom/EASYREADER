@@ -363,9 +363,20 @@ private class DrawBackdropNode(
 
     private fun updateEffects() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            effectScope.apply(effects)
-            graphicsLayer?.renderEffect = effectScope.renderEffect?.asComposeRenderEffect()
-            padding = effectScope.padding
+            try {
+                effectScope.apply(effects)
+                graphicsLayer?.renderEffect = effectScope.renderEffect?.asComposeRenderEffect()
+                padding = effectScope.padding
+            } catch (_: Throwable) {
+                // 稳定性加固：个别机型驱动对链式 RuntimeShader（如折射透镜）兼容性差，
+                // 着色器构建/挂载抛异常时优雅降级为无效果（仅保留 tint 表面），避免崩溃。
+                runCatching {
+                    effectScope.padding = 0f
+                    effectScope.renderEffect = null
+                    graphicsLayer?.renderEffect = null
+                    padding = 0f
+                }
+            }
         }
     }
 

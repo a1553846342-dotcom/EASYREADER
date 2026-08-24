@@ -470,18 +470,27 @@ class ZLibrarySource(
                 )
             }
 
-            // 默认格式：软件自研方案 —— 直接走详情页 /dl/ 链接 + 会话 Cookie。
-            // /dl/ 会先返回 DiamWall 503 挑战页，DownloadWorker 的 DiamWallInterceptor
-            // 会自动解 PoW 后重试（已在真机链路实测：解完返回 application/epub+zip 真实文件）。
+            // 默认格式：优先 eapi CDN 直链（真实文件，不经过 /dl/ HTML 中转页；
+            // 部分节点如 zlib.bz 的 /dl/ 会返回 HTML 下载页而不是文件本身）。
+            // eapi 失败/不可用时再回退详情页 /dl/ 链接 + 会话 Cookie
+            // （/dl/ 会先返回 DiamWall 503 挑战页，DownloadWorker 的 DiamWallInterceptor
+            // 会自动解 PoW 后重试）。
             val detailUrl = "https://$domain/${bookId.trimStart('/')}"
-            val finalUrl = dlUrl ?: runCatching {
+            val eapiLink = runCatching {
                 val key = if (!book.eapiId.isNullOrBlank() && !book.eapiHash.isNullOrBlank()) {
                     book.eapiId to book.eapiHash
                 } else {
                     resolveEapiBookKey(domain, bookId)
                 }
-                key?.let { eapiClient.getDownloadLinkResult(it.first, it.second, domain).url }
+                key?.let { eapiClient.getDownloadLinkResult(it.first, it.second, domain) }
             }.getOrNull()
+            if (eapiLink?.url.isNullOrBlank() && !eapiLink?.disallowMessage.isNullOrBlank()) {
+                // 每日额度用尽等明确限制：直接提示，避免白白走 /dl/ 后报“HTML 错误页”
+                return SourceResult.Error(
+                    SourceException.NetworkError(eapiLink!!.disallowMessage)
+                )
+            }
+            val finalUrl = eapiLink?.url ?: dlUrl
             if (finalUrl.isNullOrBlank()) {
                 return SourceResult.Error(
                     SourceException.ParseError("未获取到下载链接，请稍后重试或切换节点")

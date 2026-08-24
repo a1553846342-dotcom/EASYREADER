@@ -20,6 +20,7 @@ import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
+import com.kashif_e.backdrop.LayerRecordKey
 import com.kashif_e.backdrop.ShapeProvider
 import com.kashif_e.backdrop.clipOutline
 
@@ -73,7 +74,7 @@ internal class InnerShadowNode(
     private val paint = Paint()
     private var clipPath: Path? = null
 
-    private var prevRadius = Float.NaN
+    private var recordKey: LayerRecordKey? = null
 
     override fun ContentDrawScope.draw() {
         drawContent()
@@ -100,28 +101,46 @@ internal class InnerShadowNode(
                     null
                 }
 
-            configurePaint(shadow)
-
+            // 性能优化（视觉零变化）：层内容与 BlurEffect 只由以下输入决定；位置变化不在此列。
+            // 滚动时跳过重录，避免每帧重复录制与重复光栅化 BlurEffect。
+            val key = LayerRecordKey(
+                width = size.width,
+                height = size.height,
+                radiusPx = radius,
+                auxPx = 0f,
+                offsetX = offsetX,
+                offsetY = offsetY,
+                color = shadow.color,
+                alpha = shadow.alpha,
+                blendMode = shadow.blendMode,
+                style = null,
+                shape = shapeProvider.shape,
+                density = density.density,
+                fontScale = density.fontScale,
+                layoutDirection = layoutDirection
+            )
             shadowLayer.alpha = shadow.alpha
             shadowLayer.blendMode = shadow.blendMode
-            if (prevRadius != radius) {
-                shadowLayer.renderEffect =
-                    if (radius > 0f) {
-                        BlurEffect(radius, radius, TileMode.Decal)
-                    } else {
-                        null
-                    }
-                prevRadius = radius
-            }
-            shadowLayer.record {
-                val canvas = drawContext.canvas
-                canvas.save()
-                canvas.clipOutline(outline, clipPath)
-                canvas.drawOutline(outline, paint)
-                canvas.translate(offsetX, offsetY)
-                canvas.drawOutline(outline, ShadowMaskPaint)
-                canvas.translate(-offsetX, -offsetY)
-                canvas.restore()
+            if (key != recordKey) {
+                recordKey = key
+                configurePaint(shadow)
+
+                if (radius > 0f) {
+                    shadowLayer.renderEffect = BlurEffect(radius, radius, TileMode.Decal)
+                } else {
+                    shadowLayer.renderEffect = null
+                }
+
+                shadowLayer.record {
+                    val canvas = drawContext.canvas
+                    canvas.save()
+                    canvas.clipOutline(outline, clipPath)
+                    canvas.drawOutline(outline, paint)
+                    canvas.translate(offsetX, offsetY)
+                    canvas.drawOutline(outline, ShadowMaskPaint)
+                    canvas.translate(-offsetX, -offsetY)
+                    canvas.restore()
+                }
             }
 
             val canvas = drawContext.canvas
@@ -146,6 +165,7 @@ internal class InnerShadowNode(
             graphicsContext.releaseGraphicsLayer(layer)
             shadowLayer = null
         }
+        recordKey = null
     }
 
     private fun DrawScope.configurePaint(shadow: InnerShadow) {

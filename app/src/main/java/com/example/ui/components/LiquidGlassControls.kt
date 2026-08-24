@@ -191,6 +191,8 @@ fun AppLiquidSwitch(
                 width = 1.5.dp,
                 alpha = if (checked) 0.35f else 0.18f
             )
+            // 极致档：轨道内的"液态微粒"随设备倾角受重力流动（其余档位零开销）
+            .maxGravityParticles(count = 9, maxAlpha = 0.45f)
             .clickable(
                 interactionSource = interaction,
                 indication = null

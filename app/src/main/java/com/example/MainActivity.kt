@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import dev.liquidglass.compose.liquidGlassProvider
 import dev.liquidglass.compose.rememberLiquidGlassProviderState
 import com.example.ui.components.LocalLiquidGlassState
@@ -65,6 +66,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 启动看门狗：若"极致"画质在 20 秒内连续两次发生崩溃，自动降回"高"，
+        // 防止实验性着色器效果导致"一崩就再也打不开"的死循环变砖。
+        runCatching {
+            val boot = getSharedPreferences("novel_reader_prefs", MODE_PRIVATE)
+            if (boot.getInt("render_quality", 2) == 3) {
+                val now = System.currentTimeMillis()
+                val last = boot.getLong("boot_guard_last", 0L)
+                var cnt = boot.getInt("boot_guard_cnt", 0)
+                cnt = if (last > 0 && now - last < 20_000L) cnt + 1 else 1
+                boot.edit().putLong("boot_guard_last", now).putInt("boot_guard_cnt", cnt).apply()
+                if (cnt >= 2) {
+                    boot.edit()
+                        .putInt("render_quality", 2)
+                        .putInt("boot_guard_cnt", 0)
+                        .putLong("boot_guard_last", 0L)
+                        .apply()
+                } else {
+                    // 存活满 20 秒即解除武装（正常使用不计入）
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        boot.edit().putLong("boot_guard_last", 0L).apply()
+                    }, 20_000L)
+                }
+            }
+        }
         com.example.library.ZLibraryNodeManager.restoreSelection(applicationContext)
         // 冷启动兜底：清空书架分享的"用完即焚"临时文件，防止异常残留堆积
         Thread {
@@ -128,6 +153,11 @@ class MainActivity : ComponentActivity() {
                     ) {
                         val bgConfig by AppBackgroundController.config.collectAsState()
                         val bgActive = bgConfig.mode == 1 && !bgConfig.uri.isNullOrBlank()
+                        // 渲染画质档位：设置页可调，主要影响玻璃效果强度与动效数量。
+                        // "高"为默认，与历史版本视觉完全一致；低于"高"不挂 backdrop 捕获层。
+                        val renderQualityIdx by viewModel.renderQuality.collectAsState()
+                        val renderQuality = com.example.ui.components.RenderQuality.of(renderQualityIdx)
+                        val glassEnabled = renderQuality.realtimeGlass
                         // 页面有效背景平均亮度（已含遮罩）：标题文字据此实时取对比色
                         val bgTone: Float = if (bgActive) {
                             val appContext = LocalContext.current.applicationContext
@@ -144,13 +174,18 @@ class MainActivity : ComponentActivity() {
                         }
                         // 玻璃采样源：把背景层挂上 layerBackdrop（与底部 Tab 栏同机制的真实内容采样），
                         // 页面内容卡（GlassCard）据此复用 Tab 栏同一套 KMPLiquidGlass 模糊实现。
+                        // 注：曾试验"整屏预烘焙模糊位图"方案（PreBlurredBackdrop），实机上导致玻璃
+                        // 效果异常（疑似该机型快照管线不应用链式 RenderEffect / 背景图异步加载竞态），
+                        // 已回退实时模糊路径；相关代码保留在 backdrop 库中但不再接线。
                         val bgBackdrop = rememberLayerBackdrop()
                         Box(modifier = Modifier.fillMaxSize()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(MaterialTheme.colorScheme.background)
-                                    .layerBackdrop(bgBackdrop)
+                                    .then(
+                                        if (glassEnabled) Modifier.layerBackdrop(bgBackdrop) else Modifier
+                                    )
                             ) {
                                 if (bgActive) {
                                     Image(
@@ -171,7 +206,8 @@ class MainActivity : ComponentActivity() {
                             CompositionLocalProvider(
                                 LocalAppBackgroundActive provides bgActive,
                                 LocalBackgroundTone provides bgTone,
-                                LocalGlassBackdrop provides bgBackdrop
+                                LocalGlassBackdrop provides (bgBackdrop.takeIf { glassEnabled }),
+                                com.example.ui.components.LocalRenderQuality provides renderQuality
                             ) {
                         val navController = rememberNavController()
                         // 启动时用持久化配置初始化背景（设置页改动会通过 AppBackgroundController 实时更新）
@@ -274,7 +310,17 @@ class MainActivity : ComponentActivity() {
                             val tabBarCollapseState = rememberTabBarCollapseState()
                             // Tab 栏专用背景采样（书源选择弹窗同款手法）：
                             // layerBackdrop 捕获页面真实内容，Tab 栏 drawBackdrop 模糊它。
+                            // 画质档位低于"高"时不捕获（底栏走半透明底），滚动零捕获开销。
                             val tabBackdrop = rememberLayerBackdrop()
+                            // 底栏玻璃只采样底部条带，捕获层裁剪到该区域（topLeft 保持坐标系不变），
+                            // 滚动时不再对整页内容做全屏重录与重栅格化。
+                            // 高度覆盖底栏最大高度(68dp)+导航栏内缩+模糊/阴影外扩，取 150dp 富余。
+                            val stripDensity = LocalDensity.current
+                            SideEffect {
+                                if (renderQuality.realtimeGlass) {
+                                    tabBackdrop.captureStripHeightPx = with(stripDensity) { 150.dp.toPx().toInt() }
+                                }
+                            }
 
                             val tabItems = remember {
                                 listOf(
@@ -313,7 +359,10 @@ class MainActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .layerBackdrop(tabBackdrop)
+                                    .then(
+                                        if (renderQuality.realtimeGlass) Modifier.layerBackdrop(tabBackdrop)
+                                        else Modifier
+                                    )
                             ) {
                             Scaffold(
                                 containerColor = if (LocalAppBackgroundActive.current) {
@@ -455,7 +504,9 @@ class MainActivity : ComponentActivity() {
                                                 colorSecondaryIndexVal = colorSecondaryIndex,
                                                 onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) },
                                                 orientationLockVal = orientationLock,
-                                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) }
+                                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
+                                                renderQualityVal = renderQualityIdx,
+                                                onRenderQualityChange = { viewModel.updateRenderQuality(it) }
                                             )
                                         }
                                     }
@@ -467,7 +518,7 @@ class MainActivity : ComponentActivity() {
                                 selectedIndex = selectedTab,
                                 onTabSelected = { selectedTab = it },
                                 collapseState = tabBarCollapseState,
-                                backdrop = tabBackdrop,
+                                backdrop = tabBackdrop.takeIf { renderQuality.realtimeGlass },
                                 modifier = Modifier.align(Alignment.BottomCenter)
                             )
                             }
@@ -499,7 +550,9 @@ class MainActivity : ComponentActivity() {
                                 colorSecondaryIndexVal = colorSecondaryIndex,
                                 onColorThemeChange = { p, s -> viewModel.updateColorTheme(p, s) },
                                 orientationLockVal = orientationLock,
-                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) }
+                                onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
+                                renderQualityVal = renderQualityIdx,
+                                onRenderQualityChange = { viewModel.updateRenderQuality(it) }
                             )
                         }
 

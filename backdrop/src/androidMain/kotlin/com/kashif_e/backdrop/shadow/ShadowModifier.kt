@@ -17,6 +17,7 @@ import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
+import com.kashif_e.backdrop.LayerRecordKey
 import com.kashif_e.backdrop.ShapeProvider
 import com.kashif_e.backdrop.platform.PlatformBlurMaskFilter
 import com.kashif_e.backdrop.platform.setPlatformMaskFilter
@@ -71,6 +72,8 @@ internal class ShadowNode(
 
     private val paint = Paint()
 
+    private var recordKey: LayerRecordKey? = null
+
     override fun ContentDrawScope.draw() {
         val shadow = shadow() ?: return drawContent()
 
@@ -87,19 +90,40 @@ internal class ShadowNode(
                 ceil(size.width + radius * 4f + offsetX).toInt(),
                 ceil(size.height + radius * 4f + offsetY).toInt()
             )
-            val outline = shapeProvider.shape.createOutline(size, layoutDirection, density)
 
-            configurePaint(shadow)
-
+            // 性能优化（视觉零变化）：层内容只由以下输入决定；位置变化不在此列。
+            // 滚动时跳过重录与 Outline 创建，避免每帧重复录制与重复光栅化 MaskFilter 模糊。
+            val key = LayerRecordKey(
+                width = size.width,
+                height = size.height,
+                radiusPx = radius,
+                auxPx = 0f,
+                offsetX = offsetX,
+                offsetY = offsetY,
+                color = shadow.color,
+                alpha = shadow.alpha,
+                blendMode = shadow.blendMode,
+                style = null,
+                shape = shapeProvider.shape,
+                density = density.density,
+                fontScale = density.fontScale,
+                layoutDirection = layoutDirection
+            )
             shadowLayer.alpha = shadow.alpha
             shadowLayer.blendMode = shadow.blendMode
-            shadowLayer.record(shadowSize) {
-                translate(radius * 2f + offsetX, radius * 2f + offsetY) {
-                    val canvas = drawContext.canvas
-                    canvas.drawOutline(outline, paint)
-                    canvas.translate(-offsetX, -offsetY)
-                    canvas.drawOutline(outline, ShadowMaskPaint)
-                    canvas.translate(offsetX, offsetY)
+            if (key != recordKey) {
+                recordKey = key
+                configurePaint(shadow)
+                val outline = shapeProvider.shape.createOutline(size, layoutDirection, density)
+
+                shadowLayer.record(shadowSize) {
+                    translate(radius * 2f + offsetX, radius * 2f + offsetY) {
+                        val canvas = drawContext.canvas
+                        canvas.drawOutline(outline, paint)
+                        canvas.translate(-offsetX, -offsetY)
+                        canvas.drawOutline(outline, ShadowMaskPaint)
+                        canvas.translate(offsetX, offsetY)
+                    }
                 }
             }
 
@@ -125,6 +149,7 @@ internal class ShadowNode(
             graphicsContext.releaseGraphicsLayer(layer)
             shadowLayer = null
         }
+        recordKey = null
     }
 
     private fun DrawScope.configurePaint(shadow: Shadow) {

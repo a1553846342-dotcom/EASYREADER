@@ -49,6 +49,9 @@ import com.example.ui.components.AppLiquidSwitch
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.GlassCard
+import com.example.ui.components.LocalRenderQuality
+import com.example.ui.components.MaxJunoSlider
+import com.example.ui.components.RenderQuality
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
@@ -83,7 +86,9 @@ fun SettingsTabScreen(
     onColorThemeChange: (Int, Int) -> Unit = { p, s -> prefs.colorPrimaryIndex = p; prefs.colorSecondaryIndex = s },
     onAdultSourcesChange: (Boolean) -> Unit = {},
     orientationLockVal: Int = prefs.screenOrientationLock,
-    onOrientationLockChange: (Int) -> Unit = { prefs.screenOrientationLock = it }
+    onOrientationLockChange: (Int) -> Unit = { prefs.screenOrientationLock = it },
+    renderQualityVal: Int = prefs.renderQuality,
+    onRenderQualityChange: (Int) -> Unit = { prefs.renderQuality = it }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -399,16 +404,29 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
-                                    JunoSlider(
-                                        value = appBgDim / 50f,
-                                        onValueChange = {
-                                            appBgDim = (it * 50).toInt().coerceIn(0, 50)
-                                            prefs.appBackgroundDim = appBgDim
-                                            if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
-                                                AppBackgroundController.update(1, appBgUri, appBgDim)
+                                    if (LocalRenderQuality.current == RenderQuality.MAX) {
+                                        MaxJunoSlider(
+                                            value = appBgDim / 50f,
+                                            onValueChange = {
+                                                appBgDim = (it * 50).toInt().coerceIn(0, 50)
+                                                prefs.appBackgroundDim = appBgDim
+                                                if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
+                                                    AppBackgroundController.update(1, appBgUri, appBgDim)
+                                                }
                                             }
-                                        }
-                                    )
+                                        )
+                                    } else {
+                                        JunoSlider(
+                                            value = appBgDim / 50f,
+                                            onValueChange = {
+                                                appBgDim = (it * 50).toInt().coerceIn(0, 50)
+                                                prefs.appBackgroundDim = appBgDim
+                                                if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
+                                                    AppBackgroundController.update(1, appBgUri, appBgDim)
+                                                }
+                                            }
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                 }
                                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -628,6 +646,59 @@ fun SettingsTabScreen(
                     }
                 }
 
+                // Section 2.5: 画面与性能（渲染画质四档）
+                item {
+                    Text("画面与性能", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                }
+
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MintPrimary)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("渲染画质", fontWeight = FontWeight.SemiBold)
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = when (renderQualityVal) {
+                                    0 -> "流畅：极简玻璃质感，任何设备都能满帧滚动"
+                                    1 -> "均衡：保留玻璃质感与细节，关闭实时模糊"
+                                    2 -> "高：完整液态玻璃实时模糊（默认推荐）"
+                                    else -> "极致：折射透镜 + 更浓郁的玻璃色彩，旗舰机专属"
+                                },
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            SegmentedPillSelector(
+                                options = listOf(
+                                    0 to "流畅",
+                                    1 to "均衡",
+                                    2 to "高",
+                                    3 to "极致"
+                                ),
+                                selected = renderQualityVal.coerceIn(0, 3),
+                                onSelect = onRenderQualityChange
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "切换立即生效；主要影响界面玻璃效果与动效数量，不影响阅读排版。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 // Section 3: Page Turn Effect
                 item {
                     Text("翻页效果", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
@@ -763,13 +834,23 @@ fun SettingsTabScreen(
 
                             if (blueLightFilter) {
                                 Spacer(modifier = Modifier.height(10.dp))
-                                JunoSlider(
-                                    value = blueLightAlpha,
-                                    onValueChange = {
-                                        blueLightAlpha = it
-                                        onBlueLightAlphaChange(it)
-                                    }
-                                )
+                                if (LocalRenderQuality.current == RenderQuality.MAX) {
+                                    MaxJunoSlider(
+                                        value = blueLightAlpha,
+                                        onValueChange = {
+                                            blueLightAlpha = it
+                                            onBlueLightAlphaChange(it)
+                                        }
+                                    )
+                                } else {
+                                    JunoSlider(
+                                        value = blueLightAlpha,
+                                        onValueChange = {
+                                            blueLightAlpha = it
+                                            onBlueLightAlphaChange(it)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

@@ -151,6 +151,11 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt("color_secondary_index", 2)
         set(value) = prefs.edit().putInt("color_secondary_index", value).apply()
 
+    /** 界面渲染画质：0=流畅 1=均衡 2=高(默认) 3=极致。 */
+    var renderQuality: Int
+        get() = prefs.getInt("render_quality", 2)
+        set(value) = prefs.edit().putInt("render_quality", value.coerceIn(0, 3)).apply()
+
     var hasSeenOnboarding: Boolean
         get() = prefs.getBoolean("has_seen_onboarding", false)
         set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()

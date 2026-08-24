@@ -27,8 +27,27 @@ class DiamWallInterceptor(private val cookieJar: okhttp3.CookieJar) : Intercepto
                 break
             }
             
-            // 1. Handle DiamWall 517 / 403 / 503 PoW Verification
-            if (code == 517 || code == 403 || code == 503 || code == 513) {
+            // 1. Handle DiamWall 517 / 403 / 503 / 513 PoW Verification
+            //    兜底：个别节点把挑战页以 HTTP 200 + text/html 返回，
+            //    按 body 特征（DiamWall / Checking your browser / TOKEN）同样识别并求解，
+            //    否则下载器会把挑战页当文件下载、进度条走满后才报“HTML 错误页”。
+            val isChallengeCode = code == 517 || code == 403 || code == 503 || code == 513
+            val smellsLikeDiamWall = if (!isChallengeCode && code == 200 &&
+                (response.header("Content-Type")?.contains("text/html", ignoreCase = true) == true)
+            ) {
+                try {
+                    val peek = response.peekBody(4096).string()
+                    peek.contains("diamwall", ignoreCase = true) ||
+                        peek.contains("checking your browser", ignoreCase = true) ||
+                        peek.contains("verify your browser", ignoreCase = true) ||
+                        peek.contains("var TOKEN=")
+                } catch (e: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+            if (isChallengeCode || smellsLikeDiamWall) {
                 val bodyString = response.peekBody(1024 * 1024).string()
                 
                 // Parse DWID JS Cookie

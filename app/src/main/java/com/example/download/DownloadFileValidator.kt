@@ -28,11 +28,20 @@ object DownloadFileValidator {
         }
 
         // 1. HTML 错误页伪装（404/503/验证页），任何格式都直接判失败
+        //    注意：必须排除 ZIP（EPUB）文件——合法 EPUB 内部的小文件
+        //    （mimetype/container.xml/nav.xhtml）可能未压缩且恰好落在文件头 4KB 内，
+        //    nav.xhtml 的 <!DOCTYPE html>/<html> 会让“找 HTML 标记”误判成错误页。
+        //    真实错误页绝不可能以 ZIP 魔数 PK 开头。
         val head = readHead(file)
         if (head != null) {
-            val headStr = String(head, 0, head.size, Charsets.UTF_8).lowercase()
-            if (headStr.contains("<!doctype html") || headStr.contains("<html") || headStr.contains("<head>")) {
-                return IntegrityResult(false, null, true, extractHtmlErrorHint(file))
+            val isZip = head.size >= 4 &&
+                head[0] == 0x50.toByte() && head[1] == 0x4B.toByte() &&
+                head[2] == 0x03.toByte() && head[3] == 0x04.toByte()
+            if (!isZip) {
+                val headStr = String(head, 0, head.size, Charsets.UTF_8).lowercase()
+                if (headStr.contains("<!doctype html") || headStr.contains("<html") || headStr.contains("<head>")) {
+                    return IntegrityResult(false, null, true, extractHtmlErrorHint(file))
+                }
             }
         }
 

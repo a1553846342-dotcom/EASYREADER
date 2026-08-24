@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -151,6 +152,7 @@ fun AppBottomTabBar(
 
     val tabPositions = remember { mutableStateMapOf<Int, Rect>() }
     val shape = RoundedCornerShape(50)
+    val quality = LocalRenderQuality.current
 
     // 主题 key：主题色变化时强制重建玻璃样式/着色器
     key(animatedPrimary, animatedAccent) {
@@ -163,43 +165,69 @@ fun AppBottomTabBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(barHeight)
-                    .shadow(
-                        elevation = 24.dp,
-                        shape = shape,
-                        ambientColor = animatedPrimary.copy(alpha = 0.18f),
-                        spotColor = animatedPrimary.copy(alpha = 0.18f)
-                    )
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = shape,
-                        ambientColor = Color.Black.copy(alpha = 0.20f),
-                        spotColor = Color.Black.copy(alpha = 0.20f)
-                    )
-                    .clip(shape)
                     .then(
-                        if (backdrop != null) {
-                            // 书源选择弹窗同款模糊：真实内容采样 + Gaussian Blur
-                            Modifier.liquidGlass(
-                                backdrop = backdrop,
+                        if (quality == RenderQuality.LOW) {
+                            // 流畅档：单层阴影
+                            Modifier.shadow(
+                                elevation = 8.dp,
                                 shape = shape,
-                                surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
-                                blurRadius = 8.dp,
-                                refraction = false
+                                ambientColor = Color.Black.copy(alpha = 0.16f),
+                                spotColor = Color.Black.copy(alpha = 0.16f)
                             )
                         } else {
                             Modifier
+                                .shadow(
+                                    elevation = 24.dp,
+                                    shape = shape,
+                                    ambientColor = animatedPrimary.copy(alpha = 0.18f),
+                                    spotColor = animatedPrimary.copy(alpha = 0.18f)
+                                )
+                                .shadow(
+                                    elevation = 8.dp,
+                                    shape = shape,
+                                    ambientColor = Color.Black.copy(alpha = 0.20f),
+                                    spotColor = Color.Black.copy(alpha = 0.20f)
+                                )
+                        }
+                    )
+                    .clip(shape)
+                    .then(
+                        when {
+                            // 高/极致：实时毛玻璃（真实内容采样）；极致档底更透（不加厚模糊——
+                            // 同样避免任何链式着色器/大采样风险，稳定性优先）
+                            backdrop != null && quality.realtimeGlass -> Modifier.liquidGlass(
+                                backdrop = backdrop,
+                                shape = shape,
+                                surfaceColor = MaterialTheme.colorScheme.surface.copy(
+                                    alpha = if (quality == RenderQuality.MAX) 0.36f else 0.45f
+                                ),
+                                blurRadius = 8.dp,
+                                refraction = false
+                            )
+                            // 均衡：半透明底替代毛玻璃
+                            quality == RenderQuality.MID ->
+                                Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.78f), shape)
+                            // 流畅：近实心底
+                            else ->
+                                Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), shape)
                         }
                     )
                     .background(animatedPrimary.copy(alpha = 0.30f), shape)
-                    .iridescentBorder(
-                        shape = shape,
-                        colors = listOf(
-                            animatedPrimary,
-                            animatedAccent,
-                            animatedPrimary
-                        ),
-                        width = 1.5.dp,
-                        alpha = 0.45f
+                    .then(
+                        if (quality != RenderQuality.LOW) {
+                            Modifier.iridescentBorder(
+                                shape = shape,
+                                colors = listOf(
+                                    animatedPrimary,
+                                    animatedAccent,
+                                    animatedPrimary
+                                ),
+                                width = if (quality == RenderQuality.MAX) 2.dp else 1.5.dp,
+                                alpha = if (quality == RenderQuality.MAX) 0.60f else 0.45f
+                            )
+                        } else {
+                            Modifier.border(1.dp, Color.White.copy(alpha = 0.15f), shape)
+                        }
                     ),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically

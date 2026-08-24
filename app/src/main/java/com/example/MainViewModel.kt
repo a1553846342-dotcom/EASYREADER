@@ -37,6 +37,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val coverValidCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     val colorSecondaryIndex: StateFlow<Int> = _colorSecondaryIndex.asStateFlow()
 
+    private val _renderQuality = MutableStateFlow(prefs.renderQuality)
+    val renderQuality: StateFlow<Int> = _renderQuality.asStateFlow()
+
+    fun updateRenderQuality(quality: Int) {
+        prefs.renderQuality = quality
+        _renderQuality.value = quality
+    }
+
     fun updateAutoNightMode(enabled: Boolean) {
         prefs.autoNightMode = enabled
         _autoNightMode.value = enabled

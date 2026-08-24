@@ -112,7 +112,29 @@ class DownloadWorker(
             }
             val request = requestBuilder.build()
 
-            val response = executeWithRetry(client, request)
+            var response = executeWithRetry(client, request)
+
+            // —— HTML 错误页/挑战页提前拦截（修复：进度条走满后才报“HTML 错误页”）——
+            // 真实电子书（epub/mobi/txt/pdf/cbz…）的响应不可能是 text/html；
+            // 一旦响应是 HTML，说明是 DiamWall 验证页或 CDN 错误页。
+            // 提前识别、不写文件，重试一次（重新走 DiamWall PoW），仍失败再报明确错误。
+            var htmlRetry = 0
+            while (isHtmlErrorResponse(response) && htmlRetry < 2) {
+                Log.w(TAG, "Download got HTML page (challenge/error) for bookId=$bookId, retry #${htmlRetry + 1}")
+                response.close()
+                htmlRetry++
+                Thread.sleep(1500)
+                response = executeWithRetry(client, request)
+            }
+            if (isHtmlErrorResponse(response)) {
+                val reason = htmlResponseReason(response, url)
+                response.close()
+                val errorMsg = "文件校验失败：$reason"
+                Log.e(TAG, "Download blocked by HTML page for bookId=$bookId: $reason")
+                taskDao.updateProgressAndStatus(bookId, DownloadStatus.FAILED, 0L, 0L, errorMsg)
+                DownloadProgressBroadcaster.updateState(bookId, DownloadState.Error(errorMsg))
+                return@withContext Result.failure()
+            }
 
             Log.i(TAG, "HTTP Response Code: ${response.code} for bookId=$bookId")
 
@@ -260,6 +282,19 @@ class DownloadWorker(
             if (tempFile.exists()) {
                 val integrity = DownloadFileValidator.validateFileIntegrity(tempFile, format)
                 if (!integrity.valid) {
+                    // 诊断：打印“HTML 错误页”文件的实际大小与开头内容，便于区分
+                    // 小体积错误页 / 书内容单文件 HTML / 其它情况
+                    runCatching {
+                        val headBytes = tempFile.inputStream().use { input ->
+                            val buf = ByteArray(2048)
+                            val n = input.read(buf)
+                            if (n > 0) buf.copyOf(n) else ByteArray(0)
+                        }
+                        Log.e(
+                            TAG,
+                            "HTML-ish file diagnostic: size=${tempFile.length()}, head=${headBytes.decodeToString().take(1500).replace("\n", "\\n")}"
+                        )
+                    }
                     tempFile.delete()
                     val reason = if (integrity.isHtmlErrorPage) {
                         integrity.htmlErrorHint ?: cdnHtmlReason(url) ?: "服务器返回了 HTML 错误页"
@@ -359,6 +394,39 @@ class DownloadWorker(
             digest.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
             "unknown_md5"
+        }
+    }
+
+    /** 判断响应是否是 HTML 错误页/挑战页（真实电子书响应不可能是 text/html）。 */
+    private fun isHtmlErrorResponse(response: Response): Boolean {
+        val contentType = response.header("Content-Type")?.lowercase() ?: ""
+        if (contentType.contains("text/html")) return true
+        return try {
+            val sniff = response.peekBody(2048).string().lowercase()
+            sniff.startsWith("<!doctype html") || sniff.startsWith("<html")
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** 从 HTML 响应中提取可读原因（与 DownloadFileValidator 提示逻辑一致）。 */
+    private fun htmlResponseReason(response: Response, url: String?): String {
+        val sample = try {
+            response.peekBody(64 * 1024).string().lowercase()
+        } catch (e: Exception) {
+            ""
+        }
+        return when {
+            sample.contains("daily limit") || sample.contains("downloads_today") ||
+                sample.contains("downloads_limit") || sample.contains("already reached") ->
+                "今日下载次数已达上限（每日额度用尽，等待重置或提升额度）"
+            sample.contains("page not found") || sample.contains("not found, try again") ->
+                "页面不存在或下载链接已失效"
+            sample.contains("checking your browser") || sample.contains("diamwall") ||
+                sample.contains("verifying your browser") || sample.contains("solve this captcha") ->
+                "站点返回了浏览器验证页（DiamWall 验证未通过，请稍后重试）"
+            cdnHtmlReason(url) != null -> cdnHtmlReason(url)!!
+            else -> "服务器返回了 HTML 错误页"
         }
     }
 

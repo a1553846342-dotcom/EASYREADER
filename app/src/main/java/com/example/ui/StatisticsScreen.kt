@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,133 +104,150 @@ fun StatisticsScreen(
             )
     ) {
         Scaffold(containerColor = Color.Transparent) { padding ->
-            Column(
+            // 性能优化（视觉零变化）：原为普通 Column+verticalScroll，
+            // 5 张玻璃卡 + 3 个图表在滚动时全部参与绘制命令录制（低端机卡顿主因）。
+            // 改 LazyColumn 后屏幕外的卡片/图表不再组合与绘制，布局顺序间距完全一致。
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp)
-                    .padding(bottom = 96.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 // 书架同款顶部栏（毛玻璃卡 + 24dp 圆角 + 8dp 阴影 + Serif 标题层级）
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                item(key = "stats_top_bar") {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp)
                     ) {
-                        Text(
-                            text = "阅读统计",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = glassTitleColor(),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "STATISTICS & INSIGHTS",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = glassTitleColor().copy(alpha = 0.75f),
-                            letterSpacing = 1.5.sp
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 16.dp)
+                        ) {
+                            Text(
+                                text = "阅读统计",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = glassTitleColor(),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "STATISTICS & INSIGHTS",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = glassTitleColor().copy(alpha = 0.75f),
+                                letterSpacing = 1.5.sp
+                            )
+                        }
                     }
                 }
 
                 if (totalReadTimeSeconds == 0L) {
-                    com.example.ui.components.MascotEmptyState(
-                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
-                        title = "「暂无阅读统计记录」",
-                        description = "您最近还没有在本软件中阅读过小说哦。Roxy 已经乖乖为您备好了专属书签，快去读一章，开启您的阅读旅程并点亮统计图表吧！",
-                        actionLabel = "立即前往书架阅读",
-                        onActionClick = onGoToShelf,
-                        testTagPrefix = "stats_empty_state"
-                    )
+                    item(key = "stats_empty") {
+                        com.example.ui.components.MascotEmptyState(
+                            mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
+                            title = "「暂无阅读统计记录」",
+                            description = "您最近还没有在本软件中阅读过小说哦。Roxy 已经乖乖为您备好了专属书签，快去读一章，开启您的阅读旅程并点亮统计图表吧！",
+                            actionLabel = "立即前往书架阅读",
+                            onActionClick = onGoToShelf,
+                            testTagPrefix = "stats_empty_state"
+                        )
+                    }
                 } else {
                     // ---------- 周期总览 ----------
-                    PeriodOverviewCard(
-                        dailyTotals = dailyTotals,
-                        books = books,
-                        finishedCount = finishedCount
-                    )
+                    item(key = "stats_period") {
+                        PeriodOverviewCard(
+                            dailyTotals = dailyTotals,
+                            books = books,
+                            finishedCount = finishedCount
+                        )
+                    }
 
                     // ---------- 日历视图 ----------
-                    ReadingCalendarCard(
-                        dailyTotals = dailyTotals,
-                        onDayClick = { selectedDate = it }
-                    )
+                    item(key = "stats_calendar") {
+                        ReadingCalendarCard(
+                            dailyTotals = dailyTotals,
+                            onDayClick = { selectedDate = it }
+                        )
+                    }
 
                     // ---------- 趋势图表 ----------
-                    ReadingTrendCard(
-                        dailyTotals = dailyTotals,
-                        sessions = readingSessions
-                    )
+                    item(key = "stats_trend") {
+                        ReadingTrendCard(
+                            dailyTotals = dailyTotals,
+                            sessions = readingSessions
+                        )
+                    }
 
                     // ---------- 本周明细（保留原周视图 + 封面轮播/删除） ----------
-                    Text(
-                        text = "本周阅读明细",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = adaptiveTitleColor(),
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-
-                    val todayIdx = remember {
-                        val cal = java.util.Calendar.getInstance()
-                        (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
-                    }
-                    val weekDates = remember {
-                        weekDatesOf(todayCalendar()).map { dateStrOf(it) }
-                    }
-                    val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds / 60, todayIdx) {
-                        val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
-                        if (hasAnyRecords) {
-                            weekDates.map { date ->
-                                (readingRecords.filter { it.dateStr == date }
-                                    .sumOf { it.durationSeconds } / 60).toInt()
-                            }
-                        } else {
-                            List(7) { i -> if (i == todayIdx) (totalReadTimeSeconds / 60).toInt() else 0 }
-                        }
-                    }
-                    val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds / 60, todayIdx) {
-                        val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
-                        if (hasAnyRecords) {
-                            weekDates.map { date ->
-                                val daily = readingRecords.filter { it.dateStr == date }
-                                if (daily.isEmpty()) "" else daily.map { it.bookTitle }.distinct().joinToString(", ")
-                            }
-                        } else {
-                            List(7) { i ->
-                                if (i == todayIdx && totalReadTimeSeconds > 0) (books.firstOrNull()?.title ?: "自选图书") else ""
-                            }
-                        }
-                    }
-                    val dayRecords = remember(readingRecords, weekDates) {
-                        weekDates.map { date ->
-                            readingRecords
-                                .filter { it.dateStr == date }
-                                .sortedByDescending { it.id }
-                                .let { mergeDuplicateReadingRecords(it) }
-                        }
+                    item(key = "stats_weekly_header") {
+                        Text(
+                            text = "本周阅读明细",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = adaptiveTitleColor(),
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
 
-                    WeeklyReadingChart(
-                        minutesPerDay = minutesList,
-                        bookTitlesPerDay = booksList,
-                        todayIndex = todayIdx,
-                        dayRecords = dayRecords,
-                        books = books,
-                        recordCovers = recordCovers,
-                        recordBooks = recordBooks,
-                        onDeleteRecord = onDeleteRecord,
-                        onOpenRecordDetail = onOpenRecordDetail,
-                        onOpenBook = onOpenBook
-                    )
+                    item(key = "stats_weekly") {
+                        val todayIdx = remember {
+                            val cal = java.util.Calendar.getInstance()
+                            (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+                        }
+                        val weekDates = remember {
+                            weekDatesOf(todayCalendar()).map { dateStrOf(it) }
+                        }
+                        val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds / 60, todayIdx) {
+                            val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
+                            if (hasAnyRecords) {
+                                weekDates.map { date ->
+                                    (readingRecords.filter { it.dateStr == date }
+                                        .sumOf { it.durationSeconds } / 60).toInt()
+                                }
+                            } else {
+                                List(7) { i -> if (i == todayIdx) (totalReadTimeSeconds / 60).toInt() else 0 }
+                            }
+                        }
+                        val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds / 60, todayIdx) {
+                            val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
+                            if (hasAnyRecords) {
+                                weekDates.map { date ->
+                                    val daily = readingRecords.filter { it.dateStr == date }
+                                    if (daily.isEmpty()) "" else daily.map { it.bookTitle }.distinct().joinToString(", ")
+                                }
+                            } else {
+                                List(7) { i ->
+                                    if (i == todayIdx && totalReadTimeSeconds > 0) (books.firstOrNull()?.title ?: "自选图书") else ""
+                                }
+                            }
+                        }
+                        val dayRecords = remember(readingRecords, weekDates) {
+                            weekDates.map { date ->
+                                readingRecords
+                                    .filter { it.dateStr == date }
+                                    .sortedByDescending { it.id }
+                                    .let { mergeDuplicateReadingRecords(it) }
+                            }
+                        }
+
+                        WeeklyReadingChart(
+                            minutesPerDay = minutesList,
+                            bookTitlesPerDay = booksList,
+                            todayIndex = todayIdx,
+                            dayRecords = dayRecords,
+                            books = books,
+                            recordCovers = recordCovers,
+                            recordBooks = recordBooks,
+                            onDeleteRecord = onDeleteRecord,
+                            onOpenRecordDetail = onOpenRecordDetail,
+                            onOpenBook = onOpenBook
+                        )
+                    }
                 }
             }
         }

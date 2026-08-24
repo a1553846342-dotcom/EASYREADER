@@ -39,6 +39,13 @@ actual class LayerBackdrop internal constructor(
 
     actual override val isCoordinatesDependent: Boolean = true
 
+    /**
+     * 性能优化（视觉零变化）：仅捕获提供方底部指定像素高度的条带，0 表示全量捕获。
+     * 捕获层通过 topLeft 保持与全量捕获相同的坐标系，消费方（drawBackdrop）数学不变；
+     * 适用于只采样底部区域的消费者（如底部 Tab 栏），可将每帧全屏重录/重栅格化降为条带大小。
+     */
+    var captureStripHeightPx: Int = 0
+
     internal var layerCoordinates: LayoutCoordinates? by mutableStateOf(null)
 
     private var inverseLayerScope: InverseLayerScope? = null

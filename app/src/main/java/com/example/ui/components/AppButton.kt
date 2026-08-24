@@ -214,6 +214,8 @@ fun AppActionButton(
                     width = 1.5.dp,
                     alpha = 0.35f
                 )
+                // 极致档：按钮内部的微光粒子随重力流动（其余档位零开销）
+                .maxGravityParticles(count = 6, maxAlpha = 0.30f, maxRadiusDp = 2.0f)
 
             AppButtonVariant.Secondary -> pressModifier
                 .background(colors.accent.copy(alpha = 0.14f), shape)

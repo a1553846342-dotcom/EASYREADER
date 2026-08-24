@@ -1243,7 +1243,9 @@ private fun BookActionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f, fill = false)
+                // 用固定上限而非 weight：父级是 wrap 高度 + heightIn 时 weight 滚动会失效，
+                // 导致最后一项（删除图书）被顶出屏幕。固定上限保证任何屏幕都能滚动到。
+                .heightIn(max = 340.dp)
                 .verticalScroll(rememberScrollState())
         ) {
         val primary = MaterialTheme.colorScheme.primary
