@@ -142,6 +142,10 @@ fun ReaderScreen(
     var showTtsBar by remember { mutableStateOf(false) }
     var showRestDialog by remember { mutableStateOf(false) }
 
+    // 自动滚屏（解放双手模式）
+    var isAutoScrolling by remember { mutableStateOf(false) }
+    var autoScrollSpeed by remember { mutableFloatStateOf(1f) } // 0.5=慢 / 1=中 / 2=快
+
     var currentChapterIndex by remember(book) { mutableIntStateOf(book?.currentChapterIndex ?: 0) }
     var showBars by remember { mutableStateOf(false) }
 
@@ -187,6 +191,19 @@ fun ReaderScreen(
 
     val currentChapter = chapters.getOrNull(currentChapterIndex)
     val scrollState = rememberScrollState()
+
+    // ── 自动滚屏引擎（仅滚动模式生效，逐帧平滑推进）──
+    LaunchedEffect(isAutoScrolling, autoScrollSpeed, isScrollMode) {
+        if (!isAutoScrolling || !isScrollMode) return@LaunchedEffect
+        while (isAutoScrolling && scrollState.value < scrollState.maxValue) {
+            scrollState.dispatchRawDelta(1.2f * autoScrollSpeed)
+            delay(16) // ~60fps
+        }
+        // 滚到底自动关闭
+        if (scrollState.value >= scrollState.maxValue) {
+            isAutoScrolling = false
+        }
+    }
 
     // 滚动阅读：章末/章首继续拖拽切章的阈值与状态
     val scrollThresholdPx = with(LocalDensity.current) { 120.dp.toPx() }
@@ -1206,6 +1223,30 @@ fun ReaderScreen(
                 }
             }
 
+        // 自动滚屏运行指示器（点击停止）
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isAutoScrolling,
+            enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
+            exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp)
+        ) {
+            Surface(
+                onClick = { isAutoScrolling = false },
+                shape = RoundedCornerShape(20.dp),
+                color = MintPrimary.copy(alpha = 0.9f),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("自动滚屏中 · 点击停止", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+
         // Reader Overlay (Background Mask)
         AnimatedVisibility(
             visible = showBars,
@@ -1306,6 +1347,17 @@ fun ReaderScreen(
                                             }
                                             AppIconButton(onClick = { showSettingsSheet = true }) {
                                                 Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                            }
+                                            // 自动滚屏开关（仅滚动模式显示）
+                                            if (isScrollMode) {
+                                                AppIconButton(onClick = { isAutoScrolling = !isAutoScrolling }) {
+                                                    Icon(
+                                                        Icons.Filled.UnfoldMore,
+                                                        "自动滚屏",
+                                                        tint = if (isAutoScrolling) MintGold else barContentColor,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
