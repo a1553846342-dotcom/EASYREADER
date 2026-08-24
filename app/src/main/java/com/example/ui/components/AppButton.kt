@@ -255,16 +255,50 @@ fun AppActionButton(
                 )
 
             AppButtonVariant.Secondary -> pressModifier
-                .background(colors.accent.copy(alpha = 0.14f), shape)
-                .border(1.dp, colors.accent.copy(alpha = 0.25f), shape)
+                .background(
+                    // 纵向渐变：与 Primary 同语言但更含蓄
+                    Brush.verticalGradient(listOf(
+                        colors.accent.copy(alpha = 0.18f),
+                        colors.accent.copy(alpha = 0.10f)
+                    )),
+                    shape
+                )
+                .clip(shape)
+                .drawWithContent {
+                    drawContent()
+                    // 顶部内高光细线（比 Primary 更淡）
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.28f),
+                        start = Offset(size.width * 0.18f, 1.0f),
+                        end = Offset(size.width * 0.82f, 1.0f),
+                        strokeWidth = 1.0f
+                    )
+                }
+                .border(1.dp, colors.accent.copy(alpha = 0.30f), shape)
 
             AppButtonVariant.Tertiary -> pressModifier
                 .background(Color.Transparent, shape)
                 .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), shape)
 
             AppButtonVariant.Destructive -> pressModifier
-                .background(colors.destructive.copy(alpha = 0.12f), shape)
-                .border(1.dp, colors.destructive.copy(alpha = 0.30f), shape)
+                .background(
+                    Brush.verticalGradient(listOf(
+                        colors.destructive.copy(alpha = 0.16f),
+                        colors.destructive.copy(alpha = 0.08f)
+                    )),
+                    shape
+                )
+                .clip(shape)
+                .drawWithContent {
+                    drawContent()
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.20f),
+                        start = Offset(size.width * 0.18f, 1.0f),
+                        end = Offset(size.width * 0.82f, 1.0f),
+                        strokeWidth = 1.0f
+                    )
+                }
+                .border(1.dp, colors.destructive.copy(alpha = 0.35f), shape)
         }
             .clickable(
                 interactionSource = interactionSource,
