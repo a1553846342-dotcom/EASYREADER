@@ -32,7 +32,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -194,8 +196,24 @@ fun AppLiquidSwitch(
                 width = 1.5.dp,
                 alpha = if (checked) 0.35f else 0.18f
             )
-            // 极致档：轨道内的"液态微粒"随设备倾角受重力流动（其余档位零开销）
-            .maxGravityParticles(count = 9, maxAlpha = 0.45f)
+            // B3 液桥：切换过程中滑块与目标端之间拉出液滴拉丝（画在滑块之下）
+            .drawBehind {
+                if (pulse > 0.03f) {
+                    val wpx = size.width
+                    val hpx = size.height
+                    val knobPx = knobSize.toPx()
+                    val kx = knobPx / 2f + (wpx - knobPx) * progress
+                    val ky = hpx / 2f
+                    val destX = if (checked) wpx - knobPx / 2f else knobPx / 2f
+                    drawLiquidBlob(
+                        from = Offset(destX, ky),
+                        to = Offset(kx, ky),
+                        radius = knobPx * 0.42f,
+                        intensity = pulse,
+                        color = lerp(primary, accent, progress)
+                    )
+                }
+            }
             // 可访问性：toggleable 提供 Role.Switch 与开/关状态语义（读屏可感知），按压动画不变
             .toggleable(
                 value = checked,
@@ -216,8 +234,9 @@ fun AppLiquidSwitch(
                 .size(width = knobSize + 12.dp * pulse, height = knobSize + 12.dp * pulse)
                 .align(Alignment.CenterStart)
                 .graphicsLayer {
-                    scaleX = gelScale
-                    scaleY = gelScale
+                    // B1 弹性挤压（按压）× B3 飞行拉伸（切换中沿轨道方向拉长、垂直压扁）
+                    scaleX = gelScale * (1f + 0.30f * pulse)
+                    scaleY = gelScale * (1f - 0.20f * pulse)
                 }
                 .shadow(4.dp, CircleShape)
                 .clip(CircleShape)

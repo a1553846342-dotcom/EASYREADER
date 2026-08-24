@@ -183,10 +183,11 @@ fun AppActionButton(
                     }
                 )
                 .background(
-                    Brush.horizontalGradient(
+                    // 纵向渐变：上浅下深，模拟顶光打在胶囊上的体积感
+                    Brush.verticalGradient(
                         listOf(
-                            colors.primary.copy(alpha = 0.46f),
-                            colors.primaryVariant.copy(alpha = 0.36f)
+                            colors.primary.copy(alpha = 0.52f),
+                            lerp(colors.primary, colors.primaryVariant, 0.5f).copy(alpha = 0.40f)
                         )
                     ),
                     shape
@@ -194,7 +195,21 @@ fun AppActionButton(
                 .clip(shape)
                 .drawWithContent {
                     drawContent()
-                    // 顶部左缘镜面光晕，让实心渐变透出玻璃质感
+                    // 顶部内高光细线：胶囊受光的"锋利感"来源
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.45f),
+                        start = Offset(size.width * 0.16f, 1.2f),
+                        end = Offset(size.width * 0.84f, 1.2f),
+                        strokeWidth = 1.2f
+                    )
+                    // 底部内暗线：接地面的厚度
+                    drawLine(
+                        color = Color.Black.copy(alpha = 0.18f),
+                        start = Offset(size.width * 0.20f, size.height - 1.0f),
+                        end = Offset(size.width * 0.80f, size.height - 1.0f),
+                        strokeWidth = 1.0f
+                    )
+                    // 左上镜面光晕
                     drawCircle(
                         brush = Brush.radialGradient(
                             listOf(
@@ -214,8 +229,6 @@ fun AppActionButton(
                     width = 1.5.dp,
                     alpha = 0.35f
                 )
-                // 极致档：按钮内部的微光粒子随重力流动（其余档位零开销）
-                .maxGravityParticles(count = 6, maxAlpha = 0.30f, maxRadiusDp = 2.0f)
 
             AppButtonVariant.Secondary -> pressModifier
                 .background(colors.accent.copy(alpha = 0.14f), shape)

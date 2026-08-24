@@ -130,7 +130,8 @@ fun SegmentedPillSelector(
             )
             Box(
                 modifier = Modifier
-                    .offset { IntOffset(animatedX.roundToInt(), 3) }
+                    .align(Alignment.CenterStart)
+                    .offset { IntOffset(animatedX.roundToInt(), 0) }
                     .width(with(density) { animatedW.toDp() })
                     .height(42.dp)
                     // 极致档：选中指示器带主题色光晕（HWUI 投影，单节点开销）
@@ -694,8 +695,11 @@ private fun PageTurnPreview(
                 }
             }
             PageTurnType.SLIDE -> {
-                translate(left = -w * 0.85f * p) { drawLines(1f, 0f, lineColor) }
-                translate(left = w * (1f - p) * 0.9f) { drawLines(0.45f, 0f, nextLineColor) }
+                // 裁剪到纸面内，平移的行不允许溢出到"书外"
+                clipRect(0f, 0f, w, h) {
+                    translate(left = -w * 0.85f * p) { drawLines(1f, 0f, lineColor) }
+                    translate(left = w * (1f - p) * 0.9f) { drawLines(0.45f, 0f, nextLineColor) }
+                }
             }
             PageTurnType.FADE -> {
                 drawLines(1f - p, -2f * p, lineColor)
