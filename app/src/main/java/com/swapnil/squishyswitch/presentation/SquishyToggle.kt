@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +67,11 @@ fun SquishyToggleSwitch(
     val thumbPosition = remember { Animatable(0f) }
     val squishX = remember { Animatable(1f) }
     val squishY = remember { Animatable(1f) }
+
+    // 修复：外部传入 checked 变化时同步拇指位置（否则刷新后白圆停在左边但颜色是开的）
+    LaunchedEffect(isToggled) {
+        thumbPosition.snapTo(if (isToggled) 1f else 0f)
+    }
 
     // Define easing curves for smooth, jelly-like movement
     val stretchEasing = CubicBezierEasing(0.75f, 0f, 1f, 1f)

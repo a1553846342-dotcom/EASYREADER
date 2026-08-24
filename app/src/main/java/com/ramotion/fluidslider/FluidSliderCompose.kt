@@ -116,7 +116,7 @@ fun FluidSlider(
     val touchD = barH * TOUCH_CIRCLE_DIAMETER
     val labelD = barH - LABEL_CIRCLE_DIAMETER * dF  // 数值圆直径
     val riseDist = barH * METABALL_RISE_DISTANCE    // 升起量
-    val barCR = BAR_CORNER_RADIUS * dF
+    val barCR = barH / 2f  // 全胶囊：端面半圆
     val textOffPx = TEXT_OFFSET_DP * dF
 
     var isDragging by remember { mutableStateOf(false) }
