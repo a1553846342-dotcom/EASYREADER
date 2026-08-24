@@ -87,7 +87,8 @@ fun SegmentedPillSelector(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(40.dp)
+            // 可访问性：触控目标提升至 Material 指南的 48dp
+            .height(48.dp)
             .onSizeChanged { trackWidth = it.width }
             .clip(shape)
             .background(
@@ -119,9 +120,9 @@ fun SegmentedPillSelector(
             )
             Box(
                 modifier = Modifier
-                    .offset { IntOffset(animatedX.roundToInt(), 2) }
+                    .offset { IntOffset(animatedX.roundToInt(), 3) }
                     .width(with(density) { animatedW.toDp() })
-                    .height(36.dp)
+                    .height(42.dp)
                     // 极致档：选中指示器带主题色光晕（HWUI 投影，单节点开销）
                     .then(
                         if (quality == RenderQuality.MAX) {
@@ -430,7 +431,8 @@ fun JunoSlider(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(44.dp)
+            // 可访问性：触控目标 48dp
+            .height(48.dp)
             .onSizeChanged { sliderWidth = it.width }
             .pointerInput(Unit) {
                 // 仓库 DragGesture(minimumDistance: 0)：按下即开始，位移更新，无位移=点按跳转

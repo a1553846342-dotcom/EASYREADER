@@ -73,8 +73,9 @@ fun JellySwitch(
             listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
         )
     } else {
+        // 关闭态走主题灰阶，适配暗色（原硬编码浅灰在暗色下刺眼）
         Brush.horizontalGradient(
-            listOf(Color(0xFFE0E0E0), Color(0xFFD6D6D6))
+            listOf(MaterialTheme.colorScheme.outlineVariant, MaterialTheme.colorScheme.surfaceVariant)
         )
     }
 

@@ -133,7 +133,8 @@ fun AppLiquidSwitch(
         return
     }
     val (primary, primaryLight, accent, rimMid) = themeTokens()
-    val neutralGray = Color(0xFFB9B9BE)
+    // 未激活态中性色走主题 outlineVariant，适配暗色
+    val neutralGray = MaterialTheme.colorScheme.outlineVariant
     val trackWidth = 52.dp
     val trackHeight = 30.dp
     val knobSize = 24.dp

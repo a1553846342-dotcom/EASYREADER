@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -35,9 +36,9 @@ fun CustomSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    // Background color animation
+    // Background color animation（关闭态走主题 outlineVariant，适配暗色）
     val trackColor by animateColorAsState(
-        targetValue = if (checked) MintSecondary else Color(0xFFD2D5DA),
+        targetValue = if (checked) MintSecondary else MaterialTheme.colorScheme.surfaceVariant,
         animationSpec = tween(durationMillis = 200),
         label = "switch_track_color"
     )
