@@ -114,4 +114,25 @@ Shadow/InnerShadow/Highlight 三个离屏层无条件重录 + 卡内无层子节
 
 已知残留（理论极小差异）：装饰进离屏层引入 8bit 预乘中间量化（±1/255 级别，不可见）。
 
+## MAX 档崩溃修复与特效重构（后续轮次）
+
+**闪退根因**：MAX 开启的折射透镜走 AGSL 链式 RuntimeShader，该华为驱动在构建/挂载阶段
+抛异常；画质持久化导致启动即崩 → 死循环变砖。三重修复：
+1. vendor `DrawBackdropNode.updateEffects` 包 try/catch——着色器构建失败优雅降级为无效果；
+2. 启动看门狗（MainActivity.onCreate）："极致"档 20 秒内连崩两次自动降回"高"；
+3. 折射参数驯化 16/28dp → 10/18dp（保留启用于 MAX）。
+
+**MAX 特效新增**：卡片流光 sheen（`Modifier.glassSheen`，6.5s 掠过光带）、光束/棱镜边增强、
+按压凝胶缩放；开关轨道与主按钮内重力粒子（`GravitySensor` + `maxGravityParticles`，
+随设备倾角运动反弹，仅 MAX 挂载）；MaxJunoSlider 玻璃滑条（外发光填充、常驻光晕滑块、
+方向性彗尾、拖动挤压）；分段选择器选中态主题色光晕。
+
+## UI 客观审查（两轮）
+
+Round1：三种开关补 Role.Switch/toggleableState 语义；两处滑条补 progressBarRangeInfo+
+stateDescription；设置页分区标题统一为 SettingsSectionHeader（两处 16sp→14sp）；
+三处 Divider 迁移 HorizontalDivider+outlineVariant。
+Round2：SegmentedPillSelector/JunoSlider 触控目标提至 48dp；CustomSwitch/JellySwitch/
+AppLiquidSwitch 关闭态灰阶由硬编码改为主题 outlineVariant/surfaceVariant（修暗色缺陷）。
+
 验证工具：项目根 `verify_perf.ps1`（install / gfxreset / gfx / shot / diff 子命令）。
