@@ -1316,9 +1316,20 @@ fun ReaderScreen(
                                     enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                                     exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                                 ) {
-                                    BottomAppBar(
-                                        containerColor = bgColor,
-                                        modifier = Modifier.graphicsLayer { shadowElevation = 4f }
+                                    // ── 定制阅读器底栏：与顶栏同风格 ──
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(bgColor.copy(alpha = 0.97f))
+                                            .drawBehind {
+                                                drawLine(
+                                                    color = barContentColor.copy(alpha = 0.08f),
+                                                    start = Offset(0f, 0f),
+                                                    end = Offset(size.width, 0f),
+                                                    strokeWidth = 0.8f
+                                                )
+                                            }
+                                            .navigationBarsPadding()
                                     ) {
                                         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
