@@ -156,6 +156,11 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt("render_quality", 2)
         set(value) = prefs.edit().putInt("render_quality", value.coerceIn(0, 3)).apply()
 
+    /** 每日阅读目标（分钟）。默认 60 分钟。 */
+    var dailyGoalMinutes: Int
+        get() = prefs.getInt("daily_goal_minutes", 60)
+        set(value) = prefs.edit().putInt("daily_goal_minutes", value.coerceIn(5, 480)).apply()
+
     var hasSeenOnboarding: Boolean
         get() = prefs.getBoolean("has_seen_onboarding", false)
         set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()

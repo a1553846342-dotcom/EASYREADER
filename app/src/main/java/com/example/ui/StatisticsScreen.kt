@@ -77,7 +77,8 @@ fun StatisticsScreen(
     recordBooks: Map<Int, com.example.source.SearchBook> = emptyMap(),
     onResolveRecordCovers: (List<ReadingRecord>) -> Unit = {},
     onOpenRecordDetail: (com.example.source.SearchBook) -> Unit = {},
-    onOpenBook: (Book) -> Unit = {}
+    onOpenBook: (Book) -> Unit = {},
+    dailyGoalMinutes: Int = 60
 ) {
     val totalReadTimeSeconds by totalReadTimeSecondsFlow.collectAsState()
     val totalHours = totalReadTimeSeconds / 3600
@@ -167,7 +168,8 @@ fun StatisticsScreen(
                         PeriodOverviewCard(
                             dailyTotals = dailyTotals,
                             books = books,
-                            finishedCount = finishedCount
+                            finishedCount = finishedCount,
+                            dailyGoalMinutes = dailyGoalMinutes
                         )
                     }
 
@@ -275,7 +277,8 @@ fun StatisticsScreen(
 private fun PeriodOverviewCard(
     dailyTotals: Map<String, Long>,
     books: List<Book>,
-    finishedCount: Int
+    finishedCount: Int,
+    dailyGoalMinutes: Int = 60
 ) {
     var period by remember { mutableIntStateOf(0) } // 0=周 1=月 2=年
     val today = remember { todayCalendar() }
@@ -335,7 +338,7 @@ private fun PeriodOverviewCard(
             else -> ((periodTotal - prevTotal) * 100 / prevTotal).toInt()
         }
     }
-    val goalProgress = (avgDaily / 3600f).coerceIn(0f, 1f)
+    val goalProgress = (avgDaily / (dailyGoalMinutes * 60f)).coerceIn(0f, 1f)
     // 复用全软件统一弹簧（AppBottomTabBar/DownloadGlassCard 同款：
     // MediumBouncy + StiffnessMediumLow），切换周/月/年时数字与圆环平滑过渡。
     val animatedGoal by animateFloatAsState(
@@ -424,7 +427,13 @@ private fun PeriodOverviewCard(
                         color = MintPrimary
                     )
                 }
-            }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "每日目标 ${dailyGoalMinutes} 分钟",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
