@@ -1,13 +1,19 @@
 /*
- * FluidSlider —— 复刻 Ramotion/fluid-slider 标志性交互。
- * 按压时轨道弹性膨胀 + 白色墨滴浮现于轨道内部显示数值。
- * 局部 mutableFloat 追踪 → 零延迟 1:1 跟手。所有元素都在容器内无裁剪。
+ * FluidSlider —— 忠实复刻 Ramotion/fluid-slider 的完整视觉与交互。
+ *
+ * 原版核心布局（逐行对应 View 源码）：
+ *   容器高度 = barHeight × 2.5（SLIDER_HEIGHT）
+ *   轨道顶距 = barHeight × 1.5（BAR_VERTICAL_OFFSET）→ 轨道贴底，上方全部留白给气泡
+ *   上升距离 = barHeight × 1.1（METABALL_RISE_DISTANCE）
+ *   气泡直径 = barHeight × 1.0（TOP_CIRCLE_DIAMETER）
+ *   底池直径 = barHeight × 25 （BOTTOM_CIRCLE_DIAMETER——不可见巨圆，液态变形基座）
+ *
+ * 按下 → OvershootInterpolator 让气泡从轨道面升起；松手 → 缩回。
  */
 package com.ramotion.fluidslider
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -28,6 +34,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -44,8 +52,40 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.roundToInt
+import kotlin.math.acos
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/** OvershootInterpolator(tension=2) 复刻。 */
+private val OvershootEasing = Easing { t ->
+    val tt = t - 1f
+    tt * tt * ((2f + 1f) * tt + 2f) + 1f
+}
+
+// ── 原版常量 ──
+private const val SLIDER_WIDTH = 4
+private const val SLIDER_HEIGHT = 2.5f // 1 + BAR_VERTICAL_OFFSET
+private const val BAR_CORNER_RADIUS = 2f
+private const val BAR_VERTICAL_OFFSET = 1.5f
+private const val TOP_CIRCLE_DIAMETER = 1f
+private const val BOTTOM_CIRCLE_DIAMETER = 25f
+private const val TOUCH_CIRCLE_DIAMETER = 1f
+private const val LABEL_CIRCLE_DIAMETER = 10f
+private const val ANIMATION_DURATION = 400
+private const val TOP_SPREAD_FACTOR = 0.4f
+private const val BOTTOM_START_SPREAD_FACTOR = 0.25f
+private const val BOTTOM_END_SPREAD_FACTOR = 0.1f
+private const val METABALL_HANDLER_FACTOR = 2.4f
+private const val METABALL_MAX_DISTANCE = 15f
+private const val METABALL_RISE_DISTANCE = 1.1f
+private const val TEXT_SIZE_SP = 12
+private const val TEXT_OFFSET_DP = 8
 
 @Composable
 fun FluidSlider(
@@ -60,72 +100,79 @@ fun FluidSlider(
     colorBubble: Color = Color.White,
     colorBubbleText: Color = Color.Black,
     colorBarText: Color = Color.White.copy(alpha = 0.7f),
-    durationMillis: Int = 350
+    durationMillis: Int = ANIMATION_DURATION
 ) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val textMeasurer = rememberTextMeasurer()
+    val dF = density.density
 
-    val containerHeightDp = (barHeightDp + 16).coerceAtLeast(56)
-    val restBarPx = with(density) { barHeightDp.dp.toPx() }
-    val pressedBarPx = restBarPx * 1.35f
+    // ── init 尺寸推导（逐行对应原 View）──
+    val barH = barHeightDp * dF
+    val vOff = barH * BAR_VERTICAL_OFFSET          // 轨道顶距容器顶
+    val totalH = barH * SLIDER_HEIGHT               // 容器总高
+    val topCD = barH * TOP_CIRCLE_DIAMETER          // 气泡直径 = barH
+    val botCD = barH * BOTTOM_CIRCLE_DIAMETER       // 底池直径 = barH×25（不可见）
+    val touchD = barH * TOUCH_CIRCLE_DIAMETER
+    val labelD = barH - LABEL_CIRCLE_DIAMETER * dF  // 数值圆直径
+    val riseDist = barH * METABALL_RISE_DISTANCE    // 升起量
+    val barCR = BAR_CORNER_RADIUS * dF
+    val textOffPx = TEXT_OFFSET_DP * dF
 
     var isDragging by remember { mutableStateOf(false) }
-    var wasAtBound by remember { mutableStateOf(false) }
     var localFraction by remember { mutableFloatStateOf(position.coerceIn(0f, 1f)) }
+    var wasAtBound by remember { mutableStateOf(false) }
 
     LaunchedEffect(position, isDragging) {
         if (!isDragging) localFraction = position.coerceIn(0f, 1f)
     }
 
-    val barHeightPx by animateFloatAsState(
-        targetValue = if (isDragging) pressedBarPx else restBarPx,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "fsBarHeight"
-    )
-    val beadAlpha by animateFloatAsState(
-        targetValue = if (isDragging) 1f else 0f,
-        animationSpec = tween(durationMillis / 2),
-        label = "fsBeadAlpha"
-    )
-    val beadScale by animateFloatAsState(
-        targetValue = if (isDragging) 1f else 0.3f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "fsBeadScale"
-    )
+    // 气泡升起量动画（Overshoot 回弹）
+    val rise = remember { Animatable(0f) }
+    LaunchedEffect(isDragging) {
+        if (isDragging) {
+            rise.animateTo(riseDist, tween(durationMillis, easing = OvershootEasing))
+        } else {
+            rise.animateTo(0f, tween(durationMillis))
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(containerHeightDp.dp)
+            .height(with(density) { totalH.toDp() })
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    val x = down.position.x
+                    val y = down.position.y
+                    // 仅在轨道区域响应（与原版一致：rectBar.contains(x,y)）
+                    val barTop = vOff
+                    if (y < barTop || y > barTop + barH || x < 0 || x > size.width) return@awaitEachGesture
+
                     isDragging = true
-                    if (size.width > 0) {
-                        val f = (down.position.x / size.width).coerceIn(0f, 1f)
+                    val maxMove = size.width - touchD
+                    // 点按跳转（不在拇指上时）
+                    val thumbX = touchD / 2f + maxMove * localFraction
+                    if (abs(x - thumbX) > touchD) {
+                        val f = ((x - touchD / 2f) / maxMove).coerceIn(0f, 1f)
                         localFraction = f
                         onPositionChange(f)
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+
+                    var lastX = x
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break
                         change.consume()
-                        if (size.width > 0) {
-                            val f = (change.position.x / size.width).coerceIn(0f, 1f)
-                            if (abs(f - localFraction) > 0.0005f) {
-                                localFraction = f
-                                onPositionChange(f)
-                            }
-                            val atEdge = f <= 0.005f || f >= 0.995f
+                        val newPos = (localFraction + (change.position.x - lastX) / maxMove).coerceIn(0f, 1f)
+                        lastX = change.position.x
+                        if (abs(newPos - localFraction) > 0.0005f) {
+                            localFraction = newPos
+                            onPositionChange(newPos)
+                            val atEdge = newPos <= 0.005f || newPos >= 0.995f
                             if (atEdge && !wasAtBound) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
@@ -138,70 +185,165 @@ fun FluidSlider(
             }
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(localFraction, 0f..1f)
-                stateDescription = "${(localFraction * 100).roundToInt()}%"
+                stateDescription = "${(localFraction * 100).toInt()}%"
             }
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
             val w = size.width
-            val h = size.height
             val frac = localFraction.coerceIn(0f, 1f)
+            val maxMove = (w - touchD).coerceAtLeast(1f)
+            val thumbCX = touchD / 2f + maxMove * frac
+            val riseVal = rise.value
 
-            val barTop = (h - barHeightPx) / 2f
-            val barRadius = barHeightPx / 2f
-
-            // 胶囊轨道
+            // ── 1. 胶囊轨道 ──
             drawRoundRect(
-                brush = Brush.horizontalGradient(listOf(colorBar, colorBar.copy(alpha = 0.82f))),
-                topLeft = Offset(0f, barTop),
-                size = Size(w, barHeightPx),
-                cornerRadius = CornerRadius(barRadius, barRadius)
+                brush = Brush.horizontalGradient(listOf(colorBar, colorBar.copy(alpha = 0.85f))),
+                topLeft = Offset(0f, vOff),
+                size = Size(w, barH),
+                cornerRadius = CornerRadius(barCR, barCR)
             )
 
-            // 两端标尺文字
+            // ── 2. 两端标尺 ──
             fun drawEndLabel(text: String?, alignRight: Boolean) {
                 if (text.isNullOrEmpty()) return
-                val style = TextStyle(color = colorBarText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                val style = TextStyle(color = colorBarText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Medium)
                 val measured = textMeasurer.measure(text, style, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
-                val pad = with(this@Canvas) { 10.dp.toPx() }
-                val x = if (alignRight) w - pad - measured.size.width else pad
-                val y = barTop + (barHeightPx - measured.size.height) / 2f
+                val x = if (alignRight) w - textOffPx - measured.size.width else textOffPx
+                val y = vOff + (barH - measured.size.height) / 2f
                 translate(left = x.coerceAtLeast(0f), top = y) { drawText(measured) }
             }
             drawEndLabel(startText, alignRight = false)
             drawEndLabel(endText, alignRight = true)
 
-            // 白色墨滴（仅拖动时）
-            if (beadAlpha > 0.01f && beadScale > 0.05f) {
-                val beadCX = w * frac
-                val beadCY = barTop + barHeightPx / 2f
-                val beadR = barHeightPx * 0.42f * beadScale
+            // ── 3. Metaball 液态连接 ──
+            // topCircle 从 vOff 升至 vOff - riseDist
+            val topCircleCY = vOff + topCD / 2f - riseVal
+            val topCircleCenter = Offset(thumbCX, topCircleCY)
+            // bottomCircle 是不可见巨圆，中心在轨道中央
+            val botCircleCenter = Offset(thumbCX, vOff + barH / 2f)
 
-                drawCircle(Color.Black.copy(alpha = 0.12f * beadAlpha), radius = beadR * 1.06f, center = Offset(beadCX, beadCY + 1.5f))
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(colorBubble, colorBubble.copy(alpha = 0.92f)),
-                        center = Offset(beadCX - beadR * 0.15f, beadCY - beadR * 0.18f),
-                        radius = beadR * 1.3f
-                    ),
-                    radius = beadR,
-                    center = Offset(beadCX, beadCY)
+            if (riseVal > 1f) {
+                drawMetaballFaithful(
+                    c1Center = botCircleCenter,
+                    c1Radius = botCD / 2f,
+                    c2Center = topCircleCenter,
+                    c2Radius = topCD / 2f,
+                    topBorderY = vOff,
+                    riseDist = riseDist,
+                    maxDist = barH * METABALL_MAX_DISTANCE,
+                    cornerRadius = barCR,
+                    paintColor = colorBar
                 )
-                drawCircle(
-                    Color.White.copy(alpha = 0.85f * beadAlpha),
-                    radius = beadR * 0.22f,
-                    center = Offset(beadCX - beadR * 0.3f, beadCY - beadR * 0.32f)
-                )
-
-                val txt = bubbleText ?: "${(frac * 100).roundToInt()}"
-                if (txt.isNotEmpty() && beadScale > 0.5f) {
-                    val bStyle = TextStyle(color = colorBubbleText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
-                    translate(
-                        left = beadCX - measured.size.width / 2f,
-                        top = beadCY - measured.size.height / 2f
-                    ) { drawText(measured) }
-                }
             }
+
+            // ── 4. 白色数值圆盘（在气泡内部居中）──
+            val labelTop = vOff + (topCD - labelD) / 2f - riseVal
+            val labelCenter = Offset(thumbCX, labelTop + labelD / 2f)
+            drawCircle(color = colorBubble, radius = labelD / 2f, center = labelCenter)
+            val txt = bubbleText ?: "${(frac * 100).toInt()}"
+            val bStyle = TextStyle(color = colorBubbleText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+            val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
+            translate(
+                left = labelCenter.x - measured.size.width / 2f,
+                top = labelCenter.y - measured.size.height / 2f
+            ) { drawText(measured) }
         }
     }
+}
+
+/**
+ * 原 View drawMetaball 的逐行 Compose Canvas 移植。
+ * 两圆之间的液态变形路径，含 spread 因子和 handle 控制柄。
+ */
+private fun DrawScope.drawMetaballFaithful(
+    c1Center: Offset,
+    c1Radius: Float,
+    c2Center: Offset,
+    c2Radius: Float,
+    topBorderY: Float,
+    riseDist: Float,
+    maxDist: Float,
+    cornerRadius: Float,
+    paintColor: Color
+) {
+    if (c1Radius <= 0f || c2Radius <= 0f) return
+
+    val dx = c1Center.x - c2Center.x
+    val dy = c1Center.y - c2Center.y
+    val d = sqrt(dx * dx + dy * dy)
+    if (d > maxDist || d <= abs(c1Radius - c2Radius)) return
+
+    val riseRatio = min(1f, max(0f, topBorderY - (c2Center.y - c2Radius)) / riseDist)
+
+    val u1: Float
+    val u2: Float
+    if (d < c1Radius + c2Radius) {
+        u1 = acos((c1Radius * c1Radius + d * d - c2Radius * c2Radius) / (2 * c1Radius * d))
+        u2 = acos((c2Radius * c2Radius + d * d - c1Radius * c1Radius) / (2 * c2Radius * d))
+    } else {
+        u1 = 0f
+        u2 = 0f
+    }
+
+    val cxMin = c2Center.x - c1Center.x
+    val cyMin = c2Center.y - c1Center.y
+    val bottomSpreadDiff = BOTTOM_START_SPREAD_FACTOR - BOTTOM_END_SPREAD_FACTOR
+    val bSpreadFactor = BOTTOM_START_SPREAD_FACTOR - bottomSpreadDiff * riseRatio
+
+    val fPI = PI.toFloat()
+    val angle1 = atan2(cyMin, cxMin)
+    val angle2 = acos((c1Radius - c2Radius) / d)
+    val angle1a = angle1 + u1 + (angle2 - u1) * bSpreadFactor
+    val angle1b = angle1 - u1 - (angle2 - u1) * bSpreadFactor
+    val angle2a = angle1 + fPI - u2 - (fPI - u2 - angle2) * TOP_SPREAD_FACTOR
+    val angle2b = angle1 - fPI + u2 + (fPI - u2 - angle2) * TOP_SPREAD_FACTOR
+
+    fun vec(rad: Float, len: Float): Offset =
+        Offset(cos(rad) * len, sin(rad) * len)
+
+    val p1aRaw = vec(angle1a, c1Radius)
+    val p1bRaw = vec(angle1b, c1Radius)
+    val p2aRaw = vec(angle2a, c2Radius)
+    val p2bRaw = vec(angle2b, c2Radius)
+
+    val p1a = Offset(p1aRaw.x + c1Center.x, p1aRaw.y + c1Center.y)
+    val p1b = Offset(p1bRaw.x + c1Center.x, p1bRaw.y + c1Center.y)
+    val p2a = Offset(p2aRaw.x + c2Center.x, p2aRaw.y + c2Center.y)
+    val p2b = Offset(p2bRaw.x + c2Center.x, p2bRaw.y + c2Center.y)
+
+    val totalR = c1Radius + c2Radius
+    val distPA = sqrt((p1a.x - p2a.x).let { it * it } + (p1a.y - p2a.y).let { it * it })
+    val d2Base = min(
+        max(TOP_SPREAD_FACTOR, bSpreadFactor) * METABALL_HANDLER_FACTOR,
+        distPA / totalR
+    )
+    val d2 = d2Base * min(1f, d * 2f / totalR)
+
+    val r1 = c1Radius * d2
+    val r2 = c2Radius * d2
+    val pi2 = fPI / 2f
+
+    val sp1 = vec(angle1a - pi2, r1)
+    val sp2 = vec(angle2a + pi2, r2)
+    val sp3 = vec(angle2b - pi2, r2)
+    val sp4 = vec(angle1b + pi2, r1)
+
+    val yOffset = abs(topBorderY - p1a.y) * riseRatio - 1f
+    val fp1a = Offset(p1a.x, p1a.y - yOffset)
+    val fp1b = Offset(p1b.x, p1b.y - yOffset)
+
+    val path = Path().apply {
+        reset()
+        moveTo(fp1a.x, fp1a.y + cornerRadius)
+        lineTo(fp1a.x, fp1a.y)
+        cubicTo(fp1a.x + sp1.x, fp1a.y + sp1.y, p2a.x + sp2.x, p2a.y + sp2.y, p2a.x, p2a.y)
+        lineTo(c2Center.x, c2Center.y)
+        lineTo(p2b.x, p2b.y)
+        cubicTo(p2b.x + sp3.x, p2b.y + sp3.y, fp1b.x + sp4.x, fp1b.y + sp4.y, fp1b.x, fp1b.y)
+        lineTo(fp1b.x, fp1b.y + cornerRadius)
+        close()
+    }
+
+    drawPath(path, paintColor)
+    drawCircle(paintColor, radius = c2Radius, center = c2Center)
 }
