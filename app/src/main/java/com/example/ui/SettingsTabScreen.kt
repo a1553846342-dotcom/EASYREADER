@@ -53,8 +53,7 @@ import com.example.ui.components.LocalRenderQuality
 import com.example.ui.components.RenderQuality
 import com.example.ui.components.SegmentedPillSelector
 import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
-import com.ramotion.fluidslider.FluidSliderCompose
-import com.ramotion.fluidslider.SliderSize
+import com.ramotion.fluidslider.FluidSlider
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
 import com.example.ui.components.JunoSlider
@@ -407,7 +406,7 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
-                                    FluidSliderCompose(
+                                    FluidSlider(
                                         position = appBgDim / 50f,
                                         onPositionChange = {
                                             appBgDim = (it * 50).toInt().coerceIn(0, 50)
@@ -849,7 +848,7 @@ fun SettingsTabScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
-                                FluidSliderCompose(
+                                FluidSlider(
                                     position = blueLightAlpha,
                                     onPositionChange = {
                                         blueLightAlpha = it
@@ -862,7 +861,7 @@ fun SettingsTabScreen(
                                     colorBubble = Color.White,
                                     colorBubbleText = MintPrimary,
                                     colorBarText = glassTitleColor(),
-                                    barSize = SliderSize.SMALL
+                                    barHeightDp = 40
                                 )
                             }
                         }
