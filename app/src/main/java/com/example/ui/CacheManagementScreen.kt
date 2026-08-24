@@ -1,8 +1,10 @@
 package com.example.ui
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -11,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -149,6 +152,48 @@ fun CacheManagementScreen(
                         } else {
                             Text(formatSize(totalSize), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Text("总缓存占用", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                            // 比例色带：各分类占比可视化（存储管理风格）
+                            if (totalSize > 0 && cacheItems.isNotEmpty()) {
+                                Spacer(Modifier.height(16.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                ) {
+                                    val barColors = listOf(
+                                        Color(0xFF6C5CE7), Color(0xFF00B894), Color(0xFFE17055),
+                                        Color(0xFFFDCE46), Color(0xFF74B9FF)
+                                    )
+                                    cacheItems.forEachIndexed { idx, (_, _, size) ->
+                                        val fraction = if (totalSize > 0) size.toFloat() / totalSize else 0f
+                                        Box(
+                                            Modifier
+                                                .weight(fraction.coerceAtLeast(0.01f))
+                                                .fillMaxHeight()
+                                                .background(barColors[idx % barColors.size])
+                                        )
+                                    }
+                                }
+                                // 图例
+                                Spacer(Modifier.height(10.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    val barColors = listOf(
+                                        Color(0xFF6C5CE7), Color(0xFF00B894), Color(0xFFE17055),
+                                        Color(0xFFFDCE46), Color(0xFF74B9FF)
+                                    )
+                                    cacheItems.forEachIndexed { idx, (name, _, size) ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.size(8.dp).background(barColors[idx % barColors.size], androidx.compose.foundation.shape.CircleShape))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(name, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(Modifier.weight(1f))
+                                            Text(formatSize(size), fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
