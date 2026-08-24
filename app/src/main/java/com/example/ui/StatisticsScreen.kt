@@ -103,7 +103,41 @@ fun StatisticsScreen(
                 else MaterialTheme.colorScheme.background
             )
     ) {
-        Scaffold(containerColor = Color.Transparent) { padding ->
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                // 与书架/设置页统一：固定顶栏（statusBarsPadding + 24dp 玻璃卡，不随内容滚走）
+                GlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = "阅读统计",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = glassTitleColor(),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "STATISTICS & INSIGHTS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = glassTitleColor().copy(alpha = 0.75f),
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                }
+            }
+        ) { padding ->
             // 性能优化（视觉零变化）：原为普通 Column+verticalScroll，
             // 5 张玻璃卡 + 3 个图表在滚动时全部参与绘制命令录制（低端机卡顿主因）。
             // 改 LazyColumn 后屏幕外的卡片/图表不再组合与绘制，布局顺序间距完全一致。
@@ -114,38 +148,8 @@ fun StatisticsScreen(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
             ) {
-                // 书架同款顶部栏（毛玻璃卡 + 24dp 圆角 + 8dp 阴影 + Serif 标题层级）
-                item(key = "stats_top_bar") {
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 16.dp)
-                        ) {
-                            Text(
-                                text = "阅读统计",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = glassTitleColor(),
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "STATISTICS & INSIGHTS",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = glassTitleColor().copy(alpha = 0.75f),
-                                letterSpacing = 1.5.sp
-                            )
-                        }
-                    }
-                }
-
                 if (totalReadTimeSeconds == 0L) {
                     item(key = "stats_empty") {
                         com.example.ui.components.MascotEmptyState(
