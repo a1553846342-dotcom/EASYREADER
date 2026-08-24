@@ -116,6 +116,7 @@ fun SettingsTabScreen(
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
     var showHelpBottomSheet by remember { mutableStateOf(false) }
+    var showCacheManager by remember { mutableStateOf(false) }
 
     val posterLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -869,7 +870,36 @@ fun SettingsTabScreen(
                     }
                 }
 
-                // Section 6: Library Help & Manual
+                // Section 6: Cache Management
+                item {
+                    SettingsSectionHeader("存储管理")
+                }
+                item {
+                    GlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickableWithFeedback { showCacheManager = true },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.CleaningServices, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("缓存管理", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    Text("清理下载与临时文件", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        }
+                    }
+                }
+
+                // Section 7: Library Help & Manual
                 item {
                     SettingsSectionHeader("帮助手册")
                 }
@@ -911,7 +941,14 @@ fun SettingsTabScreen(
             }
         }
 
-        if (showHelpBottomSheet) {
+        var showCacheManager by remember { mutableStateOf(false) }
+
+    if (showCacheManager) {
+        CacheManagementScreen(onBack = { showCacheManager = false })
+        return
+    }
+
+    if (showHelpBottomSheet) {
             LibraryHelpBottomSheet(
                 onDismissRequest = { showHelpBottomSheet = false },
                 onOpenSourceManager = { onOpenSourceManager?.invoke() }

@@ -1503,6 +1503,25 @@ fun ReaderScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                Text("字体", fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val fonts = listOf(0 to "默认", 1 to "衬线", 2 to "黑体", 3 to "等宽")
+                    fonts.forEach { (idx, name) ->
+                        FilterChip(
+                            selected = fontFamilyIndex == idx,
+                            onClick = { fontFamilyIndex = idx; prefs.fontFamilyIndex = idx },
+                            label = { Text(name, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text("主题风格", fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
