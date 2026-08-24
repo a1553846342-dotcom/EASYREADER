@@ -1115,7 +1115,7 @@ fun ReaderScreen(
                             }
 
                             if (prefs.showOverlayHeaderFooter && !showBars) {
-                                val pct = ((currentChapterIndex + 1).toFloat() / chapters.size * 100).toInt()
+                                val pct = if (chapters.isNotEmpty()) ((currentChapterIndex + 1).toFloat() / chapters.size * 100).toInt() else 0
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
