@@ -938,6 +938,43 @@ fun SettingsTabScreen(
                         }
                     }
                 }
+
+                // Section 8: About
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Ciallo 阅读",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val versionName = remember {
+                                try {
+                                    context.packageManager.getPackageInfo(context.packageName, 0)?.versionName ?: "1.0"
+                                } catch (_: Exception) { "1.0" }
+                            }
+                            Text(
+                                "版本 $versionName",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                "轻量级本地 / 在线小说阅读器",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
             }
         }
 
