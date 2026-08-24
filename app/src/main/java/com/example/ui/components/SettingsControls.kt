@@ -599,7 +599,7 @@ private fun PageTurnPreview(
     dimmed: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val pageBg = MaterialTheme.colorScheme.surface
+    val pageBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
     val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
     val nextLineColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.38f)
     val edgeColor = MaterialTheme.colorScheme.outlineVariant

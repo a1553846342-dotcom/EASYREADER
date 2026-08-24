@@ -53,8 +53,8 @@ import com.example.ui.components.LocalRenderQuality
 import com.example.ui.components.RenderQuality
 import com.example.ui.components.SegmentedPillSelector
 import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
-import com.ramotion.fluidslider.FluidSlider
-import com.ramotion.fluidslider.FluidSliderSize
+import com.ramotion.fluidslider.FluidSliderCompose
+import com.ramotion.fluidslider.SliderSize
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
 import com.example.ui.components.JunoSlider
@@ -407,7 +407,7 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
-                                    FluidSlider(
+                                    FluidSliderCompose(
                                         position = appBgDim / 50f,
                                         onPositionChange = {
                                             appBgDim = (it * 50).toInt().coerceIn(0, 50)
@@ -849,7 +849,7 @@ fun SettingsTabScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
-                                FluidSlider(
+                                FluidSliderCompose(
                                     position = blueLightAlpha,
                                     onPositionChange = {
                                         blueLightAlpha = it
@@ -862,7 +862,7 @@ fun SettingsTabScreen(
                                     colorBubble = Color.White,
                                     colorBubbleText = MintPrimary,
                                     colorBarText = glassTitleColor(),
-                                    barSize = FluidSliderSize.SMALL
+                                    barSize = SliderSize.SMALL
                                 )
                             }
                         }
