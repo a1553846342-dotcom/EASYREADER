@@ -31,7 +31,9 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +58,7 @@ fun SquishyToggleSwitch(
     var internalToggle by remember { mutableStateOf(false) }
     val isToggled = checked ?: internalToggle
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     val transition = updateTransition(targetState = isToggled, label = "Switch Transition")
     val trackColor by transition.animateColor(
@@ -109,6 +112,7 @@ fun SquishyToggleSwitch(
         val nv = !isToggled
         if (checked == null) internalToggle = nv
         onCheckedChange?.invoke(nv)
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         animateToggle(nv)
     }
 
