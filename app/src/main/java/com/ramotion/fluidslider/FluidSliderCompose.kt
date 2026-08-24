@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -189,6 +191,18 @@ fun FluidSlider(
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(localFraction, 0f..1f)
                 stateDescription = "${(localFraction * 100).toInt()}%"
+                customActions = listOf(
+                    androidx.compose.ui.semantics.CustomAccessibilityAction("增加") {
+                        val f = (localFraction + 0.05f).coerceIn(0f, 1f)
+                        onPositionChange(f)
+                        true
+                    },
+                    androidx.compose.ui.semantics.CustomAccessibilityAction("减少") {
+                        val f = (localFraction - 0.05f).coerceIn(0f, 1f)
+                        onPositionChange(f)
+                        true
+                    }
+                )
             }
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
