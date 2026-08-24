@@ -154,7 +154,7 @@ fun FluidSlider(
                         x < -touchPadding || x > size.width + touchPadding) return@awaitEachGesture
 
                     isDragging = true
-                    val maxMove = size.width - touchD
+                    val maxMove = (size.width - touchD).coerceAtLeast(1f)
                     // 点按跳转（不在拇指上时）
                     val thumbX = touchD / 2f + maxMove * localFraction
                     if (abs(x - thumbX) > touchD) {
