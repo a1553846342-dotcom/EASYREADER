@@ -1332,6 +1332,7 @@ fun ReaderScreen(
                                             }
                                             AppIconButton(onClick = {
                                                 showTtsBar = true
+                                                if (isAutoScrolling) isAutoScrolling = false // 与 TTS 互斥
                                                 if (!isTtsPlaying) {
                                                     currentChapter?.let { ch ->
                                                         ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
@@ -1349,9 +1350,14 @@ fun ReaderScreen(
                                             AppIconButton(onClick = { showSettingsSheet = true }) {
                                                 Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
-                                            // 自动滚屏开关（仅滚动模式显示）
+                                            // 自动滚屏开关（仅滚动模式显示；与 TTS 互斥——同时开启会视听不同步）
                                             if (isScrollMode) {
-                                                AppIconButton(onClick = { isAutoScrolling = !isAutoScrolling }) {
+                                                AppIconButton(onClick = {
+                                                    isAutoScrolling = !isAutoScrolling
+                                                    if (isAutoScrolling && isTtsPlaying) {
+                                                        ttsManager.pause()
+                                                    }
+                                                }) {
                                                     Icon(
                                                         Icons.Filled.UnfoldMore,
                                                         "自动滚屏",
@@ -1442,6 +1448,7 @@ fun ReaderScreen(
                                                 FilledTonalButton(
                                                     onClick = {
                                                         showTtsBar = true
+                                                        if (isAutoScrolling) isAutoScrolling = false // 与 TTS 互斥
                                                         if (!isTtsPlaying) {
                                                             currentChapter?.let { ch ->
                                                                 ttsManager.startReading(ch.content, speed = prefs.ttsSpeed, pitch = prefs.ttsPitch)
