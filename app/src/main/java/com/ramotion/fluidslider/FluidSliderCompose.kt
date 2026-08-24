@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
+import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.atan2
@@ -225,6 +226,8 @@ fun FluidSlider(
             val botCircleCenter = Offset(thumbCX, vOff + botCD / 2f)
 
             if (riseVal > 1f) {
+                // 边缘渐隐：frac 接近 0/1 时液桥淡出（避免圆弧端面处的矩形凸出）
+                val edgeFade = min(frac / 0.08f, (1f - frac) / 0.08f).coerceIn(0f, 1f)
                 drawMetaballFaithful(
                     c1Center = botCircleCenter,
                     c1Radius = botCD / 2f,
@@ -234,7 +237,7 @@ fun FluidSlider(
                     riseDist = riseDist,
                     maxDist = barH * METABALL_MAX_DISTANCE,
                     cornerRadius = barCR,
-                    paintColor = colorBar
+                    paintColor = colorBar.copy(alpha = edgeFade)
                 )
             }
 
@@ -242,8 +245,8 @@ fun FluidSlider(
             val labelTop = vOff + (topCD - labelD) / 2f - riseVal
             val labelCenter = Offset(thumbCX, labelTop + labelD / 2f)
             drawCircle(color = colorBubble, radius = labelD / 2f, center = labelCenter)
-            val txt = bubbleText ?: "${(frac * 100).toInt()}"
-            val bStyle = TextStyle(color = colorBubbleText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+            val txt = bubbleText ?: "${(frac * 100).roundToInt()}"
+            val bStyle = TextStyle(color = colorBubbleText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
             translate(
                 left = labelCenter.x - measured.size.width / 2f,

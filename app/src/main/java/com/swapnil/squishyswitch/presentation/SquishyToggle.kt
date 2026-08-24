@@ -63,15 +63,10 @@ fun SquishyToggleSwitch(
         label = "Track Color"
     ) { checked -> if (checked) color else Color.LightGray }
 
-    // Animatable properties
-    val thumbPosition = remember { Animatable(0f) }
+    // Animatable properties — 初始值跟随外部 checked 状态（修复刷新后白圆停左边）
+    val thumbPosition = remember { Animatable(if (isToggled) 1f else 0f) }
     val squishX = remember { Animatable(1f) }
     val squishY = remember { Animatable(1f) }
-
-    // 修复：外部传入 checked 变化时同步拇指位置（否则刷新后白圆停在左边但颜色是开的）
-    LaunchedEffect(isToggled) {
-        thumbPosition.snapTo(if (isToggled) 1f else 0f)
-    }
 
     // Define easing curves for smooth, jelly-like movement
     val stretchEasing = CubicBezierEasing(0.75f, 0f, 1f, 1f)
