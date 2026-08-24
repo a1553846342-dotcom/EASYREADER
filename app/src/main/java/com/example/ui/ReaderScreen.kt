@@ -1354,7 +1354,12 @@ fun ReaderScreen(
                                                     },
                                                     valueRange = 0f..(chapters.size - 1).coerceAtLeast(1).toFloat(),
                                                     steps = (chapters.size - 2).coerceAtLeast(0),
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    colors = SliderDefaults.colors(
+                                                        thumbColor = barContentColor,
+                                                        activeTrackColor = barContentColor,
+                                                        inactiveTrackColor = barContentColor.copy(alpha = 0.25f)
+                                                    )
                                                 )
                 
                                                 TextButton(
