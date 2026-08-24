@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.cos
@@ -58,10 +59,6 @@ fun Modifier.chromaFlowEdge(
         val h = size.height
         if (w <= 0 || h <= 0) return@drawBehind
 
-        // 周长近似
-        val perimeter = 2f * (w + h)
-        // 亮带占周长的 18%
-        val bandFraction = 0.18f
 
         val strokeW = 4.dp.toPx()
         val inset = strokeW / 2f
@@ -71,8 +68,7 @@ fun Modifier.chromaFlowEdge(
             addRoundRect(w, h, radiusPx)
         }
 
-        // 用 sweepGradient 模拟沿周长移动的亮带
-        val startAngle = phase * 360f
+        // sweepGradient + rotate(phase×360°) → 光带沿周长巡游
         val colors = listOf(
             Color.Transparent,
             primary.copy(alpha = 0.6f),
@@ -87,7 +83,9 @@ fun Modifier.chromaFlowEdge(
             center = Offset(w / 2f, h / 2f)
         )
 
-        drawPath(path, brush, style = Stroke(width = strokeW))
+        rotate(degrees = phase * 360f, pivot = Offset(w / 2f, h / 2f)) {
+            drawPath(path, brush, style = Stroke(width = strokeW))
+        }
     }
 }
 
