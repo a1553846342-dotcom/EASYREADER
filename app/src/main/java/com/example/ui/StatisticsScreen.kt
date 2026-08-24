@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -472,6 +473,44 @@ private fun PeriodOverviewCard(
                             Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 分享阅读成就
+                val shareContext = androidx.compose.ui.platform.LocalContext.current
+                TextButton(
+                    onClick = {
+                        val hours = periodTotal / 3600
+                        val mins = (periodTotal % 3600) / 60
+                        val timeStr = if (hours > 0) "${hours}小时${mins}分钟" else "${mins}分钟"
+                        val shareText = buildString {
+                            appendLine("📚 我在 Ciallo 阅读${periodName}的阅读报告")
+                            appendLine("⏱ 总阅读时长：$timeStr")
+                            appendLine("📖 阅读天数：${daysRead} 天")
+                            if (streak > 1) appendLine("🔥 连续阅读：${streak} 天")
+                            appendLine("🎯 日均目标完成度：${(animatedGoal * 100).toInt()}%")
+                            appendLine("")
+                            appendLine("—— 来自 Ciallo 阅读器")
+                        }
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        }
+                        shareContext.startActivity(
+                            android.content.Intent.createChooser(intent, "分享阅读报告")
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MintPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("分享${periodName}阅读报告", fontSize = 13.sp, color = MintPrimary)
                 }
              }
 
