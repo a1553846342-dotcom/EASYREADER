@@ -111,7 +111,8 @@ fun FluidSlider(
     val dF = density.density
 
     // ── init 尺寸推导（逐行对应原 View）──
-    val barH = barHeightDp * dF
+    val safeBarHeightDp = barHeightDp.coerceIn(20, 80) // 防极端值导致布局异常
+    val barH = safeBarHeightDp * dF
     val vOff = barH * BAR_VERTICAL_OFFSET          // 轨道顶距容器顶
     val totalH = barH * SLIDER_HEIGHT               // 容器总高
     val topCD = barH * TOP_CIRCLE_DIAMETER          // 气泡直径 = barH
