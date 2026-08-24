@@ -524,6 +524,26 @@ private fun Simulate3DCurlLayout(
                         )
                     )
                 }
+
+                // Paper edge highlight: a thin bright band where the lifted page catches
+                // the light along the crease — separates "paper" from "cloth" visually.
+                val edgeHighlightWidth = (curlRadius * 0.16f).coerceIn(2f, 6f)
+                run {
+                    val normal = curlNormal(foldTop, foldBottom, +1)
+                    val midFold = midPoint(foldTop, foldBottom)
+                    val edgePath = shadowStripPath(foldTop, foldBottom, normal, edgeHighlightWidth)
+                    drawPath(
+                        path = edgePath,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.30f * (1f - progress)),
+                                Color.Transparent
+                            ),
+                            start = midFold,
+                            end = midFold + normal * edgeHighlightWidth
+                        )
+                    )
+                }
             }
 
             // Turned Flap Backside: paper + mirrored page content + cylinder shading

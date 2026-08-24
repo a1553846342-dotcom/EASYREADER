@@ -1,14 +1,18 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -73,7 +78,26 @@ fun ReadingTrendCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("阅读趋势", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                // 统计卡统一图标语言：36dp 圆形浅底 + 20dp 图标（与本周趋势卡一致）
+                Surface(
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = MintPrimary.copy(alpha = 0.12f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.ShowChart,
+                            contentDescription = null,
+                            tint = MintPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text("阅读趋势", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("时长走势与高峰时段", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 SegmentedPillSelector(
                     options = listOf(0 to "周", 1 to "月", 2 to "年"),
@@ -115,12 +139,36 @@ fun ReadingTrendCard(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            TrendLineChart(
-                series = series,
-                selectedIndex = selectedPoint,
-                onSelectIndex = { selectedPoint = it },
+            Box(
                 modifier = Modifier.fillMaxWidth().height(150.dp)
-            )
+            ) {
+                TrendLineChart(
+                    series = series,
+                    selectedIndex = selectedPoint,
+                    onSelectIndex = { selectedPoint = it },
+                    modifier = Modifier.fillMaxSize()
+                )
+                // 满刻度数值锚点：让"线有多高"可被量化
+                val maxSeconds = series.maxOfOrNull { it.second } ?: 0L
+                if (maxSeconds > 0L) {
+                    Text(
+                        text = "满刻度 ${formatShortDuration(maxSeconds)}",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 2.dp, end = 4.dp)
+                    )
+                }
+                if (series.all { it.second <= 0L }) {
+                    Text(
+                        text = "还没有阅读时长——去读一页，让曲线开始生长",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -195,7 +243,21 @@ private fun TrendLineChart(
     }
     val maxVal = (series.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
     val primary = MintPrimary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val peakIndex = series.indices.maxByOrNull { series[it].second }
+
+    // 先纸后墨：数据自左向右描绘进场；流畅档直接定格终态
+    val lowQuality = LocalRenderQuality.current == RenderQuality.LOW
+    val reveal = remember { Animatable(1f) }
+    LaunchedEffect(series, lowQuality) {
+        if (lowQuality) {
+            reveal.snapTo(1f)
+        } else {
+            reveal.snapTo(0f)
+            reveal.animateTo(1f, tween(700, easing = CubicBezierEasing(0.3f, 0f, 0.2f, 1f)))
+        }
+    }
+
     Canvas(
         modifier = modifier.pointerInput(series.size) {
             detectTapGestures { offset ->
@@ -213,6 +275,19 @@ private fun TrendLineChart(
         val h = size.height
         val topPad = 10f
         val bottomPad = 8f
+
+        // 先纸：水平参考网格 + 基线（静态骨架，不参与 reveal）
+        for (g in 1..3) {
+            val gy = topPad + (h - topPad - bottomPad) * g / 4f
+            drawLine(gridColor, Offset(0f, gy), Offset(w, gy), strokeWidth = 1f)
+        }
+        drawLine(
+            color = gridColor.copy(alpha = gridColor.alpha * 2.2f),
+            start = Offset(0f, h - bottomPad),
+            end = Offset(w, h - bottomPad),
+            strokeWidth = 1f
+        )
+
         val stepX = w / (series.size - 1)
         val points = series.mapIndexed { i, (_, v) ->
             Offset(i * stepX, h - bottomPad - (v.toFloat() / maxVal) * (h - topPad - bottomPad))
@@ -228,19 +303,28 @@ private fun TrendLineChart(
             lineTo(0f, h)
             close()
         }
-        drawPath(
-            path = fillPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(primary.copy(alpha = 0.30f), Color.Transparent)
+
+        // 后墨：折线/面积/峰值随 reveal 因果生长（峰值点在描绘经过时才落墨）
+        val rv = reveal.value
+        clipRect(left = 0f, top = 0f, right = w * rv, bottom = h) {
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(primary.copy(alpha = 0.30f), Color.Transparent)
+                )
             )
-        )
-        drawPath(path = linePath, color = primary, style = Stroke(width = 2.5f))
-        // 峰值金色强调
-        peakIndex?.let { pi ->
-            drawCircle(MintGold, radius = 7f, center = points[pi])
-            drawCircle(Color.White, radius = 3f, center = points[pi])
+            drawPath(path = linePath, color = primary, style = Stroke(width = 2.5f))
+            peakIndex?.let { pi ->
+                drawCircle(MintGold, radius = 7f, center = points[pi])
+                drawCircle(Color.White, radius = 3f, center = points[pi])
+            }
+            if (selectedIndex !in points.indices) {
+                drawCircle(primary, radius = 4f, center = points.first())
+                drawCircle(primary, radius = 4f, center = points.last())
+            }
         }
-        // 选中点
+
+        // 选中点脉冲：始终即时响应点击（不参与 reveal）
         if (selectedIndex in points.indices) {
             val p = points[selectedIndex]
             drawCircle(
@@ -250,9 +334,6 @@ private fun TrendLineChart(
             )
             drawCircle(primary, radius = 5f, center = p)
             drawCircle(Color.White, radius = 2f, center = p)
-        } else {
-            drawCircle(primary, radius = 4f, center = points.first())
-            drawCircle(primary, radius = 4f, center = points.last())
         }
     }
 }

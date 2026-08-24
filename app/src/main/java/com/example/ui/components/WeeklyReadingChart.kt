@@ -37,7 +37,9 @@ import coil.compose.AsyncImage
 import com.example.data.Book
 import com.example.data.ReadingRecord
 import com.example.ui.components.AcrylicDialog
+import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
+import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
 
@@ -72,11 +74,23 @@ fun WeeklyReadingChart(
     val maxMinutes = remember(minutesPerDay) { (minutesPerDay.maxOrNull() ?: 1).coerceAtLeast(1) }
     val chartPrimary = MaterialTheme.colorScheme.primary
     val chartSecondary = MaterialTheme.colorScheme.secondary
+    // 本周峰值日（阅读时长最长的一天）：金色强调，让"重点"第一眼可见
+    val lowQuality = LocalRenderQuality.current == RenderQuality.LOW
+    val peakDayIdx = remember(minutesPerDay) {
+        minutesPerDay.indices
+            .maxByOrNull { minutesPerDay[it] }
+            ?.takeIf { minutesPerDay.getOrElse(it) { 0 } > 0 }
+    }
 
     // Staggered entrance animation factors for 7 bars
     val barAnimatables = remember { List(7) { Animatable(0f) } }
-    
-    LaunchedEffect(minutesPerDay) {
+
+    LaunchedEffect(minutesPerDay, lowQuality) {
+        if (lowQuality) {
+            // 流畅档：跳过生长动画，直接定格终态
+            barAnimatables.forEachIndexed { _, animatable -> animatable.snapTo(1f) }
+            return@LaunchedEffect
+        }
         // Defer chart bar growth animation until page switch transition completes (250-300ms)
         delay(320L)
         barAnimatables.forEachIndexed { index, animatable ->
@@ -177,6 +191,7 @@ fun WeeklyReadingChart(
 
                     val barGradient = when {
                         isToday || isSelected -> listOf(chartSecondary, chartPrimary)
+                        index == peakDayIdx && mins > 0 -> listOf(MintGold.copy(alpha = 0.80f), MintGold.copy(alpha = 0.50f))
                         mins > 0 -> listOf(
                             chartSecondary.copy(alpha = 0.65f),
                             chartPrimary.copy(alpha = 0.45f)
@@ -205,8 +220,17 @@ fun WeeklyReadingChart(
                             Text(
                                 text = if (mins > 0) "${mins}分" else "-",
                                 fontSize = 10.sp,
-                                fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isToday) MintPrimary else if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                fontWeight = when {
+                                    index == peakDayIdx && mins > 0 -> FontWeight.Bold
+                                    isSelected || isToday -> FontWeight.Bold
+                                    else -> FontWeight.Normal
+                                },
+                                color = when {
+                                    isToday -> MintPrimary
+                                    index == peakDayIdx && mins > 0 -> MintGold
+                                    isSelected -> MintSecondary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                },
                                 maxLines = 1,
                                 textAlign = TextAlign.Center
                             )

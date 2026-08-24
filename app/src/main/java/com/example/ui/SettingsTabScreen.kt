@@ -49,8 +49,8 @@ import com.example.ui.components.AppLiquidSwitch
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.GlassCard
+import com.example.ui.components.InkSlider
 import com.example.ui.components.LocalRenderQuality
-import com.example.ui.components.MaxJunoSlider
 import com.example.ui.components.RenderQuality
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.PageTurnSelectorRow
@@ -404,29 +404,16 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
-                                    if (LocalRenderQuality.current == RenderQuality.MAX) {
-                                        MaxJunoSlider(
-                                            value = appBgDim / 50f,
-                                            onValueChange = {
-                                                appBgDim = (it * 50).toInt().coerceIn(0, 50)
-                                                prefs.appBackgroundDim = appBgDim
-                                                if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
-                                                    AppBackgroundController.update(1, appBgUri, appBgDim)
-                                                }
+                                    InkSlider(
+                                        value = appBgDim / 50f,
+                                        onValueChange = {
+                                            appBgDim = (it * 50).toInt().coerceIn(0, 50)
+                                            prefs.appBackgroundDim = appBgDim
+                                            if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
+                                                AppBackgroundController.update(1, appBgUri, appBgDim)
                                             }
-                                        )
-                                    } else {
-                                        JunoSlider(
-                                            value = appBgDim / 50f,
-                                            onValueChange = {
-                                                appBgDim = (it * 50).toInt().coerceIn(0, 50)
-                                                prefs.appBackgroundDim = appBgDim
-                                                if (appBgMode == 1 && !appBgUri.isNullOrEmpty()) {
-                                                    AppBackgroundController.update(1, appBgUri, appBgDim)
-                                                }
-                                            }
-                                        )
-                                    }
+                                        }
+                                    )
                                     Spacer(modifier = Modifier.height(8.dp))
                                 }
                                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -717,6 +704,7 @@ fun SettingsTabScreen(
                                 PageTurnSelectorRow(
                                     title = turnType.title,
                                     description = turnType.description,
+                                    type = turnType,
                                     selected = pageTurnMode == turnType.id,
                                     onClick = {
                                         pageTurnMode = turnType.id
@@ -834,23 +822,27 @@ fun SettingsTabScreen(
 
                             if (blueLightFilter) {
                                 Spacer(modifier = Modifier.height(10.dp))
-                                if (LocalRenderQuality.current == RenderQuality.MAX) {
-                                    MaxJunoSlider(
-                                        value = blueLightAlpha,
-                                        onValueChange = {
-                                            blueLightAlpha = it
-                                            onBlueLightAlphaChange(it)
-                                        }
-                                    )
-                                } else {
-                                    JunoSlider(
-                                        value = blueLightAlpha,
-                                        onValueChange = {
-                                            blueLightAlpha = it
-                                            onBlueLightAlphaChange(it)
-                                        }
+                                // 静止态也可读：当前强度常驻显示（与遮罩强度行同款式）
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("当前强度", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${(blueLightAlpha * 100).toInt()}%",
+                                        fontSize = 12.sp,
+                                        color = MintPrimary,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                InkSlider(
+                                    value = blueLightAlpha,
+                                    onValueChange = {
+                                        blueLightAlpha = it
+                                        onBlueLightAlphaChange(it)
+                                    }
+                                )
                             }
                         }
                     }

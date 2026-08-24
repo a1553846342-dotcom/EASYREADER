@@ -2,7 +2,10 @@ package com.example.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,11 +44,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -59,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.pageturn.PageTurnType
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -205,6 +215,7 @@ fun SegmentedPillSelector(
 fun PageTurnSelectorRow(
     title: String,
     description: String,
+    type: PageTurnType,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -229,6 +240,11 @@ fun PageTurnSelectorRow(
         ),
         label = "rowCheck"
     )
+    // 选中瞬间触发一次迷你试翻；初始选中的行进入页面即演示一遍
+    var playTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selected) {
+        if (selected) playTick++
+    }
     val shape = RoundedCornerShape(14.dp)
 
     Box(
@@ -254,6 +270,12 @@ fun PageTurnSelectorRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            PageTurnPreview(
+                type = type,
+                playTick = playTick,
+                dimmed = !selected,
+                modifier = Modifier.padding(end = 14.dp)
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -561,6 +583,146 @@ fun JunoSlider(
                     .background(Brush.horizontalGradient(listOf(primary, secondary)))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             )
+        }
+    }
+}
+
+/**
+ * 迷你试翻预览页（40×54dp）：用每种翻页效果自己的缓动曲线，
+ * 把一张"纸"从起始帧翻到结束帧。未选中的行静止在起始帧。
+ */
+@Composable
+private fun PageTurnPreview(
+    type: PageTurnType,
+    playTick: Int,
+    dimmed: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val pageBg = MaterialTheme.colorScheme.surface
+    val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    val nextLineColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.38f)
+    val edgeColor = MaterialTheme.colorScheme.outlineVariant
+
+    // 每种效果使用自己真实的缓动曲线：卷曲是纸张阻尼的减速曲线
+    val easing = when (type) {
+        PageTurnType.SIMULATE -> CubicBezierEasing(0.2f, 0.7f, 0.25f, 1f)
+        PageTurnType.COVER -> FastOutSlowInEasing
+        PageTurnType.SLIDE -> LinearEasing
+        PageTurnType.FADE -> FastOutSlowInEasing
+        PageTurnType.SCROLL -> LinearEasing
+    }
+
+    val progress = remember { Animatable(0f) }
+    // 未选中的行定格在该效果最具辨识度的中间相位，扫视即可区分五种效果
+    LaunchedEffect(Unit) {
+        if (dimmed) progress.snapTo(0.55f)
+    }
+    LaunchedEffect(playTick) {
+        if (playTick == 0 && dimmed) return@LaunchedEffect
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(520, easing = easing))
+    }
+
+    Canvas(modifier = modifier.size(width = 40.dp, height = 54.dp)) {
+        val w = size.width
+        val h = size.height
+        val p = progress.value
+
+        // 纸面：实色圆角矩形 + 细描边（暗色主题下也能与卡片底分离）
+        drawRoundRect(color = pageBg, cornerRadius = CornerRadius(6f, 6f))
+        drawRoundRect(
+            color = edgeColor,
+            cornerRadius = CornerRadius(6f, 6f),
+            style = Stroke(width = 1.dp.toPx())
+        )
+
+        fun drawLines(alpha: Float, xShift: Float, color: Color) {
+            for (i in 0..3) {
+                val lineW = w - 12f - (if (i == 3) w * 0.28f else 0f)
+                drawRoundRect(
+                    color = color.copy(alpha = color.alpha * alpha.coerceIn(0f, 1f)),
+                    topLeft = Offset(6f + xShift, 8f + i * (h - 16f) / 4f),
+                    size = Size(lineW, 3f),
+                    cornerRadius = CornerRadius(1.5f, 1.5f)
+                )
+            }
+        }
+
+        when (type) {
+            PageTurnType.SIMULATE -> {
+                translate(left = -3f * p) { drawLines(1f, 0f, lineColor) }
+                // 右下角折起：背面纸 + 折痕暗带 + 纸缘高光
+                val fold = (w * 0.62f) * p
+                if (fold > 2f) {
+                    val path = Path().apply {
+                        moveTo(w, h)
+                        lineTo(w - fold, h)
+                        lineTo(w, h - fold)
+                        close()
+                    }
+                    drawPath(path, color = pageBg)
+                    drawPath(
+                        path,
+                        brush = Brush.linearGradient(
+                            listOf(Color.Black.copy(alpha = 0.16f * p), Color.Transparent),
+                            start = Offset(w - fold, h),
+                            end = Offset(w, h - fold)
+                        )
+                    )
+                    drawLine(
+                        color = Color.White.copy(alpha = 0.55f * p),
+                        start = Offset(w - fold, h),
+                        end = Offset(w, h - fold),
+                        strokeWidth = 1.5f
+                    )
+                }
+            }
+            PageTurnType.COVER -> {
+                drawLines(1f, 0f, lineColor)
+                val sheetX = w * (1f - p)
+                drawRect(color = pageBg, topLeft = Offset(sheetX, 0f), size = Size(w - sheetX, h))
+                if (sheetX > 1f) {
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent),
+                            startX = sheetX - 5f,
+                            endX = sheetX + 2f
+                        ),
+                        topLeft = Offset(sheetX - 5f, 0f),
+                        size = Size(7f, h)
+                    )
+                }
+            }
+            PageTurnType.SLIDE -> {
+                translate(left = -w * 0.85f * p) { drawLines(1f, 0f, lineColor) }
+                translate(left = w * (1f - p) * 0.9f) { drawLines(0.45f, 0f, nextLineColor) }
+            }
+            PageTurnType.FADE -> {
+                drawLines(1f - p, -2f * p, lineColor)
+                drawLines(p, 2f * p, nextLineColor)
+            }
+            PageTurnType.SCROLL -> {
+                clipRect(0f, 0f, w, h) {
+                    val gap = (h - 16f) / 4f
+                    translate(top = -p * gap * 2.4f) {
+                        for (i in 0..5) {
+                            val lineW = w - 12f - (if (i % 4 == 3) w * 0.28f else 0f)
+                            drawRoundRect(
+                                color = lineColor,
+                                topLeft = Offset(6f, 8f + i * gap),
+                                size = Size(lineW, 3f),
+                                cornerRadius = CornerRadius(1.5f, 1.5f)
+                            )
+                        }
+                    }
+                }
+                drawRoundRect(
+                    color = edgeColor,
+                    topLeft = Offset(w - 3f, 6f + p * (h - 18f)),
+                    size = Size(2.5f, 10f),
+                    cornerRadius = CornerRadius(1.2f, 1.2f)
+                )
+            }
         }
     }
 }

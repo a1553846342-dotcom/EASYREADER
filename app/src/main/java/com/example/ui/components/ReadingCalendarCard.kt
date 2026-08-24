@@ -1,13 +1,21 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import java.util.Calendar
 
@@ -44,7 +53,26 @@ fun ReadingCalendarCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("阅读日历", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                // 统计卡统一图标语言：36dp 圆形浅底 + 20dp 图标（与本周趋势卡一致）
+                Surface(
+                    shape = CircleShape,
+                    color = MintPrimary.copy(alpha = 0.12f),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.CalendarMonth,
+                            contentDescription = null,
+                            tint = MintPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text("阅读日历", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("每日阅读热力", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 SegmentedPillSelector(
                     options = listOf(0 to "月", 1 to "年"),
@@ -92,15 +120,30 @@ fun ReadingCalendarCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (showYear) {
-                YearHeatmap(dailyTotals = dailyTotals, year = viewYear, onDayClick = onDayClick)
-            } else {
-                MonthGrid(
-                    dailyTotals = dailyTotals,
-                    year = viewYear,
-                    month = viewMonth,
-                    onDayClick = onDayClick
-                )
+            // 月/年切换：新旧视图交叉淡入淡出 + 轻缩放，替代生硬的清空重绘；
+            // 流畅档直接无过渡切换
+            val lowQuality = LocalRenderQuality.current == RenderQuality.LOW
+            AnimatedContent(
+                targetState = Triple(showYear, viewYear, viewMonth),
+                transitionSpec = {
+                    if (lowQuality) {
+                        fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                    } else {
+                        (fadeIn(tween(200)) + scaleIn(initialScale = 0.97f)) togetherWith fadeOut(tween(120))
+                    }
+                },
+                label = "calendarSwitch"
+            ) { _ ->
+                if (showYear) {
+                    YearHeatmap(dailyTotals = dailyTotals, year = viewYear, onDayClick = onDayClick)
+                } else {
+                    MonthGrid(
+                        dailyTotals = dailyTotals,
+                        year = viewYear,
+                        month = viewMonth,
+                        onDayClick = onDayClick
+                    )
+                }
             }
         }
     }
@@ -122,6 +165,14 @@ private fun MonthGrid(
     }
     val daysInMonth = first.getActualMaximum(Calendar.DAY_OF_MONTH)
     val leading = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0
+
+    // 当月峰值日：金色圆点标记，让"这个月哪天读得最多"一眼可见
+    val peakSeconds = remember(dailyTotals, year, month, daysInMonth) {
+        (1..daysInMonth)
+            .mapNotNull { d -> dailyTotals["%04d-%02d-%02d".format(year, month + 1, d)] }
+            .maxOrNull()
+            ?.takeIf { it > 0L }
+    }
 
     Column {
         Row(Modifier.fillMaxWidth()) {
@@ -149,6 +200,7 @@ private fun MonthGrid(
                             day = day,
                             seconds = seconds,
                             isToday = isToday,
+                            isPeak = seconds > 0 && seconds == peakSeconds,
                             onClick = { onDayClick(dateStr) },
                             modifier = Modifier.weight(1f)
                         )
@@ -166,6 +218,7 @@ private fun DayCell(
     day: Int,
     seconds: Long,
     isToday: Boolean,
+    isPeak: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -193,6 +246,17 @@ private fun DayCell(
             .clickableWithFeedback(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
+        // 当月峰值日：右上角金色圆点
+        if (isPeak) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(MintGold)
+            )
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "$day",
