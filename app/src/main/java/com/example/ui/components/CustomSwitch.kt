@@ -15,6 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
@@ -50,6 +56,12 @@ fun CustomSwitch(
         modifier = modifier
             .size(width = 50.dp, height = 28.dp)
             .background(trackColor, RoundedCornerShape(14.dp))
+            // 可访问性：向读屏声明开关角色与当前状态（点击交互仍由 clickableWithFeedback 承担）
+            .semantics {
+                role = Role.Switch
+                toggleableState = ToggleableState(checked)
+                if (!enabled) disabled()
+            }
             .clickableWithFeedback(
                 enabled = enabled,
                 bounded = true,

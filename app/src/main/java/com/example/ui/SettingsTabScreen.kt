@@ -228,7 +228,7 @@ fun SettingsTabScreen(
 
                 // Section 1: Splash Poster
                 item {
-                    Text("开屏海报设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("开屏海报设置")
                 }
 
                 item {
@@ -293,7 +293,7 @@ fun SettingsTabScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = Color.LightGray.copy(alpha = 0.2f))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row(
@@ -316,7 +316,7 @@ fun SettingsTabScreen(
 
                 // Section: 软件背景
                 item {
-                    Text("软件背景设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("软件背景设置")
                 }
 
                 item {
@@ -462,7 +462,7 @@ fun SettingsTabScreen(
 
                 // Section: 外观与主题自定义
                 item {
-                    Text("外观与主题", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("外观与主题")
                 }
 
                 item {
@@ -614,7 +614,7 @@ fun SettingsTabScreen(
 
                 // Section 2: Orientation Lock
                 item {
-                    Text("屏幕方向", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("屏幕方向")
                 }
 
                 item {
@@ -648,7 +648,7 @@ fun SettingsTabScreen(
 
                 // Section 2.5: 画面与性能（渲染画质四档）
                 item {
-                    Text("画面与性能", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("画面与性能")
                 }
 
                 item {
@@ -701,7 +701,7 @@ fun SettingsTabScreen(
 
                 // Section 3: Page Turn Effect
                 item {
-                    Text("翻页效果", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("翻页效果")
                 }
 
                 item {
@@ -730,7 +730,7 @@ fun SettingsTabScreen(
 
                 // Section 5: Health & Eye Protection
                 item {
-                    Text("护眼与提醒", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("护眼与提醒")
                 }
 
                 item {
@@ -787,7 +787,7 @@ fun SettingsTabScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = Color.LightGray.copy(alpha = 0.2f))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row(
@@ -810,7 +810,7 @@ fun SettingsTabScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = Color.LightGray.copy(alpha = 0.2f))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row(
@@ -858,7 +858,7 @@ fun SettingsTabScreen(
 
                 // Section 6: Library Help & Manual
                 item {
-                    Text("帮助手册", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = adaptiveTitleColor())
+                    SettingsSectionHeader("帮助手册")
                 }
 
                 item {
@@ -956,4 +956,18 @@ fun SettingsTabScreen(
             shape = RoundedCornerShape(16.dp)
         )
     }
+}
+
+/**
+ * 设置页分区标题（统一 14sp/Bold/adaptiveTitleColor）。
+ * 抽取自此前散落 8 处的相同 Text 模式；其中两处原为 16sp，已按多数派统一为 14sp。
+ */
+@Composable
+private fun SettingsSectionHeader(text: String) {
+    Text(
+        text = text,
+        fontWeight = FontWeight.Bold,
+        fontSize = 14.sp,
+        color = adaptiveTitleColor()
+    )
 }

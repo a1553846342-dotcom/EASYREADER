@@ -73,6 +73,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -360,6 +364,11 @@ fun MaxJunoSlider(
                     }
                     dragging = false
                 }
+            }
+            // 可访问性：向读屏暴露当前进度与百分比
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                stateDescription = "${(fraction * 100).roundToInt()}%"
             }
     ) {
         // ── 玻璃凹槽轨道 ──

@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.liquidglass.compose.GlassHighlight
@@ -193,12 +195,14 @@ fun AppLiquidSwitch(
             )
             // 极致档：轨道内的"液态微粒"随设备倾角受重力流动（其余档位零开销）
             .maxGravityParticles(count = 9, maxAlpha = 0.45f)
-            .clickable(
+            // 可访问性：toggleable 提供 Role.Switch 与开/关状态语义（读屏可感知），按压动画不变
+            .toggleable(
+                value = checked,
                 interactionSource = interaction,
-                indication = null
-            ) {
-                onCheckedChange(!checked)
-            }
+                indication = null,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            )
     ) {
         Box(
             modifier = Modifier

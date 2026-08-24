@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
@@ -81,12 +83,13 @@ fun JellySwitch(
             .size(width = trackWidth, height = trackHeight)
             .clip(RoundedCornerShape(percent = 50))
             .background(trackBrush)
-            .clickable(
+            .toggleable(
+                value = checked,
                 interactionSource = interaction,
-                indication = LocalIndication.current
-            ) {
-                onCheckedChange(!checked)
-            },
+                indication = LocalIndication.current,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            ),
         contentAlignment = Alignment.CenterStart
     ) {
         Box(
