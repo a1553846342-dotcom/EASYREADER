@@ -219,8 +219,8 @@ fun FluidSlider(
             // topCircle 从 vOff 升至 vOff - riseDist
             val topCircleCY = vOff + topCD / 2f - riseVal
             val topCircleCenter = Offset(thumbCX, topCircleCY)
-            // bottomCircle 是不可见巨圆，中心在轨道中央
-            val botCircleCenter = Offset(thumbCX, vOff + barH / 2f)
+            // bottomCircle 巨圆圆心在 vOff + botCD/2（原版布局：top 对齐轨道顶，圆体向下延伸）
+            val botCircleCenter = Offset(thumbCX, vOff + botCD / 2f)
 
             if (riseVal > 1f) {
                 drawMetaballFaithful(
