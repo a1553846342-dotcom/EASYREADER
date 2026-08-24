@@ -465,6 +465,7 @@ class MainActivity : ComponentActivity() {
                                                 readingRecords = readingRecords,
                                                 readingSessions = readingSessions,
                                                 dailyGoalMinutes = viewModel.prefs.dailyGoalMinutes,
+                                                onGoalChange = { viewModel.prefs.dailyGoalMinutes = it },
                                                 onGoToShelf = { selectedTab = 1 },
                                                 onDeleteRecord = { viewModel.deleteReadingRecord(it.id) },
                                                 recordCovers = libraryViewModel.recordCovers.collectAsState().value,

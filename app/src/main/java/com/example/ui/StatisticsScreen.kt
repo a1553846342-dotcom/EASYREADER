@@ -78,7 +78,8 @@ fun StatisticsScreen(
     onResolveRecordCovers: (List<ReadingRecord>) -> Unit = {},
     onOpenRecordDetail: (com.example.source.SearchBook) -> Unit = {},
     onOpenBook: (Book) -> Unit = {},
-    dailyGoalMinutes: Int = 60
+    dailyGoalMinutes: Int = 60,
+    onGoalChange: (Int) -> Unit = {}
 ) {
     val totalReadTimeSeconds by totalReadTimeSecondsFlow.collectAsState()
     val totalHours = totalReadTimeSeconds / 3600
@@ -169,7 +170,8 @@ fun StatisticsScreen(
                             dailyTotals = dailyTotals,
                             books = books,
                             finishedCount = finishedCount,
-                            dailyGoalMinutes = dailyGoalMinutes
+                            dailyGoalMinutes = dailyGoalMinutes,
+                            onGoalChange = onGoalChange
                         )
                     }
 
@@ -278,7 +280,8 @@ private fun PeriodOverviewCard(
     dailyTotals: Map<String, Long>,
     books: List<Book>,
     finishedCount: Int,
-    dailyGoalMinutes: Int = 60
+    dailyGoalMinutes: Int = 60,
+    onGoalChange: (Int) -> Unit = {}
 ) {
     var period by remember { mutableIntStateOf(0) } // 0=周 1=月 2=年
     val today = remember { todayCalendar() }
@@ -428,11 +431,48 @@ private fun PeriodOverviewCard(
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "每日目标 ${dailyGoalMinutes} 分钟",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "每日目标",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    // 减少按钮
+                    Surface(
+                        onClick = { if (dailyGoalMinutes > 15) onGoalChange(dailyGoalMinutes - 15) },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("−", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${dailyGoalMinutes}分钟",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MintPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // 增加按钮
+                    Surface(
+                        onClick = { if (dailyGoalMinutes < 480) onGoalChange(dailyGoalMinutes + 15) },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
              }
 
             Spacer(modifier = Modifier.height(12.dp))
