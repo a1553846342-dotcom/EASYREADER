@@ -1548,8 +1548,12 @@ fun ReaderScreen(
                 Slider(
                     value = fontSize,
                     onValueChange = { fontSize = it; prefs.fontSize = it },
-                    valueRange = 12f..36f
-                )
+                    valueRange = 12f..36f,
+colors = SliderDefaults.colors(
+                        thumbColor = MintPrimary,
+                        activeTrackColor = MintPrimary,
+                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+)
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -1557,8 +1561,12 @@ fun ReaderScreen(
                 Slider(
                     value = lineHeight,
                     onValueChange = { lineHeight = it; prefs.lineHeight = it },
-                    valueRange = 20f..48f
-                )
+                    valueRange = 20f..48f,
+colors = SliderDefaults.colors(
+                        thumbColor = MintPrimary,
+                        activeTrackColor = MintPrimary,
+                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+)
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -1566,8 +1574,12 @@ fun ReaderScreen(
                 Slider(
                     value = marginHorizontal.toFloat(),
                     onValueChange = { marginHorizontal = it.toInt(); prefs.marginHorizontal = it.toInt() },
-                    valueRange = 8f..48f
-                )
+                    valueRange = 8f..48f,
+colors = SliderDefaults.colors(
+                        thumbColor = MintPrimary,
+                        activeTrackColor = MintPrimary,
+                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+)
 
                 Spacer(modifier = Modifier.height(12.dp))
 
