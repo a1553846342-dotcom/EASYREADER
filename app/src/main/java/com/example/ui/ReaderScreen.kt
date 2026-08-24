@@ -86,7 +86,8 @@ import com.example.ui.pageturn.PageCurlReaderContainer
 import com.example.ui.pageturn.PageTurnContainer
 import com.example.ui.pageturn.PageTurnType
 import com.example.ui.mascot.MascotSpriteSheet
-import com.example.ui.components.CustomSwitch
+import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
+import com.example.ui.theme.MintPrimary
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
@@ -1506,7 +1507,8 @@ fun ReaderScreen(
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("首行缩进", fontWeight = FontWeight.Medium)
-                    CustomSwitch(
+                    SquishyToggleSwitch(
+                        color = MintPrimary,
                         checked = firstLineIndent,
                         onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
                     )
