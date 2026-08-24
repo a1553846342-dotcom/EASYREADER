@@ -1397,8 +1397,8 @@ fun ReaderScreen(
                                                         }
                                                     },
                                                     colors = ButtonDefaults.filledTonalButtonColors(
-                                                        containerColor = if (isTtsPlaying) MintGold.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primaryContainer,
-                                                        contentColor = if (isTtsPlaying) MintGold else MaterialTheme.colorScheme.onPrimaryContainer
+                                                        containerColor = if (isTtsPlaying) MintGold.copy(alpha = 0.25f) else barContentColor.copy(alpha = 0.10f),
+                                                        contentColor = if (isTtsPlaying) MintGold else barContentColor
                                                     ),
                                                     shape = RoundedCornerShape(20.dp),
                                                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
