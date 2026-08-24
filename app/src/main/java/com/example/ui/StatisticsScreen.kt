@@ -83,8 +83,6 @@ fun StatisticsScreen(
     onGoalChange: (Int) -> Unit = {}
 ) {
     val totalReadTimeSeconds by totalReadTimeSecondsFlow.collectAsState()
-    val totalHours = totalReadTimeSeconds / 3600
-    val totalMins = (totalReadTimeSeconds % 3600) / 60
     val finishedCount = books.count { it.isFinished }
 
     // 已删除书籍的封面补抓
