@@ -415,6 +415,7 @@ fun SettingsTabScreen(
                                                 AppBackgroundController.update(1, appBgUri, appBgDim)
                                             }
                                         },
+                                        barHeightDp = 32,
                                         bubbleText = "$appBgDim%",
                                         startText = "0",
                                         endText = "50",
@@ -861,7 +862,7 @@ fun SettingsTabScreen(
                                     colorBubble = Color.White,
                                     colorBubbleText = MintPrimary,
                                     colorBarText = glassTitleColor(),
-                                    barHeightDp = 40
+                                    barHeightDp = 28
                                 )
                             }
                         }
