@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1478,6 +1479,14 @@ fun ReaderScreen(
         val filteredChapters = remember(chapters, tocFilter) {
             if (tocFilter.isBlank()) chapters else chapters.filter { it.title.contains(tocFilter, ignoreCase = true) }
         }
+        // 打开目录时自动定位到当前章节
+        val tocListState = rememberLazyListState()
+        LaunchedEffect(showTocSheet, tocFilter) {
+            if (tocFilter.isBlank() && filteredChapters.isNotEmpty()) {
+                val targetIdx = filteredChapters.indexOfFirst { it.chapterOrder == currentChapterIndex }
+                if (targetIdx > 0) tocListState.scrollToItem(index = targetIdx)
+            }
+        }
 
         ModalBottomSheet(
             onDismissRequest = { showTocSheet = false },
@@ -1498,7 +1507,7 @@ fun ReaderScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                LazyColumn {
+                LazyColumn(state = tocListState) {
                     itemsIndexed(filteredChapters) { _, chapter ->
                         val index = chapter.chapterOrder
                         TextButton(
