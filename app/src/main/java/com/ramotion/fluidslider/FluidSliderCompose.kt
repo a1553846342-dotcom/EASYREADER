@@ -146,9 +146,11 @@ fun FluidSlider(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = down.position.x
                     val y = down.position.y
-                    // 仅在轨道区域响应（与原版一致：rectBar.contains(x,y)）
+                    // 扩大触控区域：轨道 ±20dp 内都响应（原版 rectBar.contains 太严格）
+                    val touchPadding = barH * 0.5f
                     val barTop = vOff
-                    if (y < barTop || y > barTop + barH || x < 0 || x > size.width) return@awaitEachGesture
+                    if (y < barTop - touchPadding || y > barTop + barH + touchPadding ||
+                        x < -touchPadding || x > size.width + touchPadding) return@awaitEachGesture
 
                     isDragging = true
                     val maxMove = size.width - touchD
