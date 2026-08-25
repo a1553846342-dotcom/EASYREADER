@@ -181,3 +181,21 @@ AppLiquidSwitch 关闭态灰阶由硬编码改为主题 outlineVariant/surfaceVa
 - 搜索防抖：HomeScreen 300ms debounce；
 - 除零保护：chapters.size/maxMove 全部加 guard；
 - contentDescription=null 均为装饰性图标（合规）。
+
+### ⚠️ 已知考虑事项（非 bug，后续版本可改进）
+
+| 事项 | 影响 | 建议方案 |
+|---|---|---|
+| FluidSlider 气泡文字在大字体(fontScale>1.3)时可能溢出 | 低（仅超大系统字体用户） | 将 fontSize 改为固定 dp 或按 fontScale 调整气泡尺寸 |
+| 年视图热力图 372 个 Box 非懒加载 | 中（低端机年视图可能卡顿） | 重构为单次 Canvas 绘制 |
+| 音量键翻页未实现 | 功能缺失 | 需 Activity.dispatchKeyEvent + ViewModel 回调桥接 |
+| 统计导出 PDF 未实现 | 功能缺失 | 需要 FileProvider 配置 + 布局引擎 |
+| MAX 特效 6 个 InfiniteTransition/卡 | 性能（多卡片页面） | 可合并为单动画时钟或加可见性检测 |
+
+### 🔧 开发注意事项
+
+1. **FluidSlider 是受控组件**：`position` 参数由调用方持有，内部 `localFraction` 仅在拖动时同步。
+2. **SquishyToggleSwitch 双模式**：传入 checked 即受控；不传则内部维护。受控模式下动画由 flip() 驱动。
+3. **chromaFlowEdge 的 phase 必须作用于绘制**——曾因 phase 只计算未使用导致巡游动画静止。
+4. **maxMove 必须 coerceAtLeast(1f)**——否则窄容器下拖动方向反转。
+5. **dailyGoalMinutes 使用 mutableIntStateOf**——直接读 prefs 不会触发重组。
