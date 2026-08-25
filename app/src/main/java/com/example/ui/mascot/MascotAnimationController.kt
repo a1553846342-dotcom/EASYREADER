@@ -14,6 +14,7 @@ sealed class MascotEvent {
     object DeleteBook : MascotEvent()
     object AddBookmark : MascotEvent()
     object MoveBook : MascotEvent()
+    object BookComplete : MascotEvent()
 }
 
 /**
@@ -87,6 +88,7 @@ fun MascotOverlay(modifier: Modifier = Modifier) {
                     is MascotEvent.DeleteBook -> DeleteSadAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.AddBookmark -> BookmarkHappyAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.MoveBook -> MoveBookAnimation(onComplete = { currentInstance = null })
+                    is MascotEvent.BookComplete -> BookmarkHappyAnimation(onComplete = { currentInstance = null })
                     null -> {}
                 }
             }
