@@ -1271,15 +1271,10 @@ private fun BookActionSheet(
                             ambientColor = Color.Black.copy(alpha = 0.20f),
                             spotColor = Color.Black.copy(alpha = 0.20f)
                         )
-                        .liquidGlass(
-                            backdrop = backdrop,
-                            shape = sheetShape,
-                            surfaceColor = MaterialTheme.colorScheme.surface.copy(
-                                alpha = if (reduceEffects) 0.72f else 0.58f
-                            ),
-                            blurRadius = 12.dp,
-                            refraction = false
-                        )
+                        // 根因修复：移除 liquidGlass 实时模糊层——其内部 layout 不遵守外层
+                        // heightIn 约束，是三层"自适应"都失效的真正裁切源。
+                        // 改用高不透明度普通表面，视觉与手册页一致且在所有屏幕可靠。
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
                         .clip(sheetShape)
                         .filmGrain(alpha = 0.04f)
                         .iridescentBorder(
