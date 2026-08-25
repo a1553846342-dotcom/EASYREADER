@@ -855,6 +855,9 @@ fun ReaderScreen(
 
         prefs.pageTurnMode = newModeId
 
+        // 切换翻页模式时关闭自动滚屏（仅滚动模式支持）
+        isAutoScrolling = false
+
     }
 
 
