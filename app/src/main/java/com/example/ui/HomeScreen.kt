@@ -1276,6 +1276,8 @@ private fun BookActionSheet(
                             alpha = 0.22f
                         )
                         .navigationBarsPadding()
+                        // 小屏适配：内容超出时整个弹窗可滚动，确保"删除"始终可达
+                        .verticalScroll(rememberScrollState())
                 ) {
         Box(
             modifier = Modifier
