@@ -163,12 +163,33 @@ fun HomeScreen(
 
     // 书架排序：0=默认导入顺序 1=按标题 A-Z 2=最近阅读优先
     var sortBy by remember { mutableIntStateOf(0) }
+    var categoryToDelete by remember { mutableStateOf<com.example.data.CategoryEntity?>(null) }
     val sortedBooks = remember(filteredBooks, sortBy) {
         when (sortBy) {
             1 -> filteredBooks.sortedBy { it.title.lowercase() }
             2 -> filteredBooks.sortedByDescending { it.lastReadTime }
             else -> filteredBooks
         }
+    }
+
+    // 分类删除确认对话框
+    if (categoryToDelete != null) {
+        val cat = categoryToDelete!!
+        AlertDialog(
+            onDismissRequest = { categoryToDelete = null },
+            title = { Text("删除分类", fontWeight = FontWeight.Bold) },
+            text = { Text("确定要删除分类「${cat.name}」吗？该分类下的书籍不会被删除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteCategory?.invoke(cat)
+                    if (selectedCategory == cat.name) selectedCategory = "全部"
+                    categoryToDelete = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { categoryToDelete = null }) { Text("取消") }
+            }
+        )
     }
 
     // Move dialog
@@ -711,7 +732,7 @@ fun HomeScreen(
                                                 onLongClick = {
                                                     if (name != "全部") {
                                                         val cat = categories.find { it.name == name }
-                                                        if (cat != null) onDeleteCategory?.invoke(cat)
+                                                        if (cat != null) categoryToDelete = cat
                                                     }
                                                 }
                                             )
