@@ -413,6 +413,14 @@ private fun PeriodOverviewCard(
                             style = Stroke(width = stroke)
                         )
                         if (animatedGoal > 0f) {
+                            // 目标达成庆祝：≥100% 时外圈金色辉光脉冲
+                            if (animatedGoal >= 0.99f) {
+                                drawCircle(
+                                    color = MintGold.copy(alpha = 0.35f),
+                                    radius = stroke * 1.8f,
+                                    style = Stroke(width = 3.dp.toPx())
+                                )
+                            }
                             drawArc(
                                 brush = Brush.sweepGradient(listOf(primary, secondary)),
                                 startAngle = -90f,
