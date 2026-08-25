@@ -208,14 +208,6 @@ fun GlassCard(
                     else -> Modifier.background(tint)
                 }
             )
-            // MAX 档：边缘彩色光带巡游（ChromaFlow 思路）
-            .then(
-                if (quality == RenderQuality.MAX) {
-                    Modifier.chromaFlowEdge(primary = primary, secondary = secondary)
-                } else {
-                    Modifier
-                }
-            )
             // 极致档专属：每 ~6s 一道柔和光带斜向掠过卡面（被卡片圆角自动裁剪）
             .then(if (quality == RenderQuality.MAX) Modifier.glassSheen() else Modifier)
             // MAX 档：珠光微光层（ShimmerFy 思路）

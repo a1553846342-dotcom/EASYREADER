@@ -431,6 +431,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteCategory(category: com.example.data.CategoryEntity) {
+        viewModelScope.launch {
+            repository.deleteCategory(category)
+        }
+    }
+
     fun recordTime(seconds: Long, title: String? = null) {
         if (seconds <= 0) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

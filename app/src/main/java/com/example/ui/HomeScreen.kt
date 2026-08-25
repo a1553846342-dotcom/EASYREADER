@@ -715,20 +715,6 @@ fun HomeScreen(
                                             textAlign = TextAlign.Center
                                         )
                                     }
-
-                                    // 排序切换按钮：点击在 默认→标题→最近 之间循环
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    IconButton(
-                                        onClick = { sortBy = (sortBy + 1) % 3 },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Sort,
-                                            contentDescription = "排序",
-                                            tint = if (sortBy > 0) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
                                 }
                             }
                         }

@@ -2822,7 +2822,11 @@ fun ReaderScreen(
 
                                             }
 
-                                            AppIconButton(onClick = { showSettingsSheet = true }) {
+                                                                                        AppIconButton(onClick = { showSearchDialog = true }) {
+                                                                                            Icon(Icons.Filled.Search, "搜索", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                                                                        AppIconButton(onClick = { showTocSheet = true }) {
+                                                                                            Icon(Icons.Filled.Menu, "目录", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                                                                        }
 
                                                 Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
 

@@ -467,6 +467,10 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         bookDao.insertCategory(CategoryEntity(name = name))
     }
 
+    suspend fun deleteCategory(category: com.example.data.CategoryEntity) {
+        bookDao.deleteCategory(category)
+    }
+
     suspend fun checkAndSeedDefaultBooks() = withContext(Dispatchers.IO) {
         // 1. Remove legacy test / placeholder books
         try {
