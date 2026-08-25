@@ -748,6 +748,19 @@ fun HomeScreen(
                                         )
                                     }
                                 }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    TextButton(
+                                        onClick = { sortBy = (sortBy + 1) % 3 },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(
+                                            text = when (sortBy) { 0 -> "默认"; 1 -> "A-Z"; else -> "最近" },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (sortBy > 0) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                        )
+                                    }
                             }
                         }
                     }
