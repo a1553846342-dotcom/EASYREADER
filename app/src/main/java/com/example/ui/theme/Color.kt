@@ -48,8 +48,14 @@ fun Color.luminance(): Float {
 fun Color.onColor(): Color = if (luminance() > 0.5f) Color(0xFF1A1A1E) else Color.White
 
 /**
- * 玻璃容器（GlassCard）上的标题色：按玻璃表面 tint 实时取对比色，
- * 浅色主题下是深字、深色主题下是白字，任何自定义背景下都不会黑字压黑底。
+ * 玻璃容器（GlassCard）上的标题色：按"壁纸透过玻璃后的有效亮度"实时取对比色。
+ * 有效亮度 = 背景亮度×30%（玻璃透出部分）+ 主题表面亮度×70%（玻璃着色部分）。
+ * 深色壁纸上白字、浅色壁纸上深字，与主题明暗无关——修复此前只看主题不看壁纸的问题。
  */
 @Composable
-fun glassTitleColor(): Color = MaterialTheme.colorScheme.surface.onColor()
+fun glassTitleColor(): Color {
+    val bgTone = com.example.ui.LocalBackgroundTone.current
+    val surfaceLum = MaterialTheme.colorScheme.surface.luminance()
+    val effective = bgTone * 0.30f + surfaceLum * 0.70f
+    return if (effective > 0.4f) Color(0xFF1A1A1E) else Color.White
+}
