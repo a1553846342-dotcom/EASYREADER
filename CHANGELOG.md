@@ -2,7 +2,7 @@
 
 All notable changes to Ciallo 阅读 are documented in this file.
 
-## [Unreleased]
+## [Unreleased] — 2026-08-25
 
 ### ✨ 新功能
 
