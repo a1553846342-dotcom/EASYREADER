@@ -2822,14 +2822,17 @@ fun ReaderScreen(
 
                                             }
 
-                                                                                        AppIconButton(onClick = { showSearchDialog = true }) {
-                                                                                            Icon(Icons.Filled.Search, "搜索", tint = barContentColor, modifier = Modifier.size(20.dp))
-                                                                                        AppIconButton(onClick = { showTocSheet = true }) {
-                                                                                            Icon(Icons.Filled.Menu, "目录", tint = barContentColor, modifier = Modifier.size(20.dp))
-                                                                                        }
-
+                                            AppIconButton(onClick = { showSearchDialog = true }) {
+                                                Icon(Icons.Filled.Search, "搜索", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                            }
+                                            AppIconButton(onClick = { showTocSheet = true }) {
+                                                Icon(Icons.Filled.Menu, "目录", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                            }
+                                            AppIconButton(onClick = { showAnnotationsSheet = true }) {
+                                                Icon(Icons.Filled.BookmarkBorder, "标注", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                            }
+                                            AppIconButton(onClick = { showSettingsSheet = true }) {
                                                 Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
-
                                             }
 
                                             // 自动滚屏开关（仅滚动模式显示；与 TTS 互斥——同时开启会视听不同步）

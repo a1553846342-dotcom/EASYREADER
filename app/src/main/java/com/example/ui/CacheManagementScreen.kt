@@ -126,7 +126,7 @@ fun CacheManagementScreen(
     }
 
     Scaffold(
-        containerColor = Color.Transparent,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
                 Row(
