@@ -166,6 +166,11 @@ class PreferencesManager(context: Context) {
         get() = prefs.getFloat("reader_brightness", 1.0f)
         set(value) = prefs.edit().putFloat("reader_brightness", value.coerceIn(0.2f, 1.0f)).apply()
 
+    /** 自定义字体文件路径（内部存储）。空字符串表示未导入。 */
+    var customFontPath: String
+        get() = prefs.getString("custom_font_path", "") ?: ""
+        set(value) = prefs.edit().putString("custom_font_path", value).apply()
+
     var hasSeenOnboarding: Boolean
         get() = prefs.getBoolean("has_seen_onboarding", false)
         set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()

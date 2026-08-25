@@ -344,6 +344,31 @@ fun ReaderScreen(
 
     var customPosterUri by remember { mutableStateOf(prefs.customSplashPosterUri) }
 
+    // 自定义字体文件选择器
+    val fontFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val input = context.contentResolver.openInputStream(it)
+                        val file = java.io.File(context.filesDir, "custom_font.ttf")
+                        input?.use { inp -> file.outputStream().use { out -> inp.copyTo(out) } }
+                        prefs.customFontPath = file.absolutePath
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "自定义字体已导入", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (_: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "字体导入失败", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     val readerPosterLauncher = rememberLauncherForActivityResult(
 
         contract = ActivityResultContracts.GetContent()
@@ -854,6 +879,17 @@ fun ReaderScreen(
 
 
 
+    // 自定义字体加载（TTF 文件）
+    var customTypeface by remember { mutableStateOf<android.graphics.Typeface?>(null) }
+    LaunchedEffect(prefs.customFontPath) {
+        val path = prefs.customFontPath
+        if (path.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                try { customTypeface = android.graphics.Typeface.createFromFile(path) } catch (_: Exception) {}
+            }
+        }
+    }
+
     val selectedFontFamily = when (fontFamilyIndex) {
 
         1 -> FontFamily.Serif
@@ -861,6 +897,8 @@ fun ReaderScreen(
         2 -> FontFamily.SansSerif
 
         3 -> FontFamily.Monospace
+
+        4 -> customTypeface?.let { FontFamily(it) } ?: FontFamily.Default
 
         else -> FontFamily.Default
 
@@ -3351,6 +3389,16 @@ colors = SliderDefaults.colors(
                         )
 
                     }
+
+                    // 自定义字体导入按钮
+                    FilterChip(
+                        selected = fontFamilyIndex == 4,
+                        onClick = {
+                            fontFileLauncher.launch("font/ttf")
+                        },
+                        label = { Text(if (prefs.customFontPath.isNotEmpty()) "✓自定义" else "+导入", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
+                        modifier = Modifier.weight(1f)
+                    )
 
                 }
 
