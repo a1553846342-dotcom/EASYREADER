@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -218,21 +219,49 @@ fun FluidSlider(
             val barCR = barH / 2f // 全胶囊：端面半圆
             val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
 
-            // ── 扩展裁剪路径：上半部全宽（允许气泡升起），下半部胶囊形（防止端面凸出）──
+            // ── 裁剪路径：顶部矩形 ∪ 严格半圆胶囊（两子路径，非零环绕=并集）──
+            // 端点由真圆弧修剪 → 极端位置圆润无方角；上方矩形保留颈部升起空间。
             val midY = vOff + barH / 2f
             val capsuleClip = Path().apply {
-                moveTo(0f, vOff)
-                lineTo(0f, 0f)          // 向上扩展到画布顶
+                // 子路径1：上方矩形（气泡/颈部区）
+                moveTo(0f, 0f)
                 lineTo(w, 0f)
                 lineTo(w, vOff)
-                // 下半部：胶囊圆角（防止 0%/100% 时直角凸出）
-                quadraticBezierTo(w, vOff + barH, w - barCR, vOff + barH)
+                lineTo(0f, vOff)
+                close()
+                // 子路径2：严格胶囊（与轨道 roundRect 完全同参）
+                moveTo(barCR, vOff)
+                lineTo(w - barCR, vOff)
+                addArc(
+                    oval = Rect(left = w - barCR * 2f, top = vOff, right = w, bottom = vOff + barH),
+                    startAngleDegrees = -90f,
+                    sweepAngleDegrees = 180f
+                )
                 lineTo(barCR, vOff + barH)
-                quadraticBezierTo(0f, vOff + barH, 0f, vOff)
+                addArc(
+                    oval = Rect(left = 0f, top = vOff, right = barCR * 2f, bottom = vOff + barH),
+                    startAngleDegrees = 90f,
+                    sweepAngleDegrees = 180f
+                )
                 close()
             }
 
-            // ── 裁剪区域内绘制：轨道 + 标尺 + 液桥 ──
+            // ── 液桥两段式：基座(胶囊内·端面圆润) + 颈部(裁剪外·零裁切) ──
+            var goo: MetaballParts? = null
+            if (riseVal > 1f) {
+                goo = buildMetaballParts(
+                    c1Center = Offset(clampedThumbX, vOff + botCD / 2f),
+                    c1Radius = botCD / 2f,
+                    c2Center = Offset(clampedThumbX, vOff + topCD / 2f - riseVal),
+                    c2Radius = topCD / 2f,
+                    topBorderY = vOff,
+                    riseDist = riseDist,
+                    maxDist = barH * METABALL_MAX_DISTANCE,
+                    width = w,
+                    barHpx = barH
+                )
+            }
+
             clipPath(capsuleClip) {
                 // 轨道（纯色，与液桥同源颜色，消除色差）
                 drawRoundRect(
@@ -242,36 +271,25 @@ fun FluidSlider(
                     cornerRadius = CornerRadius(barCR)
                 )
 
-                fun drawEndLabel(text: String?, alignRight: Boolean) {
-                    if (text.isNullOrEmpty()) return
-                    val style = TextStyle(color = colorBarText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Medium)
-                    val measured = textMeasurer.measure(text, style, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
-                    val x = if (alignRight) w - textOffPx - measured.size.width else textOffPx
-                    val y = vOff + (barH - measured.size.height) / 2f
-                    translate(left = x.coerceAtLeast(0f), top = y) { drawText(measured) }
-                }
-                drawEndLabel(startText, alignRight = false)
-                drawEndLabel(endText, alignRight = true)
-
-                // Metaball 液桥（被胶囊形状裁剪）
-                val topCircleCY = vOff + topCD / 2f - riseVal
-                val topCircleCenter = Offset(clampedThumbX, topCircleCY)
-                val botCircleCenter = Offset(clampedThumbX, vOff + botCD / 2f)
-
-                if (riseVal > 1f) {
-                    drawMetaballFaithful(
-                        c1Center = botCircleCenter,
-                        c1Radius = botCD / 2f,
-                        c2Center = topCircleCenter,
-                        c2Radius = topCD / 2f,
-                        topBorderY = vOff,
-                        riseDist = riseDist,
-                        maxDist = barH * METABALL_MAX_DISTANCE,
-                        cornerRadius = barCR,
-                        paintColor = colorBar
-                    )
+                // Pass1：基座巨圆（胶囊内 → 端面严格圆润）
+                goo?.let {
+                    drawCircle(color = colorBar, radius = it.baseRadius, center = it.baseCenter)
                 }
             }
+
+            // Pass2：颈部（裁剪外 → 桥体零裁切）
+            goo?.let { drawPath(it.neck, colorBar) }
+
+            fun drawEndLabel(text: String?, alignRight: Boolean) {
+                if (text.isNullOrEmpty()) return
+                val style = TextStyle(color = colorBarText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Medium)
+                val measured = textMeasurer.measure(text, style, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
+                val x = if (alignRight) w - textOffPx - measured.size.width else textOffPx
+                val y = vOff + (barH - measured.size.height) / 2f
+                translate(left = x.coerceAtLeast(0f), top = y) { drawText(measured) }
+            }
+            drawEndLabel(startText, alignRight = false)
+            drawEndLabel(endText, alignRight = true)
 
             // ── 白色数值气泡（在裁剪区域外自由绘制）──
             val labelTop = vOff + (topCD - labelD) / 2f - riseVal
@@ -310,11 +328,24 @@ fun FluidSlider(
     }
 }
 
+
+/** 液桥两段式数据：基座（胶囊裁剪内绘制）+ 颈部（裁剪外绘制）。 */
+private class MetaballParts(
+    val baseCenter: Offset,
+    val baseRadius: Float,
+    val neck: Path
+)
+
 /**
- * 原 View drawMetaball 的逐行 Compose Canvas 移植。
- * 两圆之间的液态变形路径，含 spread 因子和 handle 控制柄。
+ * 液桥几何计算（无绘制副作用），返回基座与颈部两段。
+ *
+ * 与 HTML 验证版逐行对应，含三项稳定化：
+ *  ① 控制柄以气泡中轴对称钳制，翼展上限 1.6×barH —— 消除极端位置不对称裙边；
+ *  ② 脚点 y 压回轨道顶线，且 x 钳制到气泡极限范围 —— 无缝、无尖端；
+ *  ③ 颈部底部 TAB 重叠插入轨道 + p2↔p2b 弦闭合（弦位于气泡圆内，
+ *     之后被不透明气泡覆盖）—— 抗锯齿零缝隙、零接缝。
  */
-private fun DrawScope.drawMetaballFaithful(
+private fun DrawScope.buildMetaballParts(
     c1Center: Offset,
     c1Radius: Float,
     c2Center: Offset,
@@ -322,27 +353,27 @@ private fun DrawScope.drawMetaballFaithful(
     topBorderY: Float,
     riseDist: Float,
     maxDist: Float,
-    cornerRadius: Float,
-    paintColor: Color
-) {
-    if (c1Radius <= 0f || c2Radius <= 0f) return
-
+    width: Float,
+    barHpx: Float
+): MetaballParts {
+    require(c1Radius > 0f && c2Radius > 0f) { "invalid radii" }
     val dx = c1Center.x - c2Center.x
     val dy = c1Center.y - c2Center.y
     val d = sqrt(dx * dx + dy * dy)
-    if (d > maxDist || d <= abs(c1Radius - c2Radius)) return
+    if (d > maxDist || d <= abs(c1Radius - c2Radius)) {
+        // 退化：直接返回仅含基座的部件（颈部为空路径）
+        return MetaballParts(c1Center, c1Radius, Path())
+    }
 
-    val riseRatio = min(1f, max(0f, topBorderY - (c2Center.y - c2Radius)) / riseDist)
+    val riseRatio = min(1f, max(0f, (topBorderY - (c2Center.y - c2Radius)) / riseDist))
+    fun safeAcos(x: Float): Float = acos(x.coerceIn(-1f, 1f))
 
     val u1: Float
     val u2: Float
     if (d < c1Radius + c2Radius) {
-        u1 = acos((c1Radius * c1Radius + d * d - c2Radius * c2Radius) / (2 * c1Radius * d))
-        u2 = acos((c2Radius * c2Radius + d * d - c1Radius * c1Radius) / (2 * c2Radius * d))
-    } else {
-        u1 = 0f
-        u2 = 0f
-    }
+        u1 = safeAcos((c1Radius * c1Radius + d * d - c2Radius * c2Radius) / (2 * c1Radius * d))
+        u2 = safeAcos((c2Radius * c2Radius + d * d - c1Radius * c1Radius) / (2 * c2Radius * d))
+    } else { u1 = 0f; u2 = 0f }
 
     val cxMin = c2Center.x - c1Center.x
     val cyMin = c2Center.y - c1Center.y
@@ -351,58 +382,61 @@ private fun DrawScope.drawMetaballFaithful(
 
     val fPI = PI.toFloat()
     val angle1 = atan2(cyMin, cxMin)
-    val angle2 = acos((c1Radius - c2Radius) / d)
+    val angle2 = safeAcos((c1Radius - c2Radius) / d)
     val angle1a = angle1 + u1 + (angle2 - u1) * bSpreadFactor
     val angle1b = angle1 - u1 - (angle2 - u1) * bSpreadFactor
     val angle2a = angle1 + fPI - u2 - (fPI - u2 - angle2) * TOP_SPREAD_FACTOR
     val angle2b = angle1 - fPI + u2 + (fPI - u2 - angle2) * TOP_SPREAD_FACTOR
 
-    fun vec(rad: Float, len: Float): Offset =
-        Offset(cos(rad) * len, sin(rad) * len)
+    fun vec(rad: Float, len: Float) = Offset(cos(rad) * len, sin(rad) * len)
 
-    val p1aRaw = vec(angle1a, c1Radius)
-    val p1bRaw = vec(angle1b, c1Radius)
-    val p2aRaw = vec(angle2a, c2Radius)
-    val p2bRaw = vec(angle2b, c2Radius)
-
-    val p1a = Offset(p1aRaw.x + c1Center.x, p1aRaw.y + c1Center.y)
-    val p1b = Offset(p1bRaw.x + c1Center.x, p1bRaw.y + c1Center.y)
-    val p2a = Offset(p2aRaw.x + c2Center.x, p2aRaw.y + c2Center.y)
-    val p2b = Offset(p2bRaw.x + c2Center.x, p2bRaw.y + c2Center.y)
+    val p1 = c1Center + vec(angle1a, c1Radius)
+    val p1b = c1Center + vec(angle1b, c1Radius)
+    val p2 = c2Center + vec(angle2a, c2Radius)
+    val p2b = c2Center + vec(angle2b, c2Radius)
 
     val totalR = c1Radius + c2Radius
-    val distPA = sqrt((p1a.x - p2a.x).let { it * it } + (p1a.y - p2a.y).let { it * it })
-    val d2Base = min(
-        max(TOP_SPREAD_FACTOR, bSpreadFactor) * METABALL_HANDLER_FACTOR,
-        distPA / totalR
-    )
+    val distPA = sqrt((p1.x - p2.x).let { it * it } + (p1.y - p2.y).let { it * it })
+    val d2Base = min(max(TOP_SPREAD_FACTOR, bSpreadFactor) * METABALL_HANDLER_FACTOR, distPA / totalR)
     val d2 = d2Base * min(1f, d * 2f / totalR)
 
     val r1 = c1Radius * d2
     val r2 = c2Radius * d2
     val pi2 = fPI / 2f
 
-    val sp1 = vec(angle1a - pi2, r1)
-    val sp2 = vec(angle2a + pi2, r2)
-    val sp3 = vec(angle2b - pi2, r2)
-    val sp4 = vec(angle1b + pi2, r1)
+    var s1 = vec(angle1a - pi2, r1)
+    var s2 = vec(angle2a + pi2, r2)
+    var s3 = vec(angle2b - pi2, r2)
+    var s4 = vec(angle1b + pi2, r1)
 
-    val yOffset = abs(topBorderY - p1a.y) * riseRatio - 1f
-    val fp1a = Offset(p1a.x, p1a.y - yOffset)
-    val fp1b = Offset(p1b.x, p1b.y - yOffset)
+    /* 稳定化①：翼展以气泡中轴对称钳制 */
+    val wing = barHpx * 1.6f
+    val wingMin = c2Center.x - wing
+    val wingMax = c2Center.x + wing
+    s1 = Offset(s1.x.coerceIn(wingMin, wingMax), s1.y)
+    s2 = Offset(s2.x.coerceIn(wingMin, wingMax), s2.y)
+    s3 = Offset(s3.x.coerceIn(wingMin, wingMax), s3.y)
+    s4 = Offset(s4.x.coerceIn(wingMin, wingMax), s4.y)
 
-    val path = Path().apply {
-        reset()
-        moveTo(fp1a.x, fp1a.y + cornerRadius)
-        lineTo(fp1a.x, fp1a.y)
-        cubicTo(fp1a.x + sp1.x, fp1a.y + sp1.y, p2a.x + sp2.x, p2a.y + sp2.y, p2a.x, p2a.y)
-        lineTo(c2Center.x, c2Center.y)
-        lineTo(p2b.x, p2b.y)
-        cubicTo(p2b.x + sp3.x, p2b.y + sp3.y, fp1b.x + sp4.x, fp1b.y + sp4.y, fp1b.x, fp1b.y)
-        lineTo(fp1b.x, fp1b.y + cornerRadius)
+    /* 稳定化②③：脚点压线 + 脚点横向钳制 + TAB 重叠 */
+    val yOff = abs(topBorderY - p1.y) * riseRatio - 1f
+    val labelD = barHpx - 6.dp.toPx()               // 与组合体内 labelD 同式
+    val footMinX = labelD / 2f + 1f
+    val footMaxX = width - labelD / 2f - 1f
+    val tab = min(3.dp.toPx(), barHpx * 0.08f)
+    val f1 = Offset(p1.x.coerceIn(footMinX, footMaxX), max(p1.y - yOff, topBorderY))
+    val f1b = Offset(p1b.x.coerceIn(footMinX, footMaxX), max(p1b.y - yOff, topBorderY))
+
+    val neck = Path().apply {
+        moveTo(f1.x, f1.y + tab)
+        lineTo(f1.x, f1.y)
+        cubicTo(f1.x + s1.x, f1.y + s1.y, p2.x + s2.x, p2.y + s2.y, p2.x, p2.y)
+        lineTo(p2b.x, p2b.y)                       // 弦闭合（气泡覆盖区）
+        cubicTo(p2b.x + s3.x, p2b.y + s3.y, f1b.x + s4.x, f1b.y + s4.y, f1b.x, f1b.y)
+        lineTo(f1b.x, f1b.y)
+        lineTo(f1b.x, f1b.y + tab)
         close()
     }
 
-    drawPath(path, paintColor)
-    drawCircle(paintColor, radius = c2Radius, center = c2Center)
+    return MetaballParts(baseCenter = c1Center, baseRadius = c1Radius, neck = neck)
 }
