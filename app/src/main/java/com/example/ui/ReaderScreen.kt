@@ -2094,6 +2094,8 @@ fun ReaderScreen(
 
                                             onClickCenter = { showBars = !showBars },
 
+                                            onToggleBookmark = { toggleBookmark() },
+
                                             menuVisible = showBars
 
                                         )

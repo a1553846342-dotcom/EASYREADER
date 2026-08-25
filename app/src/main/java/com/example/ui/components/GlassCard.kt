@@ -1,6 +1,10 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -128,6 +132,17 @@ fun GlassCard(
         label = "glassPressScale"
     )
 
+    // MAX 按压涟漪：手指按下时从中心扩散一圈彩色涟漪
+    val rippleProgress = remember { Animatable(1f) }
+    LaunchedEffect(isPressed) {
+        if (quality == RenderQuality.MAX && isPressed) {
+            rippleProgress.snapTo(0f)
+            rippleProgress.animateTo(1f, tween(600, easing = androidx.compose.animation.core.LinearEasing))
+        } else {
+            rippleProgress.snapTo(1f)
+        }
+    }
+
     // Layer 2/3/4（物理光路）与 Layer 5/6（棱镜描边 + 内倒角）的预录缓存层
     val lightPathLayer = rememberGraphicsLayer()
     var lightPathKey by remember { mutableStateOf<GlassDecoKey?>(null) }
@@ -218,6 +233,19 @@ fun GlassCard(
                     Modifier
                 }
             )
+            // MAX 按压涟漪：从中心扩散的彩色涟漪（按压时可见）
+            .drawWithContent {
+                drawContent()
+                if (quality == RenderQuality.MAX && isPressed && rippleProgress.value < 1f) {
+                    val rippleR = size.width * (0.15f + 0.55f * rippleProgress.value)
+                    val rippleA = 0.30f * (1f - rippleProgress.value)
+                    drawCircle(
+                        color = primary.copy(alpha = rippleA),
+                        radius = rippleR,
+                        center = Offset(size.width / 2f, size.height / 2f)
+                    )
+                }
+            }
             // Layer 2, 3, 4: 物理光路（对角高光 + 顶棱聚光 + 底部焦散晕染）
             .drawWithContent {
                 val key = glassDecoKey(isPressed, primary, secondary, shape, quality)

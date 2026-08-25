@@ -2,12 +2,17 @@
 
 package com.example.ui.pageturn
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import eu.wewox.pagecurl.ExperimentalPageCurlApi
@@ -16,15 +21,11 @@ import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.rememberPageCurlState
 
 /**
- * C1 pagecurl 引擎的阅读器容器（SIMULATE 翻页档专用）。
+ * C1 pagecurl 引擎容器（SIMULATE 翻页档专用）。
  *
- * 复刻 oleksandrbalan/pagecurl 的三页滑动窗口用法：
- *  - count=3 的窗口（0=上一页 1=当前页 2=下一页）；
- *  - 翻页完成（state.current 变为 0/2）时回调章节/翻页逻辑并 snap 回当前页；
- *  - 中央 1/3 区域点击通过 onCustomTap 唤出菜单（与原 PageTurnContainer 行为一致）；
- *  - 菜单打开时禁用拖拽与边缘点击，仅保留中央点击用于关闭菜单。
- *
- * 已知差异：原容器的"下拉书签"充能手势在本引擎中不可用（pagecurl 接管了全部拖拽）。
+ * 三页滑动窗口：0=上一页 1=当前页 2=下一页。
+ * 前置拦截层在 Initial pass 截获"从顶部下拉"手势 → 切换书签，
+ * 其余手势放行给 pagecurl 处理翻页。
  */
 @Composable
 fun PageCurlReaderContainer(
@@ -34,16 +35,15 @@ fun PageCurlReaderContainer(
     onNextPage: () -> Unit,
     onPrevPage: () -> Unit,
     onClickCenter: () -> Unit,
+    onToggleBookmark: () -> Unit = {},
     menuVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
     val state = rememberPageCurlState(initialCurrent = 1)
 
-    // 直接构造 config（不用库内 rememberSaveable 版本）：
-    // 这样 menuVisible / 回调的变化能即时生效。
     val config = PageCurlConfig(
-        backPageColor = Color(0xFFE8E4DC),           // 纸背色（中性纸色）
-        backPageContentAlpha = 0f,                   // 背面不透出正面文字
+        backPageColor = Color(0xFFE8E4DC),
+        backPageContentAlpha = 0f,
         shadowColor = Color.Black,
         shadowAlpha = 0.25f,
         shadowRadius = 18.dp,
@@ -52,7 +52,7 @@ fun PageCurlReaderContainer(
         dragBackwardEnabled = !menuVisible,
         tapForwardEnabled = !menuVisible,
         tapBackwardEnabled = !menuVisible,
-        tapCustomEnabled = true,                      // 中央点击始终可用（唤出/关闭菜单）
+        tapCustomEnabled = true,
         dragInteraction = PageCurlConfig.StartEndDragInteraction(),
         tapInteraction = PageCurlConfig.TargetTapInteraction(),
         onCustomTap = { sz, pos ->
@@ -74,17 +74,49 @@ fun PageCurlReaderContainer(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        PageCurl(
-            count = 3,
-            state = state,
-            config = config,
-            modifier = Modifier.fillMaxSize()
-        ) { idx ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (idx) {
-                    0 -> prevContent()
-                    1 -> currentContent()
-                    else -> nextContent()
+        // 前置拦截层：截获"从屏幕顶部下拉"手势用于书签操作，其余放行给 pagecurl
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
+                        )
+                        // 只拦截起点在顶部 15% 区域内的触摸
+                        if (down.position.y > size.height * 0.15f) return@awaitEachGesture
+
+                        var totalDragY = 0f
+                        var isPulling = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            totalDragY += change.positionChange().y
+                            if (!isPulling && totalDragY > 50f) isPulling = true
+                            if (isPulling) change.consume()
+                        }
+
+                        // 松手时如果是下拉手势且菜单未打开 → 切换书签
+                        if (isPulling && !menuVisible) {
+                            onToggleBookmark()
+                        }
+                    }
+                }
+        ) {
+            PageCurl(
+                count = 3,
+                state = state,
+                config = config,
+                modifier = Modifier.fillMaxSize()
+            ) { idx ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when (idx) {
+                        0 -> prevContent()
+                        1 -> currentContent()
+                        else -> nextContent()
+                    }
                 }
             }
         }
