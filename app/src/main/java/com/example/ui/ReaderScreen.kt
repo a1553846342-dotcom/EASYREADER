@@ -3265,7 +3265,6 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 字号
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("字号", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.weight(1f))
@@ -3283,7 +3282,6 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // 行间距
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("行间距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.weight(1f))
@@ -3301,7 +3299,6 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // 页边距
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("页边距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.weight(1f))
@@ -3330,7 +3327,6 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 亮度
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("亮度", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.weight(1f))
@@ -3348,7 +3344,6 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // 首行缩进
                 Row(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -3363,7 +3358,6 @@ fun ReaderScreen(
                 }
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 字体
                 Text("字体", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
@@ -3458,305 +3452,6 @@ fun ReaderScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-            }
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
-
-                Text("阅读排版", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-
-
-                Text("字号: ${fontSize.toInt()} sp", fontWeight = FontWeight.Medium)
-
-                FluidSlider(
-
-                    position = (fontSize - 12f) / 24f,
-
-                    onPositionChange = { fontSize = 12f + it * 24f; prefs.fontSize = fontSize },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    barHeightDp = 30,
-
-                    bubbleText = "${fontSize.toInt()}",
-
-                    startText = null,
-
-                    endText = null,
-
-                    colorBar = MintPrimary
-
-                )
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Text("行间距: ${lineHeight.toInt()} sp", fontWeight = FontWeight.Medium)
-
-                FluidSlider(
-
-                    position = (lineHeight - 20f) / 28f,
-
-                    onPositionChange = { lineHeight = 20f + it * 28f; prefs.lineHeight = lineHeight },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    barHeightDp = 30,
-
-                    bubbleText = "${lineHeight.toInt()}",
-
-                    startText = null,
-
-                    endText = null,
-
-                    colorBar = MintPrimary
-
-                )
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Text("页边距: ${marginHorizontal} dp", fontWeight = FontWeight.Medium)
-
-                FluidSlider(
-
-                    position = (marginHorizontal - 8f) / 40f,
-
-                    onPositionChange = { marginHorizontal = Math.round(8f + it * 40f); prefs.marginHorizontal = marginHorizontal },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    barHeightDp = 30,
-
-                    bubbleText = "$marginHorizontal",
-
-                    startText = null,
-
-                    endText = null,
-
-                    colorBar = MintPrimary
-
-                )
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                // 亮度调节：夜间阅读降低刺眼感
-
-                Text("亮度: ${(readerBrightness * 100).toInt()}%", fontWeight = FontWeight.Medium)
-
-                FluidSlider(
-
-                    position = (readerBrightness - 0.2f) / 0.8f,
-
-                    onPositionChange = { readerBrightness = 0.2f + it * 0.8f; prefs.readerBrightness = readerBrightness },
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    barHeightDp = 30,
-
-                    bubbleText = "${(readerBrightness * 100).toInt()}%",
-
-                    startText = null,
-
-                    endText = null,
-
-                    colorBar = MintGold
-
-                )
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-
-                    Text("首行缩进", fontWeight = FontWeight.Medium)
-
-                    SquishyToggleSwitch(
-
-                        color = MintPrimary,
-
-                        checked = firstLineIndent,
-
-                        onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
-
-                    )
-
-                }
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Text("字体", fontWeight = FontWeight.Medium)
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(
-
-                    modifier = Modifier.fillMaxWidth(),
-
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-
-                ) {
-
-                    val fonts = listOf(0 to "默认", 1 to "衬线", 2 to "黑体", 3 to "等宽")
-
-                    fonts.forEach { (idx, name) ->
-
-                        FilterChip(
-
-                            selected = fontFamilyIndex == idx,
-
-                            onClick = { fontFamilyIndex = idx; prefs.fontFamilyIndex = idx },
-
-                            label = { Text(name, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
-
-                            modifier = Modifier.weight(1f)
-
-                        )
-
-                    }
-
-                    // 自定义字体导入按钮
-                    FilterChip(
-                        selected = fontFamilyIndex == 4,
-                        onClick = {
-                            fontFileLauncher.launch("font/ttf")
-                        },
-                        label = { Text(if (prefs.customFontPath.isNotEmpty()) "✓自定义" else "+导入", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                }
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Text("主题风格", fontWeight = FontWeight.Medium)
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                    val themes = listOf(0 to "薄荷", 1 to "白底", 2 to "羊皮", 3 to "夜间", 4 to "护眼", 5 to "纯黑")
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                        themes.take(3).forEach { (id, name) ->
-
-                            FilterChip(
-
-                                selected = readerTheme == id,
-
-                                onClick = { readerTheme = id; prefs.readerTheme = id },
-
-                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-
-                                modifier = Modifier.weight(1f)
-
-                            )
-
-                        }
-
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                        themes.drop(3).forEach { (id, name) ->
-
-                            FilterChip(
-
-                                selected = readerTheme == id,
-
-                                onClick = { readerTheme = id; prefs.readerTheme = id },
-
-                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-
-                                modifier = Modifier.weight(1f)
-
-                            )
-
-                        }
-
-                    }
-
-                }
-
-
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-
-
-                Text("翻页动画", fontWeight = FontWeight.Medium)
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                        PageTurnType.entries.take(3).forEach { modeType ->
-
-                            FilterChip(
-
-                                selected = pageTurnMode == modeType.id,
-
-                                onClick = { switchPageMode(modeType.id) },
-
-                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-
-                                modifier = Modifier.weight(1f)
-
-                            )
-
-                        }
-
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                        PageTurnType.entries.drop(3).forEach { modeType ->
-
-                            FilterChip(
-
-                                selected = pageTurnMode == modeType.id,
-
-                                onClick = { switchPageMode(modeType.id) },
-
-                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-
-                                modifier = Modifier.weight(1f)
-
-                            )
-
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                    }
-
-                }
-
             }
 
         }
