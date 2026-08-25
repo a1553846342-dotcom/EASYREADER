@@ -23,6 +23,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
@@ -666,6 +667,30 @@ fun HomeScreen(
                                 )
 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // 排序按钮（用户要求：置于「导入新书」左侧）
+                                    TextButton(
+                                        onClick = { sortBy = (sortBy + 1) % 3 },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Filled.Sort,
+                                                contentDescription = null,
+                                                tint = if (sortBy > 0) MintPrimary else adaptiveTitleColor().copy(alpha = 0.55f),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = when (sortBy) { 0 -> "默认"; 1 -> "A-Z"; else -> "最近" },
+                                                color = if (sortBy > 0) MintPrimary else adaptiveTitleColor().copy(alpha = 0.55f),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
                                     TextButton(
                                         onClick = { onImportClick(selectedCategory) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
@@ -679,16 +704,16 @@ fun HomeScreen(
 
                                     Spacer(modifier = Modifier.width(4.dp))
 
-                                    AppIconButton(
+                                    // 新建分类：图标+文字组合，提升可发现性
+                                    TextButton(
                                         onClick = { showAddCategoryDialog = true },
-                                        modifier = Modifier.size(28.dp)
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "新建分类",
-                                            tint = MintPrimary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Filled.Category, contentDescription = null, tint = MintSecondary, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("新建分类", color = MintSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
@@ -749,18 +774,6 @@ fun HomeScreen(
                                     }
                                 }
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    TextButton(
-                                        onClick = { sortBy = (sortBy + 1) % 3 },
-                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                        modifier = Modifier.height(28.dp)
-                                    ) {
-                                        Text(
-                                            text = when (sortBy) { 0 -> "默认"; 1 -> "A-Z"; else -> "最近" },
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (sortBy > 0) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                        )
-                                    }
                             }
                         }
                     }
