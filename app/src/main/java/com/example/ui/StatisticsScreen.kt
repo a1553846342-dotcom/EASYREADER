@@ -439,46 +439,44 @@ private fun PeriodOverviewCard(
                         color = MintPrimary
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth().padding(start = 72.dp),
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "每日目标",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    // 减少按钮
+                    Spacer(modifier = Modifier.width(4.dp))
                     Surface(
                         onClick = { if (dailyGoalMinutes > 15) onGoalChange(dailyGoalMinutes - 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(22.dp).semantics { contentDescription = "减少目标15分钟" }
+                        modifier = Modifier.size(18.dp).semantics { contentDescription = "减少目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("−", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("−", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${dailyGoalMinutes}分钟",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MintPrimary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // 增加按钮
+                    Spacer(modifier = Modifier.width(4.dp))
                     Surface(
                         onClick = { if (dailyGoalMinutes < 480) onGoalChange(dailyGoalMinutes + 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(22.dp).semantics { contentDescription = "增加目标15分钟" }
+                        modifier = Modifier.size(18.dp).semantics { contentDescription = "增加目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("+", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

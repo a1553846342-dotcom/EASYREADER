@@ -978,8 +978,6 @@ fun SettingsTabScreen(
             }
         }
 
-        var showCacheManager by remember { mutableStateOf(false) }
-
     if (showCacheManager) {
         CacheManagementScreen(onBack = { showCacheManager = false })
         return

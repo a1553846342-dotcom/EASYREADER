@@ -100,13 +100,13 @@ fun Modifier.maxCardAura(
     val radiusPx = with(density) { cornerRadiusDp.dp.toPx() }
 
     return this.drawBehind {
-        val breathAlpha = 0.35f + 0.25f * sin(breathe * PI.toFloat()).let { if (it < 0) -it else it }
+        val breathAlpha = 0.15f + 0.12f * sin(breathe * PI.toFloat()).let { if (it < 0) -it else it }
         // 色相插值：primary → secondary → primary 循环
         val shift = hueShift
         val c1 = lerpColor(primary, secondary, shift)
         val c2 = lerpColor(secondary, primary, shift)
 
-        val maxGlow = 18.dp.toPx()
+        val maxGlow = 10.dp.toPx()
         for (i in 3 downTo 1) {
             val glowAlpha = breathAlpha / i
             val expand = maxGlow * i / 3f

@@ -59,23 +59,21 @@ fun Modifier.chromaFlowEdge(
         val h = size.height
         if (w <= 0 || h <= 0) return@drawBehind
 
-
-        val strokeW = 4.dp.toPx()
-        val inset = strokeW / 2f
+        val strokeW = 2.dp.toPx()
 
         // 构建圆角矩形路径
         val path = Path().apply {
             addRoundRect(w, h, radiusPx)
         }
 
-        // sweepGradient + rotate(phase×360°) → 光带沿周长巡游
+        // 极低 alpha + 多色过渡 → 柔和虹彩微光（非实色线条）
         val colors = listOf(
             Color.Transparent,
-            primary.copy(alpha = 0.6f),
-            secondary.copy(alpha = 0.8f),
-            Color.White.copy(alpha = 0.9f),
-            secondary.copy(alpha = 0.8f),
-            primary.copy(alpha = 0.6f),
+            primary.copy(alpha = 0.12f),
+            secondary.copy(alpha = 0.18f),
+            Color.White.copy(alpha = 0.22f),
+            secondary.copy(alpha = 0.18f),
+            primary.copy(alpha = 0.12f),
             Color.Transparent
         )
         val brush = Brush.sweepGradient(
