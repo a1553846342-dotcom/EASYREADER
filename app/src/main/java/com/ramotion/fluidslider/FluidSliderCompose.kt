@@ -218,17 +218,30 @@ fun FluidSlider(
             val barCR = barH / 2f // 全胶囊：端面半圆
             val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
 
-            // ── 扩展裁剪路径：上半部全宽（允许气泡升起），下半部胶囊形（防止端面凸出）──
-            val midY = vOff + barH / 2f
+            // ── 扩展裁剪路径：上半部全宽（允许气泡升起），下半部标准半圆端面（addArc 精确圆弧）──
             val capsuleClip = Path().apply {
                 moveTo(0f, vOff)
                 lineTo(0f, 0f)          // 向上扩展到画布顶
                 lineTo(w, 0f)
                 lineTo(w, vOff)
-                // 下半部：胶囊圆角（防止 0%/100% 时直角凸出）
-                quadraticBezierTo(w, vOff + barH, w - barCR, vOff + barH)
+                // 右端半圆：圆心 (w-barCR, midY)，从 -90° 顺时针扫 180° 到 +90°
+                addArc(
+                    oval = androidx.compose.ui.geometry.Rect(
+                        left = w - barCR * 2f, top = vOff,
+                        right = w, bottom = vOff + barH
+                    ),
+                    startAngleDegrees = -90f, sweepAngleDegrees = 180f
+                )
+                // 底边回到左端
                 lineTo(barCR, vOff + barH)
-                quadraticBezierTo(0f, vOff + barH, 0f, vOff)
+                // 左端半圆：圆心 (barCR, midY)，从 90° 扫 180° 到 270°
+                addArc(
+                    oval = androidx.compose.ui.geometry.Rect(
+                        left = 0f, top = vOff,
+                        right = barCR * 2f, bottom = vOff + barH
+                    ),
+                    startAngleDegrees = 90f, sweepAngleDegrees = 180f
+                )
                 close()
             }
 
@@ -299,7 +312,17 @@ fun FluidSlider(
                 txt.length <= 3 -> 12
                 else -> 10
             }
-            val bStyle = TextStyle(color = colorBubbleText, fontSize = fontSp.sp, fontWeight = FontWeight.Bold)
+            val bStyle = TextStyle(
+                color = colorBubbleText,
+                fontSize = fontSp.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                )
+            )
             val maxTxtW = (labelD * 0.85f).toInt().coerceAtLeast(20)
             val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = maxTxtW))
             translate(
