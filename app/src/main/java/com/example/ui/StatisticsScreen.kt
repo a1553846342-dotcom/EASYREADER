@@ -64,6 +64,8 @@ import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.glassTitleColor
 import com.example.ui.mascot.MascotSpriteSheet
 import java.util.Calendar
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -454,7 +456,7 @@ private fun PeriodOverviewCard(
                         onClick = { if (dailyGoalMinutes > 15) onGoalChange(dailyGoalMinutes - 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp).semantics { contentDescription = "减少目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text("−", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -473,7 +475,7 @@ private fun PeriodOverviewCard(
                         onClick = { if (dailyGoalMinutes < 480) onGoalChange(dailyGoalMinutes + 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp).semantics { contentDescription = "增加目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -790,3 +792,4 @@ private fun mergeDuplicateReadingRecords(records: List<ReadingRecord>): List<Rea
     }
     return merged.values.toList()
 }
+
