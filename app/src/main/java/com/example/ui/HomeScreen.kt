@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
@@ -155,6 +156,16 @@ fun HomeScreen(
             val matchesSearch = book.title.contains(debouncedQuery, ignoreCase = true) || 
                                 book.author.contains(debouncedQuery, ignoreCase = true)
             matchesCategory && matchesSearch
+        }
+    }
+
+    // 书架排序：0=默认导入顺序 1=按标题 A-Z 2=最近阅读优先
+    var sortBy by remember { mutableIntStateOf(0) }
+    val sortedBooks = remember(filteredBooks, sortBy) {
+        when (sortBy) {
+            1 -> filteredBooks.sortedBy { it.title.lowercase() }
+            2 -> filteredBooks.sortedByDescending { it.lastReadTime }
+            else -> filteredBooks
         }
     }
 
@@ -703,12 +714,26 @@ fun HomeScreen(
                                             textAlign = TextAlign.Center
                                         )
                                     }
+
+                                    // 排序切换按钮：点击在 默认→标题→最近 之间循环
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { sortBy = (sortBy + 1) % 3 },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Sort,
+                                            contentDescription = "排序",
+                                            tint = if (sortBy > 0) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    if (filteredBooks.isEmpty()) {
+if (sortedBooks.isEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }, key = "empty_state") {
                             com.example.ui.components.MascotEmptyState(
                                 mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
@@ -720,7 +745,7 @@ fun HomeScreen(
                             )
                         }
                     } else {
-                        items(items = filteredBooks, key = { it.id }) { book ->
+                        items(items = sortedBooks, key = { it.id }) { book ->
                             val coverData = remember(book.coverUri, book.isCoverValid) {
                                 if (book.coverUri.isNullOrEmpty()) null
                                 else if (book.coverUri!!.startsWith("content://")) {
