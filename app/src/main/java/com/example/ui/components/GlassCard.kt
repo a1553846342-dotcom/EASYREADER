@@ -233,16 +233,32 @@ fun GlassCard(
                     Modifier
                 }
             )
-            // MAX 按压涟漪：从中心扩散的彩色涟漪（按压时可见）
+            // MAX 按压涟漪：柔光填充 + 高对比描边环，按压时清晰可见
             .drawWithContent {
                 drawContent()
                 if (quality == RenderQuality.MAX && isPressed && rippleProgress.value < 1f) {
-                    val rippleR = size.width * (0.15f + 0.55f * rippleProgress.value)
-                    val rippleA = 0.30f * (1f - rippleProgress.value)
+                    val p = rippleProgress.value
+                    val rippleR = size.width * (0.20f + 0.65f * p)
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
                     drawCircle(
-                        color = primary.copy(alpha = rippleA),
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                primary.copy(alpha = 0.30f * (1f - p)),
+                                primary.copy(alpha = 0.10f * (1f - p)),
+                                Color.Transparent
+                            ),
+                            center = Offset(cx, cy),
+                            radius = rippleR
+                        ),
                         radius = rippleR,
-                        center = Offset(size.width / 2f, size.height / 2f)
+                        center = Offset(cx, cy)
+                    )
+                    drawCircle(
+                        color = secondary.copy(alpha = 0.60f * (1f - p)),
+                        radius = rippleR,
+                        center = Offset(cx, cy),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
                     )
                 }
             }
