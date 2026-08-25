@@ -71,6 +71,7 @@ import com.example.ui.components.AppButton
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GlassCard
 import com.example.ui.components.AcrylicDialog

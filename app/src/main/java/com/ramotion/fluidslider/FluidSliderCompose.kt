@@ -409,14 +409,13 @@ private fun DrawScope.buildMetaballParts(
     var s3 = vec(angle2b - pi2, r2)
     var s4 = vec(angle1b + pi2, r1)
 
-    /* 稳定化①：翼展以气泡中轴对称钳制 */
+    /* 稳定化①：翼展偏移围绕零对称钳制（s* 是相对脚点的偏移量，
+       不可用绝对坐标带——否则控制点会随 fraction 向右漂移） */
     val wing = barHpx * 1.6f
-    val wingMin = c2Center.x - wing
-    val wingMax = c2Center.x + wing
-    s1 = Offset(s1.x.coerceIn(wingMin, wingMax), s1.y)
-    s2 = Offset(s2.x.coerceIn(wingMin, wingMax), s2.y)
-    s3 = Offset(s3.x.coerceIn(wingMin, wingMax), s3.y)
-    s4 = Offset(s4.x.coerceIn(wingMin, wingMax), s4.y)
+    s1 = Offset(s1.x.coerceIn(-wing, wing), s1.y)
+    s2 = Offset(s2.x.coerceIn(-wing, wing), s2.y)
+    s3 = Offset(s3.x.coerceIn(-wing, wing), s3.y)
+    s4 = Offset(s4.x.coerceIn(-wing, wing), s4.y)
 
     /* 稳定化②③：脚点压线 + 脚点横向钳制 + TAB 重叠 */
     val yOff = abs(topBorderY - p1.y) * riseRatio - 1f
