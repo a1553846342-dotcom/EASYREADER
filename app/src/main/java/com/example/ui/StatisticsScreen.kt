@@ -401,89 +401,80 @@ private fun PeriodOverviewCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Box(contentAlignment = Alignment.Center) {
-                    val primary = MintPrimary
-                    val secondary = MintSecondary
-                    Canvas(modifier = Modifier.size(54.dp)) {
-                        val stroke = 6.dp.toPx()
-                        drawArc(
-                            color = primary.copy(alpha = 0.15f),
-                            startAngle = -90f,
-                            sweepAngle = 360f,
-                            useCenter = false,
-                            style = Stroke(width = stroke)
-                        )
-                        if (animatedGoal > 0f) {
-                            // 目标达成庆祝：≥100% 时外圈金色辉光脉冲
-                            if (animatedGoal >= 0.99f) {
-                                drawCircle(
-                                    color = MintGold.copy(alpha = 0.35f),
-                                    radius = stroke * 1.8f,
-                                    style = Stroke(width = 3.dp.toPx())
-                                )
-                            }
-                            drawArc(
-                                brush = Brush.sweepGradient(listOf(primary, secondary)),
-                                startAngle = -90f,
-                                sweepAngle = 360f * animatedGoal,
-                                useCenter = false,
-                                style = Stroke(width = stroke, cap = StrokeCap.Round)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "${(animatedGoal * 100).toInt()}%",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MintPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // ── Block 2: 目标环 + 步进器（单行紧凑布局）──
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 72.dp),
-                    horizontalArrangement = Arrangement.Start,
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "每日目标",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(contentAlignment = Alignment.Center) {
+                        val primary = MintPrimary
+                        val secondary = MintSecondary
+                        Canvas(modifier = Modifier.size(54.dp)) {
+                            val stroke = 6.dp.toPx()
+                            drawArc(
+                                color = primary.copy(alpha = 0.15f),
+                                startAngle = -90f,
+                                sweepAngle = 360f,
+                                useCenter = false,
+                                style = Stroke(width = stroke)
+                            )
+                            if (animatedGoal > 0f) {
+                                if (animatedGoal >= 0.99f) {
+                                    drawCircle(
+                                        color = MintGold.copy(alpha = 0.35f),
+                                        radius = stroke * 1.8f,
+                                        style = Stroke(width = 3.dp.toPx())
+                                    )
+                                }
+                                drawArc(
+                                    brush = Brush.sweepGradient(listOf(primary, secondary)),
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * animatedGoal,
+                                    useCenter = false,
+                                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${(animatedGoal * 100).toInt()}%",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MintPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("每日目标", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.weight(1f))
                     Surface(
                         onClick = { if (dailyGoalMinutes > 15) onGoalChange(dailyGoalMinutes - 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp).semantics { contentDescription = "减少目标15分钟" }
+                        modifier = Modifier.size(24.dp).semantics { contentDescription = "减少目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("−", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("−", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${dailyGoalMinutes}分钟",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MintPrimary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("${dailyGoalMinutes}分钟", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         onClick = { if (dailyGoalMinutes < 480) onGoalChange(dailyGoalMinutes + 15) },
                         shape = androidx.compose.foundation.shape.CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp).semantics { contentDescription = "增加目标15分钟" }
+                        modifier = Modifier.size(24.dp).semantics { contentDescription = "增加目标15分钟" }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("+", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("+", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // ── 迷你周趋势条形图：填充卡片中部，直观展示近7天阅读分布 ──
+                // ── Block 3: 近7天趋势（含空数据兜底占位）──
                 val last7 = remember(dailyTotals) {
                     val cal = java.util.Calendar.getInstance()
                     val fmt = java.text.SimpleDateFormat("E", java.util.Locale.CHINA)
@@ -494,69 +485,48 @@ private fun PeriodOverviewCard(
                         fmt.format(c.time) to ((dailyTotals[keyFmt.format(c.time)] ?: 0L) / 60L).toInt()
                     }
                 }
-                val maxMin = (last7.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    last7.forEach { (label, minutes) ->
-                        val isPeak = minutes == maxMin && minutes > 0
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.5f)
-                                    .height((12 + 42f * minutes / maxMin).dp.coerceAtMost(54.dp))
-                                    .background(
-                                        if (isPeak) MintGold else MintPrimary.copy(alpha = 0.55f),
-                                        RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-                                    )
-                            )
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                if (last7.all { it.second <= 0 }) {
+                    // 空数据兜底：不渲染空白条形区，显示引导文案占位
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "最近7天还没有阅读记录 · 去读几页吧",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    val maxMin = (last7.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        last7.forEach { (label, minutes) ->
+                            val isPeak = minutes == maxMin && minutes > 0
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.5f)
+                                        .height((12 + 42f * minutes / maxMin).dp.coerceAtMost(54.dp))
+                                        .background(
+                                            if (isPeak) MintGold else MintPrimary.copy(alpha = 0.55f),
+                                            RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                                        )
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            }
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // 分享阅读成就
-                val shareContext = androidx.compose.ui.platform.LocalContext.current
-                TextButton(
-                    onClick = {
-                        val hours = periodTotal / 3600
-                        val mins = (periodTotal % 3600) / 60
-                        val timeStr = if (hours > 0) "${hours}小时${mins}分钟" else "${mins}分钟"
-                        val shareText = buildString {
-                            appendLine("📚 我在 Ciallo 阅读${periodName}的阅读报告")
-                            appendLine("⏱ 总阅读时长：$timeStr")
-                            appendLine("📖 阅读天数：${daysRead} 天")
-                            if (streak > 1) appendLine("🔥 连续阅读：${streak} 天")
-                            appendLine("🎯 日均目标完成度：${(animatedGoal * 100).toInt()}%")
-                            appendLine("")
-                            appendLine("—— 来自 Ciallo 阅读器")
-                        }
-                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
-                        }
-                        shareContext.startActivity(
-                            android.content.Intent.createChooser(intent, "分享阅读报告")
-                        )
-                    },
-                    modifier = Modifier.height(30.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MintPrimary
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("分享${periodName}阅读报告", fontSize = 13.sp, color = MintPrimary)
                 }
              }
 
