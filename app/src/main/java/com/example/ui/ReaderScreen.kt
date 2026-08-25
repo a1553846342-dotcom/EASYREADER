@@ -160,6 +160,7 @@ fun ReaderScreen(
     var readerTheme by remember { mutableIntStateOf(prefs.readerTheme) }
     var fontFamilyIndex by remember { mutableIntStateOf(prefs.fontFamilyIndex) }
     var pageTurnMode by remember { mutableIntStateOf(prefs.pageTurnMode) }
+    var readerBrightness by remember { mutableFloatStateOf(prefs.readerBrightness) }
     val isScrollMode = pageTurnMode == PageTurnType.SCROLL.id
     var currentSubPageIndex by remember { mutableIntStateOf(0) }
     var currentCharOffset by remember { mutableIntStateOf(0) }
@@ -1274,6 +1275,15 @@ fun ReaderScreen(
             }
         }
 
+        // 亮度遮罩：夜间阅读降低刺眼感（不拦截触摸，不影响菜单栏）
+        if (readerBrightness < 0.99f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = (1f - readerBrightness) * 0.6f))
+            )
+        }
+
         // Reader Overlay (Background Mask)
         AnimatedVisibility(
             visible = showBars,
@@ -1613,6 +1623,21 @@ colors = SliderDefaults.colors(
                         activeTrackColor = MintPrimary,
                         inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 亮度调节：夜间阅读降低刺眼感
+                Text("亮度: ${(readerBrightness * 100).toInt()}%", fontWeight = FontWeight.Medium)
+                Slider(
+                    value = readerBrightness,
+                    onValueChange = { readerBrightness = it; prefs.readerBrightness = it },
+                    valueRange = 0.2f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = MintGold,
+                        activeTrackColor = MintGold.copy(alpha = 0.6f),
+                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f)
+                    )
+                )
 
                 Spacer(modifier = Modifier.height(12.dp))
 

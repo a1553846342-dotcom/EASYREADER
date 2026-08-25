@@ -161,6 +161,11 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt("daily_goal_minutes", 60)
         set(value) = prefs.edit().putInt("daily_goal_minutes", value.coerceIn(5, 480)).apply()
 
+    /** 阅读器屏幕亮度遮罩（0.2~1.0，1=不遮暗）。夜间阅读降低亮度刺眼感。 */
+    var readerBrightness: Float
+        get() = prefs.getFloat("reader_brightness", 1.0f)
+        set(value) = prefs.edit().putFloat("reader_brightness", value.coerceIn(0.2f, 1.0f)).apply()
+
     var hasSeenOnboarding: Boolean
         get() = prefs.getBoolean("has_seen_onboarding", false)
         set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()
