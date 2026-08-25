@@ -2834,18 +2834,20 @@ fun ReaderScreen(
                                                 Icon(Icons.Filled.Menu, "目录", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
                                             AppIconButton(onClick = { showAnnotationsSheet = true }) {
-                                                Icon(Icons.Filled.BookmarkBorder, "标注", tint = barContentColor, modifier = Modifier.size(20.dp))
+                                                Icon(Icons.Filled.Bookmarks, "书签列表", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
                                             AppIconButton(onClick = { showSettingsSheet = true }) {
                                                 Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
 
-                                            // 自动滚屏开关（仅滚动模式显示；与 TTS 互斥——同时开启会视听不同步）
-
-                                            if (isScrollMode) {
+                                            // 自动滚屏开关（始终显示入口；非滚动模式点击提示；与 TTS 互斥）
 
                                                 AppIconButton(onClick = {
 
+                                                    if (!isScrollMode) {
+                                                        Toast.makeText(context, "自动滚屏需切换到滚动模式", Toast.LENGTH_SHORT).show()
+                                                        return@AppIconButton
+                                                    }
                                                     isAutoScrolling = !isAutoScrolling
 
                                                     if (isAutoScrolling && isTtsPlaying) {
@@ -2869,8 +2871,6 @@ fun ReaderScreen(
                                                     )
 
                                                 }
-
-                                            }
 
                                         }
 

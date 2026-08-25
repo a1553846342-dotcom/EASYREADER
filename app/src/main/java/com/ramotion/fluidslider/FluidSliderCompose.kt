@@ -218,24 +218,25 @@ fun FluidSlider(
             val barCR = barH / 2f // 全胶囊：端面半圆
             val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
 
-            // ── 胶囊裁剪路径：手动构建（避免 API 兼容性问题）──
+            // ── 扩展裁剪路径：上半部全宽（允许气泡升起），下半部胶囊形（防止端面凸出）──
             val midY = vOff + barH / 2f
             val capsuleClip = Path().apply {
-                moveTo(0f, midY)
-                quadraticBezierTo(0f, vOff, barCR, vOff)
-                lineTo(w - barCR, vOff)
-                quadraticBezierTo(w, vOff, w, midY)
-                lineTo(w, vOff + barH)
+                moveTo(0f, vOff)
+                lineTo(0f, 0f)          // 向上扩展到画布顶
+                lineTo(w, 0f)
+                lineTo(w, vOff)
+                // 下半部：胶囊圆角（防止 0%/100% 时直角凸出）
                 quadraticBezierTo(w, vOff + barH, w - barCR, vOff + barH)
                 lineTo(barCR, vOff + barH)
-                quadraticBezierTo(0f, vOff + barH, 0f, midY)
+                quadraticBezierTo(0f, vOff + barH, 0f, vOff)
                 close()
             }
 
             // ── 裁剪区域内绘制：轨道 + 标尺 + 液桥 ──
             clipPath(capsuleClip) {
+                // 轨道（纯色，与液桥同源颜色，消除色差）
                 drawRoundRect(
-                    brush = Brush.horizontalGradient(listOf(colorBar, colorBar.copy(alpha = 0.85f))),
+                    color = colorBar,
                     topLeft = Offset(0f, vOff),
                     size = Size(w, barH),
                     cornerRadius = CornerRadius(barCR)
