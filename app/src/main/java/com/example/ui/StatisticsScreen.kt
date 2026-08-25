@@ -507,7 +507,7 @@ private fun PeriodOverviewCard(
                             android.content.Intent.createChooser(intent, "分享阅读报告")
                         )
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.height(30.dp)
                 ) {
                     Icon(
                         Icons.Default.Share,
