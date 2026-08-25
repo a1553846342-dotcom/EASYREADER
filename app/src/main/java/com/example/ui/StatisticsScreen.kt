@@ -483,6 +483,46 @@ private fun PeriodOverviewCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // ── 迷你周趋势条形图：填充卡片中部，直观展示近7天阅读分布 ──
+                val last7 = remember(dailyTotals) {
+                    val cal = java.util.Calendar.getInstance()
+                    val fmt = java.text.SimpleDateFormat("E", java.util.Locale.CHINA)
+                    val keyFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    (0..6).map { back ->
+                        val c = (cal.clone() as java.util.Calendar)
+                        c.add(java.util.Calendar.DAY_OF_YEAR, -6 + back)
+                        fmt.format(c.time) to ((dailyTotals[keyFmt.format(c.time)] ?: 0L) / 60L).toInt()
+                    }
+                }
+                val maxMin = (last7.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    last7.forEach { (label, minutes) ->
+                        val isPeak = minutes == maxMin && minutes > 0
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.5f)
+                                    .height((12 + 42f * minutes / maxMin).dp.coerceAtMost(54.dp))
+                                    .background(
+                                        if (isPeak) MintGold else MintPrimary.copy(alpha = 0.55f),
+                                        RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                                    )
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 // 分享阅读成就
                 val shareContext = androidx.compose.ui.platform.LocalContext.current
                 TextButton(
