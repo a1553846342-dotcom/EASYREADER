@@ -37,6 +37,7 @@ import com.example.data.Chapter
 import com.example.data.ReadingSession
 import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
+import com.ramotion.fluidslider.FluidSlider
 import com.example.ui.theme.MintSecondary
 import kotlinx.coroutines.delay
 import net.engawapg.lib.zoomable.ExperimentalZoomableApi

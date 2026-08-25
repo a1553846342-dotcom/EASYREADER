@@ -103,6 +103,7 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 
 import androidx.compose.material3.*
+import com.ramotion.fluidslider.FluidSlider
 
 import androidx.compose.runtime.*
 
@@ -2955,35 +2956,33 @@ fun ReaderScreen(
 
                 
 
-                                                Slider(
+                                                FluidSlider(
 
-                                                    value = currentChapterIndex.toFloat(),
+                                                    position = currentChapterIndex.toFloat() /
 
-                                                    onValueChange = {
+                                                        (chapters.size - 1).coerceAtLeast(1).toFloat(),
 
-                                                        currentChapterIndex = it.toInt()
+                                                    onPositionChange = {
+
+                                                        currentChapterIndex = Math.round(it * (chapters.size - 1).coerceAtLeast(1).toFloat())
 
                                                         scope.launch { scrollState.scrollTo(0) }
 
                                                     },
 
-                                                    valueRange = 0f..(chapters.size - 1).coerceAtLeast(1).toFloat(),
-
-                                                    steps = (chapters.size - 2).coerceAtLeast(0),
-
                                                     modifier = Modifier.weight(1f),
 
-                                                    colors = SliderDefaults.colors(
+                                                    barHeightDp = 26,
 
-                                                        thumbColor = barContentColor,
+                                                    bubbleText = "${currentChapterIndex + 1}",
 
-                                                        activeTrackColor = barContentColor,
+                                                    startText = null,
 
-                                                        inactiveTrackColor = barContentColor.copy(alpha = 0.25f)
+                                                    endText = null,
 
-                                                    )
+                                                    colorBar = barContentColor
 
-                                                )
+                                                 )
 
                 
 
@@ -3249,23 +3248,25 @@ fun ReaderScreen(
 
                 Text("字号: ${fontSize.toInt()} sp", fontWeight = FontWeight.Medium)
 
-                Slider(
+                FluidSlider(
 
-                    value = fontSize,
+                    position = (fontSize - 12f) / 24f,
 
-                    onValueChange = { fontSize = it; prefs.fontSize = it },
+                    onPositionChange = { fontSize = 12f + it * 24f; prefs.fontSize = fontSize },
 
-                    valueRange = 12f..36f,
+                    modifier = Modifier.fillMaxWidth(),
 
-colors = SliderDefaults.colors(
+                    barHeightDp = 30,
 
-                        thumbColor = MintPrimary,
+                    bubbleText = "${fontSize.toInt()}",
 
-                        activeTrackColor = MintPrimary,
+                    startText = null,
 
-                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+                    endText = null,
 
-)
+                    colorBar = MintPrimary
+
+                )
 
 
 
@@ -3275,23 +3276,25 @@ colors = SliderDefaults.colors(
 
                 Text("行间距: ${lineHeight.toInt()} sp", fontWeight = FontWeight.Medium)
 
-                Slider(
+                FluidSlider(
 
-                    value = lineHeight,
+                    position = (lineHeight - 20f) / 28f,
 
-                    onValueChange = { lineHeight = it; prefs.lineHeight = it },
+                    onPositionChange = { lineHeight = 20f + it * 28f; prefs.lineHeight = lineHeight },
 
-                    valueRange = 20f..48f,
+                    modifier = Modifier.fillMaxWidth(),
 
-colors = SliderDefaults.colors(
+                    barHeightDp = 30,
 
-                        thumbColor = MintPrimary,
+                    bubbleText = "${lineHeight.toInt()}",
 
-                        activeTrackColor = MintPrimary,
+                    startText = null,
 
-                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+                    endText = null,
 
-)
+                    colorBar = MintPrimary
+
+                )
 
 
 
@@ -3301,23 +3304,25 @@ colors = SliderDefaults.colors(
 
                 Text("页边距: ${marginHorizontal} dp", fontWeight = FontWeight.Medium)
 
-                Slider(
+                FluidSlider(
 
-                    value = marginHorizontal.toFloat(),
+                    position = (marginHorizontal - 8f) / 40f,
 
-                    onValueChange = { marginHorizontal = it.toInt(); prefs.marginHorizontal = it.toInt() },
+                    onPositionChange = { marginHorizontal = Math.round(8f + it * 40f); prefs.marginHorizontal = marginHorizontal },
 
-                    valueRange = 8f..48f,
+                    modifier = Modifier.fillMaxWidth(),
 
-colors = SliderDefaults.colors(
+                    barHeightDp = 30,
 
-                        thumbColor = MintPrimary,
+                    bubbleText = "$marginHorizontal",
 
-                        activeTrackColor = MintPrimary,
+                    startText = null,
 
-                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f))
+                    endText = null,
 
-)
+                    colorBar = MintPrimary
+
+                )
 
 
 
@@ -3329,23 +3334,23 @@ colors = SliderDefaults.colors(
 
                 Text("亮度: ${(readerBrightness * 100).toInt()}%", fontWeight = FontWeight.Medium)
 
-                Slider(
+                FluidSlider(
 
-                    value = readerBrightness,
+                    position = (readerBrightness - 0.2f) / 0.8f,
 
-                    onValueChange = { readerBrightness = it; prefs.readerBrightness = it },
+                    onPositionChange = { readerBrightness = 0.2f + it * 0.8f; prefs.readerBrightness = readerBrightness },
 
-                    valueRange = 0.2f..1f,
+                    modifier = Modifier.fillMaxWidth(),
 
-                    colors = SliderDefaults.colors(
+                    barHeightDp = 30,
 
-                        thumbColor = MintGold,
+                    bubbleText = "${(readerBrightness * 100).toInt()}%",
 
-                        activeTrackColor = MintGold.copy(alpha = 0.6f),
+                    startText = null,
 
-                        inactiveTrackColor = MintPrimary.copy(alpha = 0.15f)
+                    endText = null,
 
-                    )
+                    colorBar = MintGold
 
                 )
 
