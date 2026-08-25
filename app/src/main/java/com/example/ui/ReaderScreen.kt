@@ -2099,6 +2099,11 @@ fun ReaderScreen(
 
                                             onToggleBookmark = { toggleBookmark() },
 
+                                            isCurrentBookmarked = bookmarks.any {
+                                                (it.bookId == (book?.id ?: 0) || it.bookId == 0) &&
+                                                        it.chapterIndex == currentChapterIndex
+                                            },
+
                                             menuVisible = showBars
 
                                         )

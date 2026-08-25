@@ -458,6 +458,9 @@ class MainActivity : ComponentActivity() {
                                                     viewModel.moveBookToCategory(book, newCategory)
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.MoveBook)
                                                 },
+                                                onDeleteCategory = { category ->
+                                                    viewModel.deleteCategory(category)
+                                                },
                                             )
                                             2 -> {
                                                 var dailyGoalState by remember { mutableIntStateOf(viewModel.prefs.dailyGoalMinutes) }
