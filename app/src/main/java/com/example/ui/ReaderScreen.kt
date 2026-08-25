@@ -2827,50 +2827,50 @@ fun ReaderScreen(
 
                                             }
 
-                                            AppIconButton(onClick = { showSearchDialog = true }) {
-                                                Icon(Icons.Filled.Search, "搜索", tint = barContentColor, modifier = Modifier.size(20.dp))
-                                            }
                                             AppIconButton(onClick = { showTocSheet = true }) {
                                                 Icon(Icons.Filled.Menu, "目录", tint = barContentColor, modifier = Modifier.size(20.dp))
                                             }
-                                            AppIconButton(onClick = { showAnnotationsSheet = true }) {
-                                                Icon(Icons.Filled.Bookmarks, "书签列表", tint = barContentColor, modifier = Modifier.size(20.dp))
-                                            }
-                                            AppIconButton(onClick = { showSettingsSheet = true }) {
-                                                Icon(Icons.Filled.Settings, "排版", tint = barContentColor, modifier = Modifier.size(20.dp))
-                                            }
 
-                                            // 自动滚屏开关（始终显示入口；非滚动模式点击提示；与 TTS 互斥）
-
-                                                AppIconButton(onClick = {
-
-                                                    if (!isScrollMode) {
-                                                        Toast.makeText(context, "自动滚屏需切换到滚动模式", Toast.LENGTH_SHORT).show()
-                                                        return@AppIconButton
-                                                    }
-                                                    isAutoScrolling = !isAutoScrolling
-
-                                                    if (isAutoScrolling && isTtsPlaying) {
-
-                                                        ttsManager.pause()
-
-                                                    }
-
-                                                }) {
-
-                                                    Icon(
-
-                                                        Icons.Filled.UnfoldMore,
-
-                                                        "自动滚屏",
-
-                                                        tint = if (isAutoScrolling) MintGold else barContentColor,
-
-                                                        modifier = Modifier.size(20.dp)
-
-                                                    )
-
+                                            // ── 更多菜单：低频操作收纳，顶栏只留高频 4 键 ──
+                                            var showReaderMoreMenu by remember { mutableStateOf(false) }
+                                            Box {
+                                                AppIconButton(onClick = { showReaderMoreMenu = true }) {
+                                                    Icon(Icons.Filled.MoreVert, "更多", tint = barContentColor, modifier = Modifier.size(20.dp))
                                                 }
+                                                DropdownMenu(
+                                                    expanded = showReaderMoreMenu,
+                                                    onDismissRequest = { showReaderMoreMenu = false }
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("全文搜索") },
+                                                        leadingIcon = { Icon(Icons.Filled.Search, null, modifier = Modifier.size(18.dp)) },
+                                                        onClick = { showReaderMoreMenu = false; showSearchDialog = true }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("书签列表") },
+                                                        leadingIcon = { Icon(Icons.Filled.Bookmarks, null, tint = MintPrimary, modifier = Modifier.size(18.dp)) },
+                                                        onClick = { showReaderMoreMenu = false; showAnnotationsSheet = true }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(if (isAutoScrolling) "停止自动滚屏" else "自动滚屏") },
+                                                        leadingIcon = { Icon(Icons.Filled.UnfoldMore, null, tint = if (isAutoScrolling) MintGold else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) },
+                                                        onClick = {
+                                                            showReaderMoreMenu = false
+                                                            if (!isScrollMode) {
+                                                                Toast.makeText(context, "自动滚屏需切换到滚动模式", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                isAutoScrolling = !isAutoScrolling
+                                                                if (isAutoScrolling && isTtsPlaying) ttsManager.pause()
+                                                            }
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("排版设置") },
+                                                        leadingIcon = { Icon(Icons.Filled.Settings, null, modifier = Modifier.size(18.dp)) },
+                                                        onClick = { showReaderMoreMenu = false; showSettingsSheet = true }
+                                                    )
+                                                }
+                                            }
 
                                         }
 
