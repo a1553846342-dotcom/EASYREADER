@@ -74,49 +74,18 @@ fun PageCurlReaderContainer(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // 前置拦截层：截获"从屏幕顶部下拉"手势用于书签操作，其余放行给 pagecurl
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(
-                            requireUnconsumed = false,
-                            pass = PointerEventPass.Initial
-                        )
-                        // 只拦截起点在顶部 15% 区域内的触摸
-                        if (down.position.y > size.height * 0.15f) return@awaitEachGesture
-
-                        var totalDragY = 0f
-                        var isPulling = false
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            totalDragY += change.positionChange().y
-                            if (!isPulling && totalDragY > 50f) isPulling = true
-                            if (isPulling) change.consume()
-                        }
-
-                        // 松手时如果是下拉手势且菜单未打开 → 切换书签
-                        if (isPulling && !menuVisible) {
-                            onToggleBookmark()
-                        }
-                    }
-                }
-        ) {
-            PageCurl(
-                count = 3,
-                state = state,
-                config = config,
-                modifier = Modifier.fillMaxSize()
-            ) { idx ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when (idx) {
-                        0 -> prevContent()
-                        1 -> currentContent()
-                        else -> nextContent()
-                    }
+        // 书签操作统一走顶栏按钮（与其他翻页模式完全一致：同一 toggleBookmark 回调 + 同一吉祥物动画）
+        PageCurl(
+            count = 3,
+            state = state,
+            config = config,
+            modifier = Modifier.fillMaxSize()
+        ) { idx ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (idx) {
+                    0 -> prevContent()
+                    1 -> currentContent()
+                    else -> nextContent()
                 }
             }
         }
