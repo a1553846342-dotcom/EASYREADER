@@ -106,7 +106,8 @@ fun HomeScreen(
     totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
     streakDaysFlow: kotlinx.coroutines.flow.StateFlow<Int>,
     onDeleteBook: (Book) -> Unit,
-    onMoveBook: (Book, String) -> Unit
+    onMoveBook: (Book, String) -> Unit,
+    onDeleteCategory: ((com.example.data.CategoryEntity) -> Unit)? = null
 ) {
     val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
     val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
@@ -703,7 +704,17 @@ fun HomeScreen(
                                                 )
                                             }
                                             .border(1.dp, baseColor.copy(alpha = borderAlphaState.value), RoundedCornerShape(16.dp))
-                                            .clickableWithFeedback { selectedCategory = name }
+                                            .combinedClickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClick = { selectedCategory = name },
+                                                onLongClick = {
+                                                    if (name != "全部") {
+                                                        val cat = categories.find { it.name == name }
+                                                        if (cat != null) onDeleteCategory?.invoke(cat)
+                                                    }
+                                                }
+                                            )
                                             .padding(horizontal = 14.dp, vertical = 6.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
