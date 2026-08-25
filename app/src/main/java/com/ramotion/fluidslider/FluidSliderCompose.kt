@@ -279,8 +279,15 @@ fun FluidSlider(
             )
 
             val txt = bubbleText ?: "${(frac * 100).roundToInt()}"
-            val bStyle = TextStyle(color = colorBubbleText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
+            // 动态字号：文字越长字号越小，确保不超出气泡
+            val fontSp = when {
+                txt.length <= 2 -> 14
+                txt.length <= 3 -> 12
+                else -> 10
+            }
+            val bStyle = TextStyle(color = colorBubbleText, fontSize = fontSp.sp, fontWeight = FontWeight.Bold)
+            val maxTxtW = (labelD * 0.85f).toInt().coerceAtLeast(20)
+            val measured = textMeasurer.measure(txt, bStyle, maxLines = 1, constraints = Constraints(maxWidth = maxTxtW))
             translate(
                 left = labelCenter.x - measured.size.width / 2f,
                 top = labelCenter.y - measured.size.height / 2f
