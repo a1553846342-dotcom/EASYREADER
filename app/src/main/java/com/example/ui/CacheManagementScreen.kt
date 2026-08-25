@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.example.ui
 
 import android.content.Context
@@ -8,6 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppIconButton
+import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,24 +130,52 @@ fun CacheManagementScreen(
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+    // 与「书库使用手册」一致的 ModalBottomSheet 结构与观感
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onBack,
+        sheetState = sheetState,
+        dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxHeight(0.9f)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 顶部标题栏（同手册页：64dp + 图标 + 标题 + 关闭）
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AppIconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.CleaningServices,
+                            contentDescription = "缓存管理",
+                            tint = MintPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("缓存管理", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
                     }
-                    Text("缓存管理", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    AppIconButton(onClick = onBack) {
+                        Icon(Icons.Default.Close, "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
-        }
-    ) { padding ->
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
@@ -249,6 +282,7 @@ fun CacheManagementScreen(
                     }
                 }
             }
+        }
         }
     }
 }
