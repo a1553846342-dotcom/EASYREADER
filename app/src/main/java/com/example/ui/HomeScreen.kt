@@ -1140,14 +1140,10 @@ private fun BookActionSheet(
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     // 分享用 Activity 级作用域：弹窗关闭也不中断正在准备的分享
     val hostActivity = LocalContext.current as? androidx.activity.ComponentActivity
     val shareScope = hostActivity?.lifecycleScope ?: rememberCoroutineScope()
     var sharing by remember { mutableStateOf(false) }
-    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    val backdrop = rememberGlassPanelBackdrop()
-    val iridescentColors = rememberIridescentColors()
 
     val coverData = remember(book.coverUri, book.isCoverValid) {
         if (book.coverUri.isNullOrEmpty()) {
@@ -1166,320 +1162,190 @@ private fun BookActionSheet(
         }
     }
     val imageRequest = remember(book.coverUri, coverData) {
-        if (coverData == null) {
-            null
-        } else {
-            coil.request.ImageRequest.Builder(context)
-                .data(coverData)
-                .memoryCacheKey(book.coverUri)
-                .diskCacheKey(book.coverUri)
-                .crossfade(true)
-                .build()
-        }
+        if (coverData == null) null else coil.request.ImageRequest.Builder(context)
+            .data(coverData)
+            .memoryCacheKey(book.coverUri)
+            .diskCacheKey(book.coverUri)
+            .crossfade(true)
+            .build()
     }
 
-    var visible by remember { mutableStateOf(false) }
-    var dismissed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-    val dismiss = {
-        if (!dismissed) {
-            dismissed = true
-            visible = false
-        }
-    }
-    LaunchedEffect(dismissed) {
-        if (dismissed) {
-            kotlinx.coroutines.delay(280)
-            onDismiss()
-        }
-    }
-
-    val blurPx = with(androidx.compose.ui.platform.LocalDensity.current) { 18.dp.toPx() }
+    /* 下滑关闭手势状态 */
     var dragOffsetY by remember { mutableStateOf(0f) }
-    val sheetContext = androidx.compose.ui.platform.LocalContext.current
-    val sheetDensity = androidx.compose.ui.platform.LocalDensity.current
-    val reduceEffects = remember {
-        val resolver = sheetContext.contentResolver
-        val reduceTransparency = try {
-            android.provider.Settings.Global.getInt(resolver, "reduce_transparency", 0) == 1
-        } catch (_: Exception) {
-            false
-        }
-        val animationsOff = try {
-            android.provider.Settings.Global.getFloat(
-                resolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f
-            ) == 0f
-        } catch (_: Exception) {
-            false
-        }
-        reduceTransparency || animationsOff
-    }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val dismissThreshold = with(density) { 120.dp.toPx() }
 
-    // 小屏适配：精确高度 = min(屏高×78%, 560dp)。用固定 height 而非 heightIn：
-    // liquidGlass vendor 的内部 layout 不遵守 max 约束，只有精确尺寸才被遵守；
-    // 配合窗口整体上移（TopCenter），底部留出安全区，"删除"任何屏幕都完整可见。
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val availH = this.maxHeight
-        val sheetH = minOf(availH * 0.78f, 560.dp)
-        Dialog(
-            onDismissRequest = dismiss,
-            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
-        ) {
-            // 透明窗口 + 实时模糊宿主窗口（decorView RenderEffect）
-            GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
-            AnimatedVisibility(
-                visible = visible,
-                enter = fadeIn(tween(160)) +
-                    slideInVertically(tween(340), initialOffsetY = { it }),
-                exit = fadeOut(tween(150)) +
-                    slideOutVertically(tween(260), targetOffsetY = { it })
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    // 径向渐变遮罩：中心亮、四周暗，聚光灯打在立牌上
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .radialGlassScrim()
-                    )
-                    // 点击空白处关闭
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = dismiss
-                            )
-                    )
-                    // 液态玻璃弹窗本体：窗口整体上移到上部安全区
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .statusBarsPadding()
-                            .padding(top = 8.dp)
-                            .fillMaxWidth()
-                            .height(sheetH)
-                        .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-                        .zIndex(1f)
-                        // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
-                        .shadow(
-                            elevation = 32.dp,
-                            shape = sheetShape,
-                            ambientColor = iridescentColors.first().copy(alpha = 0.12f),
-                            spotColor = iridescentColors.first().copy(alpha = 0.12f)
-                        )
-                        .shadow(
-                            elevation = 8.dp,
-                            shape = sheetShape,
-                            ambientColor = Color.Black.copy(alpha = 0.20f),
-                            spotColor = Color.Black.copy(alpha = 0.20f)
-                        )
-                        // 液态玻璃质感恢复：精确 height(sheetH) 下 vendor layout 可靠遵守边界，
-                        // 配合窗口上移（TopCenter+statusBarsPadding），底部安全区始终留白。
-                        .liquidGlass(
-                            backdrop = backdrop,
-                            shape = sheetShape,
-                            surfaceColor = MaterialTheme.colorScheme.surface.copy(
-                                alpha = if (reduceEffects) 0.72f else 0.58f
-                            ),
-                            blurRadius = 12.dp,
-                            refraction = false
-                        )
-                        .clip(sheetShape)
-                        .filmGrain(alpha = 0.04f)
-                        .iridescentBorder(
-                            shape = sheetShape,
-                            colors = iridescentColors,
-                            width = 2.dp,
-                            alpha = 0.22f
-                        )
-                        .navigationBarsPadding()
-                        // 内容超出时整个弹窗可滚动，确保"删除"始终可达
-                        .verticalScroll(rememberScrollState())
-                ) {
+    /* 下载管理中心同款容器：亚克力底部悬浮面板 */
+    AcrylicBottomOverlay(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 6.dp)
-                .pointerInput(Unit) {
-                    val dismissThreshold = with(sheetDensity) { 120.dp.toPx() }
-                    detectVerticalDragGestures(
-                        onDragEnd = {
-                            if (dragOffsetY > dismissThreshold) {
-                                dismiss()
-                            } else {
-                                dragOffsetY = 0f
-                            }
+                .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+        ) {
+            Column {
+                // 拖拽把手
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 6.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (dragOffsetY > dismissThreshold) onDismiss()
+                                    else dragOffsetY = 0f
+                                },
+                                onDragCancel = { dragOffsetY = 0f },
+                                onVerticalDrag = { _, dragAmount ->
+                                    dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                                }
+                            )
                         },
-                        onDragCancel = { dragOffsetY = 0f },
-                        onVerticalDrag = { _, dragAmount ->
-                            dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
-                        }
-                    )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0xFFB9B9BE))
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(56.dp)
-                    .height(78.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Gray.copy(alpha = 0.2f))
-            ) {
-                if (imageRequest != null) {
-                    AsyncImage(
-                        model = imageRequest,
-                        contentDescription = book.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFB9B9BE))
                     )
                 }
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = book.title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = book.author,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
 
-        HorizontalDivider(
-            thickness = 1.dp,
-            color = Color.White.copy(alpha = 0.12f),
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
+                // 封面 + 书名/作者
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(56.dp)
+                            .height(78.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Gray.copy(alpha = 0.2f))
+                    ) {
+                        if (imageRequest != null) {
+                            AsyncImage(
+                                model = imageRequest,
+                                contentDescription = book.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = book.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = book.author,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 用固定上限而非 weight：父级是 wrap 高度 + heightIn 时 weight 滚动会失效，
-                // 导致最后一项（删除图书）被顶出屏幕。固定上限保证任何屏幕都能滚动到。
-                .heightIn(max = 340.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-        val primary = MaterialTheme.colorScheme.primary
-        val error = MaterialTheme.colorScheme.error
-        val onSurface = MaterialTheme.colorScheme.onSurface
-        listOf(
-            Triple("打开详情", Icons.Default.MenuBook, primary),
-            Triple("移动到其他书架", Icons.Default.Folder, primary),
-            Triple("分享图书", Icons.Default.Share, primary),
-            Triple("删除图书", Icons.Default.Delete, error)
-        ).forEach { (label, icon, tint) ->
-            val interaction = remember { MutableInteractionSource() }
-            val pressed by interaction.collectIsPressedAsState()
-            val pressScale by animateFloatAsState(
-                targetValue = if (pressed) 0.97f else 1f,
-                label = "press"
-            )
-            if (label == "分享图书" && sharing) {
-                // 大文件准备分享的加载反馈
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = "正在准备分享…",
-                            fontWeight = FontWeight.Medium,
-                            color = onSurface
-                        )
-                    },
-                    leadingContent = {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = primary
-                        )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.06f)
-                    ),
-                    modifier = Modifier
-                        .graphicsLayer {
-                            scaleX = pressScale
-                            scaleY = pressScale
-                        }
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = Color.White.copy(alpha = 0.12f),
+                    modifier = Modifier.padding(horizontal = 20.dp)
                 )
-            } else {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = label,
-                            fontWeight = FontWeight.Medium,
-                            color = if (label == "删除图书") tint else onSurface
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = tint
-                        )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.White.copy(alpha = 0.06f)
-                    ),
+
+                // 操作菜单（内部排版与原版一致）
+                Column(
                     modifier = Modifier
-                        .graphicsLayer {
-                            scaleX = pressScale
-                            scaleY = pressScale
-                        }
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                            enabled = !(label == "分享图书" && sharing)
-                        ) {
-                            when (label) {
-                                "打开详情" -> onOpenDetail()
-                                "移动到其他书架" -> onMove()
-                                "分享图书" -> {
-                                    if (sharing) return@clickable
-                                    sharing = true
-                                    shareScope.launch {
-                                        val error = com.example.library.BookShareHelper.shareBook(context, book)
-                                        sharing = false
-                                        if (error != null) {
-                                            Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                        .fillMaxWidth()
+                        .heightIn(max = 340.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    val primary = MaterialTheme.colorScheme.primary
+                    val error = MaterialTheme.colorScheme.error
+                    val onSurface = MaterialTheme.colorScheme.onSurface
+                    listOf(
+                        Triple("打开详情", Icons.Default.MenuBook, primary),
+                        Triple("移动到其他书架", Icons.Default.Folder, primary),
+                        Triple("分享图书", Icons.Default.Share, primary),
+                        Triple("删除图书", Icons.Default.Delete, error)
+                    ).forEach { (label, icon, tint) ->
+                        val interaction = remember { MutableInteractionSource() }
+                        val pressed by interaction.collectIsPressedAsState()
+                        val pressScale by animateFloatAsState(
+                            targetValue = if (pressed) 0.97f else 1f,
+                            label = "press"
+                        )
+                        if (label == "分享图书" && sharing) {
+                            ListItem(
+                                headlineContent = {
+                                    Text("正在准备分享…", fontWeight = FontWeight.Medium, color = onSurface)
+                                },
+                                leadingContent = {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = primary
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                ),
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = pressScale; scaleY = pressScale
+                                }
+                            )
+                        } else {
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        text = label,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (label == "删除图书") tint else onSurface
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(imageVector = icon, contentDescription = null, tint = tint)
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                ),
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = pressScale; scaleY = pressScale
+                                    }
+                                    .clickable(
+                                        interactionSource = interaction,
+                                        indication = null,
+                                        enabled = !(label == "分享图书" && sharing)
+                                    ) {
+                                        when (label) {
+                                            "打开详情" -> onOpenDetail()
+                                            "移动到其他书架" -> onMove()
+                                            "分享图书" -> {
+                                                if (sharing) return@clickable
+                                                sharing = true
+                                                shareScope.launch {
+                                                    val err = com.example.library.BookShareHelper.shareBook(context, book)
+                                                    sharing = false
+                                                    if (err != null) Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            else -> onDelete()
                                         }
                                     }
-                                }
-                                else -> onDelete()
-                            }
+                            )
                         }
-                )
-            }
-        }
-        Spacer(modifier = Modifier.navigationBarsPadding())
-        }
+                    }
+                    Spacer(modifier = Modifier.navigationBarsPadding())
+                }
             }
         }
     }
-    }
-}
 }
