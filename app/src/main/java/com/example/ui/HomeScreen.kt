@@ -1203,6 +1203,10 @@ private fun BookActionSheet(
         reduceTransparency || animationsOff
     }
 
+    // 小屏适配：最大高度 = 屏幕高度的 72%，避免"删除"按钮被裁切
+    val screenHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    val maxSheetH = screenHeight * 0.72f
+
     Dialog(
         onDismissRequest = dismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
@@ -1238,7 +1242,7 @@ private fun BookActionSheet(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .heightIn(max = 560.dp)
+                        .heightIn(max = maxSheetH)
                         .offset { IntOffset(0, dragOffsetY.roundToInt()) }
                         .zIndex(1f)
                         // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
