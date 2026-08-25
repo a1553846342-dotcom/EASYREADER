@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -213,61 +214,74 @@ fun FluidSlider(
             val thumbCX = touchD / 2f + maxMove * frac
             val riseVal = rise.value
 
-            // ── 1. 胶囊轨道 ──
-            drawRoundRect(
-                brush = Brush.horizontalGradient(listOf(colorBar, colorBar.copy(alpha = 0.85f))),
-                topLeft = Offset(0f, vOff),
-                size = Size(w, barH),
-                cornerRadius = CornerRadius(barCR, barCR)
-            )
-
-            // ── 2. 两端标尺 ──
-            fun drawEndLabel(text: String?, alignRight: Boolean) {
-                if (text.isNullOrEmpty()) return
-                val style = TextStyle(color = colorBarText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Medium)
-                val measured = textMeasurer.measure(text, style, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
-                val x = if (alignRight) w - textOffPx - measured.size.width else textOffPx
-                val y = vOff + (barH - measured.size.height) / 2f
-                translate(left = x.coerceAtLeast(0f), top = y) { drawText(measured) }
-            }
-            drawEndLabel(startText, alignRight = false)
-            drawEndLabel(endText, alignRight = true)
-
-            // ── 3. Metaball 液态连接 ──
-            // 钳位连接点到胶囊直线段范围（避开圆弧端面，消除矩形凹口）
+            // 共享计算值（在所有绘制块之前定义，避免作用域问题）
+            val barCR = barH / 2f // 全胶囊：端面半圆
             val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
-            val topCircleCY = vOff + topCD / 2f - riseVal
-            val topCircleCenter = Offset(clampedThumbX, topCircleCY)
-            // bottomCircle 巨圆圆心在 vOff + botCD/2（原版布局：top 对齐轨道顶，圆体向下延伸）
-            val botCircleCenter = Offset(clampedThumbX, vOff + botCD / 2f)
 
-            if (riseVal > 1f) {
-                drawMetaballFaithful(
-                    c1Center = botCircleCenter,
-                    c1Radius = botCD / 2f,
-                    c2Center = topCircleCenter,
-                    c2Radius = topCD / 2f,
-                    topBorderY = vOff,
-                    riseDist = riseDist,
-                    maxDist = barH * METABALL_MAX_DISTANCE,
-                    cornerRadius = barCR,
-                    paintColor = colorBar
-                )
+            // ── 胶囊裁剪路径：手动构建（避免 API 兼容性问题）──
+            val midY = vOff + barH / 2f
+            val capsuleClip = Path().apply {
+                moveTo(0f, midY)
+                quadraticBezierTo(0f, vOff, barCR, vOff)
+                lineTo(w - barCR, vOff)
+                quadraticBezierTo(w, vOff, w, midY)
+                lineTo(w, vOff + barH)
+                quadraticBezierTo(w, vOff + barH, w - barCR, vOff + barH)
+                lineTo(barCR, vOff + barH)
+                quadraticBezierTo(0f, vOff + barH, 0f, midY)
+                close()
             }
 
-            // ── 4. 白色数值气泡（薄色环 + 高光 + 底影 → 泡泡质感）──
+            // ── 裁剪区域内绘制：轨道 + 标尺 + 液桥 ──
+            clipPath(capsuleClip) {
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(listOf(colorBar, colorBar.copy(alpha = 0.85f))),
+                    topLeft = Offset(0f, vOff),
+                    size = Size(w, barH),
+                    cornerRadius = CornerRadius(barCR)
+                )
+
+                fun drawEndLabel(text: String?, alignRight: Boolean) {
+                    if (text.isNullOrEmpty()) return
+                    val style = TextStyle(color = colorBarText, fontSize = TEXT_SIZE_SP.sp, fontWeight = FontWeight.Medium)
+                    val measured = textMeasurer.measure(text, style, maxLines = 1, constraints = Constraints(maxWidth = w.toInt()))
+                    val x = if (alignRight) w - textOffPx - measured.size.width else textOffPx
+                    val y = vOff + (barH - measured.size.height) / 2f
+                    translate(left = x.coerceAtLeast(0f), top = y) { drawText(measured) }
+                }
+                drawEndLabel(startText, alignRight = false)
+                drawEndLabel(endText, alignRight = true)
+
+                // Metaball 液桥（被胶囊形状裁剪）
+                val topCircleCY = vOff + topCD / 2f - riseVal
+                val topCircleCenter = Offset(clampedThumbX, topCircleCY)
+                val botCircleCenter = Offset(clampedThumbX, vOff + botCD / 2f)
+
+                if (riseVal > 1f) {
+                    drawMetaballFaithful(
+                        c1Center = botCircleCenter,
+                        c1Radius = botCD / 2f,
+                        c2Center = topCircleCenter,
+                        c2Radius = topCD / 2f,
+                        topBorderY = vOff,
+                        riseDist = riseDist,
+                        maxDist = barH * METABALL_MAX_DISTANCE,
+                        cornerRadius = barCR,
+                        paintColor = colorBar
+                    )
+                }
+            }
+
+            // ── 白色数值气泡（在裁剪区域外自由绘制）──
             val labelTop = vOff + (topCD - labelD) / 2f - riseVal
             val labelCenter = Offset(clampedThumbX, labelTop + labelD / 2f)
 
-            // 底部微阴影（立体感）
             drawCircle(
                 Color.Black.copy(alpha = 0.10f),
                 radius = labelD / 2f * 1.04f,
                 center = Offset(labelCenter.x, labelCenter.y + 1.5f)
             )
-            // 白色主体
             drawCircle(color = colorBubble, radius = labelD / 2f, center = labelCenter)
-            // 左上高光点（泡泡反光）
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(Color.White.copy(alpha = 0.95f), Color.Transparent),
@@ -279,7 +293,6 @@ fun FluidSlider(
             )
 
             val txt = bubbleText ?: "${(frac * 100).roundToInt()}"
-            // 动态字号：文字越长字号越小，确保不超出气泡
             val fontSp = when {
                 txt.length <= 2 -> 14
                 txt.length <= 3 -> 12
