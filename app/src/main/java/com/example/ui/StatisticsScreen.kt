@@ -401,9 +401,10 @@ private fun PeriodOverviewCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+            }
+            Spacer(modifier = Modifier.height(12.dp))
 
-                // ── Block 2: 目标环 + 步进器（单行紧凑布局）──
+            // ── Block 2: 目标环 + 步进器（单行紧凑布局）──
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -528,7 +529,6 @@ private fun PeriodOverviewCard(
                         }
                     }
                 }
-             }
 
             Spacer(modifier = Modifier.height(12.dp))
 

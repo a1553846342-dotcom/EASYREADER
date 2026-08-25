@@ -111,40 +111,28 @@ fun PageCurlReaderContainer(
         }
     )
 
-    LaunchedEffect(state.current) {
-        when (state.current) {
-            2 -> { onNextPage(); state.snapTo(1) }
-            0 -> { onPrevPage(); state.snapTo(1) }
-        }
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
+        // 回调始终取最新值：pointerInput(Unit) 只捕获首帧闭包，
+        // 若直接捕获 onToggleBookmark 会拿到初始空 bookmarks 列表导致"只会添加"。
+        val latestOnToggleBookmark by androidx.compose.runtime.rememberUpdatedState(onToggleBookmark)
+        val latestOnNextPage by androidx.compose.runtime.rememberUpdatedState(onNextPage)
+        val latestOnPrevPage by androidx.compose.runtime.rememberUpdatedState(onPrevPage)
+        val latestOnClickCenter by androidx.compose.runtime.rememberUpdatedState(onClickCenter)
+
+        LaunchedEffect(state.current) {
+            when (state.current) {
+                2 -> { latestOnNextPage(); state.snapTo(1) }
+                0 -> { latestOnPrevPage(); state.snapTo(1) }
+            }
+        }
+
         // 页面内容跟随下拉阻尼位移（与 PageTurnContainer 的 translationY 一致）
+        // 手势仲裁器挂在同一个 Box 上（同节点路径，pagecurl 仍可正常命中）——
+        // 严禁做成覆盖式兄弟节点：那会让 pagecurl 不在命中链上而完全无法翻页。
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { translationY = pullValue }
-        ) {
-            PageCurl(
-                count = 3,
-                state = state,
-                config = config,
-                modifier = Modifier.fillMaxSize()
-            ) { idx ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when (idx) {
-                        0 -> prevContent()
-                        1 -> currentContent()
-                        else -> nextContent()
-                    }
-                }
-            }
-        }
-
-        // ── 下拉手势仲裁 + 充能（Initial pass 抢在 pagecurl 的 Main pass 之前）──
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -153,6 +141,7 @@ fun PageCurlReaderContainer(
                         var totalY = 0f
                         var isDrag = false
                         var activeMode = 0 // 0=未定 1=水平翻页 2=下拉书签
+                        var fired = false
 
                         while (true) {
                             val ev = awaitPointerEvent(PointerEventPass.Initial)
@@ -176,25 +165,25 @@ fun PageCurlReaderContainer(
                                 ch.consume()
                                 pullValue = (totalY.coerceAtLeast(0f) * 0.5f).coerceIn(0f, 160f)
                             }
-                            // activeMode==1：不消费，放行给 pagecurl 原生翻页
+                            // activeMode==1：不消费，放行给同节点上 pagecurl 的 Main-pass 手势
                         }
 
-                        // 松手结算（与 PageTurnContainer.kt:158-169 相同逻辑）
-                        if (isDrag && activeMode == 2) {
+                        // 松手结算（与 PageTurnContainer.kt:158-169 相同逻辑；单次触发保护）
+                        if (isDrag && activeMode == 2 && !fired) {
+                            fired = true
                             if (pullValue >= 80f || totalY >= 160f) {
-                                onToggleBookmark()
+                                latestOnToggleBookmark()
                             }
                         }
                         if (activeMode == 2) {
                             val startVal = pullValue
                             scope.launch {
-                                // 手动阻尼回弹（避免受限上下文与旧版 animateTo 重载差异）
                                 val durationMs = 260
                                 val stepMs = 16L
                                 var elapsed = stepMs
                                 while (elapsed <= durationMs) {
                                     val t = elapsed.toFloat() / durationMs
-                                    pullValue = startVal * (1f - t) * (1f - t) // easeOutQuad
+                                    pullValue = startVal * (1f - t) * (1f - t)
                                     kotlinx.coroutines.delay(stepMs)
                                     elapsed += stepMs.toInt()
                                 }
@@ -203,9 +192,24 @@ fun PageCurlReaderContainer(
                         }
                     }
                 }
-        )
+        ) {
+            PageCurl(
+                count = 3,
+                state = state,
+                config = config,
+                modifier = Modifier.fillMaxSize()
+            ) { idx ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when (idx) {
+                        0 -> prevContent()
+                        1 -> currentContent()
+                        else -> nextContent()
+                    }
+                }
+            }
+        }
 
-        // ── 顶部充能卡（与 PageTurnContainer.kt:238-307 同款视觉）──
+        // ── 顶部充能卡（纯绘制无 pointerInput，不会拦截触摸）──
         if (pullValue > 3f) {
             Box(
                 modifier = Modifier

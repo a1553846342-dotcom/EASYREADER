@@ -1216,46 +1216,50 @@ private fun BookActionSheet(
         reduceTransparency || animationsOff
     }
 
-    // 小屏适配：最大高度 = 屏幕高度的 72%，避免"删除"按钮被裁切
-    val screenHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-    val maxSheetH = screenHeight * 0.72f
-
-    Dialog(
-        onDismissRequest = dismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
-    ) {
-        // 透明窗口 + 实时模糊宿主窗口（decorView RenderEffect）
-        GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
-        AnimatedVisibility(
-            visible = visible,
-            enter = fadeIn(tween(160)) +
-                slideInVertically(tween(340), initialOffsetY = { it }),
-            exit = fadeOut(tween(150)) +
-                slideOutVertically(tween(260), targetOffsetY = { it })
+    // 小屏适配：精确高度 = min(屏高×78%, 560dp)。用固定 height 而非 heightIn：
+    // liquidGlass vendor 的内部 layout 不遵守 max 约束，只有精确尺寸才被遵守；
+    // 配合窗口整体上移（TopCenter），底部留出安全区，"删除"任何屏幕都完整可见。
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val availH = this.maxHeight
+        val sheetH = minOf(availH * 0.78f, 560.dp)
+        Dialog(
+            onDismissRequest = dismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // 径向渐变遮罩：中心亮、四周暗，聚光灯打在立牌上
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .radialGlassScrim()
-                )
-                // 点击空白处关闭
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = dismiss
-                        )
-                )
-                // 液态玻璃弹窗本体
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .heightIn(max = maxSheetH)
+            // 透明窗口 + 实时模糊宿主窗口（decorView RenderEffect）
+            GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(160)) +
+                    slideInVertically(tween(340), initialOffsetY = { it }),
+                exit = fadeOut(tween(150)) +
+                    slideOutVertically(tween(260), targetOffsetY = { it })
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // 径向渐变遮罩：中心亮、四周暗，聚光灯打在立牌上
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .radialGlassScrim()
+                    )
+                    // 点击空白处关闭
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = dismiss
+                            )
+                    )
+                    // 液态玻璃弹窗本体：窗口整体上移到上部安全区
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .height(sheetH)
                         .offset { IntOffset(0, dragOffsetY.roundToInt()) }
                         .zIndex(1f)
                         // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
@@ -1271,10 +1275,17 @@ private fun BookActionSheet(
                             ambientColor = Color.Black.copy(alpha = 0.20f),
                             spotColor = Color.Black.copy(alpha = 0.20f)
                         )
-                        // 根因修复：移除 liquidGlass 实时模糊层——其内部 layout 不遵守外层
-                        // heightIn 约束，是三层"自适应"都失效的真正裁切源。
-                        // 改用高不透明度普通表面，视觉与手册页一致且在所有屏幕可靠。
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                        // 液态玻璃质感恢复：精确 height(sheetH) 下 vendor layout 可靠遵守边界，
+                        // 配合窗口上移（TopCenter+statusBarsPadding），底部安全区始终留白。
+                        .liquidGlass(
+                            backdrop = backdrop,
+                            shape = sheetShape,
+                            surfaceColor = MaterialTheme.colorScheme.surface.copy(
+                                alpha = if (reduceEffects) 0.72f else 0.58f
+                            ),
+                            blurRadius = 12.dp,
+                            refraction = false
+                        )
                         .clip(sheetShape)
                         .filmGrain(alpha = 0.04f)
                         .iridescentBorder(
@@ -1284,7 +1295,7 @@ private fun BookActionSheet(
                             alpha = 0.22f
                         )
                         .navigationBarsPadding()
-                        // 小屏适配：内容超出时整个弹窗可滚动，确保"删除"始终可达
+                        // 内容超出时整个弹窗可滚动，确保"删除"始终可达
                         .verticalScroll(rememberScrollState())
                 ) {
         Box(
@@ -1469,4 +1480,5 @@ private fun BookActionSheet(
         }
     }
     }
+}
 }
