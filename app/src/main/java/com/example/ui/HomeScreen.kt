@@ -1192,7 +1192,7 @@ private fun BookActionSheet(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 6.dp)
+                        .padding(top = 10.dp, bottom = 4.dp)
                         .pointerInput(Unit) {
                             detectVerticalDragGestures(
                                 onDragEnd = {
@@ -1220,7 +1220,7 @@ private fun BookActionSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -1288,43 +1288,28 @@ private fun BookActionSheet(
                             label = "press"
                         )
                         if (label == "分享图书" && sharing) {
-                            ListItem(
-                                headlineContent = {
-                                    Text("正在准备分享…", fontWeight = FontWeight.Medium, color = onSurface)
-                                },
-                                leadingContent = {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = primary
-                                    )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
-                                modifier = Modifier.graphicsLayer {
-                                    scaleX = pressScale; scaleY = pressScale
-                                }
-                            )
-                        } else {
-                            ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = label,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (label == "删除图书") tint else onSurface
-                                    )
-                                },
-                                leadingContent = {
-                                    Icon(imageVector = icon, contentDescription = null, tint = tint)
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
+                            Row(
                                 modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale; scaleY = pressScale
-                                    }
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+                                    .padding(horizontal = 20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = primary
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text("正在准备分享…", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = onSurface)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
                                     .clickable(
                                         interactionSource = interaction,
                                         indication = null,
@@ -1345,7 +1330,18 @@ private fun BookActionSheet(
                                             else -> onDelete()
                                         }
                                     }
-                            )
+                                    .padding(horizontal = 20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (label == "删除图书") tint else onSurface
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.navigationBarsPadding())
