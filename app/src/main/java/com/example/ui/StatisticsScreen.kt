@@ -149,7 +149,7 @@ fun StatisticsScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = 96.dp),
+                    .padding(bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
             ) {
