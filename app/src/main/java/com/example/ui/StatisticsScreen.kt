@@ -148,10 +148,11 @@ fun StatisticsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 120.dp),
+                    .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp)
+                // 底部避让放进 contentPadding：contentPadding 区不做裁剪，
+                // 卡片滚动到 tab 栏背后时玻璃背景/内容照常渲染（与其他页一致）。
+                contentPadding = PaddingValues(top = 12.dp, bottom = 120.dp)
             ) {
                 if (totalReadTimeSeconds == 0L) {
                     item(key = "stats_empty") {
