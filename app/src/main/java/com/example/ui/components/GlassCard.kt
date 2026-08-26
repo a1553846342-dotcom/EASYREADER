@@ -2,7 +2,12 @@ package com.example.ui.components
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,6 +15,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Column
@@ -25,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -32,14 +40,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlin.math.ceil
 
 /**
@@ -143,6 +154,36 @@ fun GlassCard(
         }
     }
 
+    /* ═══ MAX 完整包（A1/A2/A3/B1/B2/C1/C2）共用状态 ═══ */
+    val isMax = quality == RenderQuality.MAX
+    val tertiary = MaterialTheme.colorScheme.tertiary
+
+    // A2：极光呼吸 + 三色流转相位（12s 一轮：薄荷→金→青→薄荷）
+    val auroraTransition = rememberInfiniteTransition(label = "auroraCard")
+    val auroraShift by auroraTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing)),
+        label = "auroraShift"
+    )
+    val auroraBreath by auroraTransition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(3800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "auroraBreath"
+    )
+
+    // A3/B1：触点追踪（按下位置 + 归一化偏移 −1..1）
+    var pressPos by remember { mutableStateOf(Offset.Zero) }
+    var pressNorm by remember { mutableStateOf(Offset.Zero) }
+
+    // C2：入场动画（首次组合弹入；非 MAX 恒为 1）
+    var entered by remember { mutableStateOf(!isMax) }
+    LaunchedEffect(Unit) { entered = true }
+    val entrance by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
+        label = "cardEntrance"
+    )
+
     // Layer 2/3/4（物理光路）与 Layer 5/6（棱镜描边 + 内倒角）的预录缓存层
     val lightPathLayer = rememberGraphicsLayer()
     var lightPathKey by remember { mutableStateOf<GlassDecoKey?>(null) }
@@ -151,11 +192,46 @@ fun GlassCard(
 
     Column(
         modifier = modifier
-            // 极致档：按压凝胶弹性缩放（其余档位恒为 1f，无视觉/性能差异）
+            // C2 入场 + B1 3D 倾斜 + 凝胶缩放（非 MAX 恒为原始状态）
             .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
+                val e = if (isMax) entrance else 1f
+                alpha = e
+                translationY = (1f - e) * 12.dp.toPx()
+                scaleX = pressScale * (0.96f + 0.04f * e)
+                scaleY = pressScale * (0.96f + 0.04f * e)
+                if (isMax && isPressed) {
+                    rotationY = pressNorm.x * 4f
+                    rotationX = -pressNorm.y * 4f
+                    cameraDistance = 12f * density
+                }
             }
+            // A3/B1 触点追踪（仅 MAX 挂载；不消费事件，纯观察）
+            .then(
+                if (isMax) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            pressPos = down.position
+                            pressNorm = Offset(
+                                ((down.position.x / size.width) - 0.5f) * 2f,
+                                ((down.position.y / size.height) - 0.5f) * 2f
+                            )
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val ch = ev.changes.firstOrNull() ?: break
+                                if (!ch.pressed) break
+                                pressPos = ch.position
+                                pressNorm = Offset(
+                                    ((ch.position.x / size.width) - 0.5f) * 2f,
+                                    ((ch.position.y / size.height) - 0.5f) * 2f
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (quality == RenderQuality.LOW) {
                     // 流畅档：单层轻阴影（双层 HWUI 投影是低端机大项），并补一层保持滚动隔离
@@ -184,10 +260,16 @@ fun GlassCard(
                         )
                 }
             )
-            // MAX 档：虹彩呼吸辉光（画在 clip 之前，光晕溢出边界）
+            // MAX 档：A2 极光呼吸辉光（secondary 与 tertiary 混合 → 彩色主题色点缀）
             .then(
-                if (quality == RenderQuality.MAX) {
-                    Modifier.maxCardAura(primary = primary, secondary = secondary)
+                if (isMax) {
+                    val auroraSecondary = Color(
+                        red = secondary.red + (tertiary.red - secondary.red) * 0.45f,
+                        green = secondary.green + (tertiary.green - secondary.green) * 0.45f,
+                        blue = secondary.blue + (tertiary.blue - secondary.blue) * 0.45f,
+                        alpha = secondary.alpha
+                    )
+                    Modifier.maxCardAura(primary = primary, secondary = auroraSecondary)
                 } else {
                     Modifier
                 }
@@ -233,14 +315,17 @@ fun GlassCard(
                     Modifier
                 }
             )
-            // MAX 按压涟漪：柔光填充 + 高对比描边环，按压时清晰可见
+            // MAX 按压涟漪：从触点扩散（A3）+ 顶棱高光随动（B2）
             .drawWithContent {
                 drawContent()
                 if (quality == RenderQuality.MAX && isPressed && rippleProgress.value < 1f) {
                     val p = rippleProgress.value
+                    val cx = if (pressPos == Offset.Zero) size.width / 2f
+                             else pressPos.x.coerceIn(0f, size.width)
+                    val cy = if (pressPos == Offset.Zero) size.height / 2f
+                             else pressPos.y.coerceIn(0f, size.height)
                     val rippleR = size.width * (0.20f + 0.65f * p)
-                    val cx = size.width / 2f
-                    val cy = size.height / 2f
+
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
@@ -259,6 +344,23 @@ fun GlassCard(
                         radius = rippleR,
                         center = Offset(cx, cy),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                    )
+
+                    // B2：顶棱聚光带中心随触点 x 偏移
+                    val bandCx = if (pressPos == Offset.Zero) 0.5f
+                                 else (pressPos.x / size.width).coerceIn(0f, 1f)
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.16f * (1f - p)),
+                                Color.Transparent
+                            ),
+                            startX = size.width * (bandCx - 0.35f),
+                            endX = size.width * (bandCx + 0.35f)
+                        ),
+                        topLeft = Offset.Zero,
+                        size = Size(size.width, 4.dp.toPx())
                     )
                 }
             }
@@ -397,6 +499,20 @@ fun GlassCard(
                     }
                 }
             )
+            // A1：极光流边（细 1.5dp 三色渐变沿周长 8s 流转，替代静态棱镜边的"活"感）
+            .then(
+                if (isMax) {
+                    val auroraColors = listOf(primary, tertiary, secondary, primary)
+                    Modifier.auroraFlowBorder(
+                        shape = shape,
+                        colors = auroraColors,
+                        phase = auroraShift,
+                        alpha = 0.38f + 0.10f * auroraBreath
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (onClick != null) {
                     Modifier.clickable(
@@ -410,10 +526,49 @@ fun GlassCard(
             )
             .padding(contentPadding)
             // 性能优化（视觉零变化）：内容包一层独立 RenderNode。
-            // 卡片因背景采样随滚动位置变化而每帧重录时，卡内文本/控件不再被逐节点重录，
-            // 只以一次 drawLayer 重放；内容自身不变则其显示列表完全复用。
-            .graphicsLayer { }
+            // C1 内容视差：按压倾斜时卡内内容反向微移，景深加倍。
+            .graphicsLayer {
+                if (isMax && isPressed) {
+                    translationX = -pressNorm.x * 3.dp.toPx()
+                    translationY = -pressNorm.y * 3.dp.toPx()
+                }
+            }
     ) {
         content()
+    }
+}
+
+/**
+ * A1 极光流边：多色 sweep 渐变沿周长旋转（phase 0..1 → 0..360°）。
+ * 细描边 + 低 alpha —— 克制的"活"感，替代静态棱镜边的动态版本。
+ * 挂在 clip 之后：描边覆盖在内容之上，但位于边缘无文字区。
+ */
+@Composable
+private fun Modifier.auroraFlowBorder(
+    shape: Shape,
+    colors: List<Color>,
+    phase: Float,
+    widthDp: Float = 1.5f,
+    alpha: Float = 0.40f
+): Modifier {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val strokePx = with(density) { widthDp.dp.toPx() }
+    return this.drawBehind {
+        val outline = shape.createOutline(size, layoutDirection, this)
+        val brush = Brush.sweepGradient(
+            colors = colors.map { it.copy(alpha = alpha) },
+            center = Offset(size.width / 2f, size.height / 2f)
+        )
+        rotate(degrees = phase * 360f) {
+            when (outline) {
+                is Outline.Rounded -> drawRoundRect(
+                    brush = brush,
+                    cornerRadius = outline.roundRect.topLeftCornerRadius,
+                    style = Stroke(width = strokePx)
+                )
+                is Outline.Rectangle -> drawRect(brush, style = Stroke(width = strokePx))
+                else -> Unit
+            }
+        }
     }
 }
