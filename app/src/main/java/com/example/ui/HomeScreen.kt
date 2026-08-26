@@ -1184,7 +1184,7 @@ private fun BookActionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = maxPanelH)
+                .height(maxPanelH)
                 .offset { IntOffset(0, dragOffsetY.roundToInt()) }
         ) {
             Column {
@@ -1207,13 +1207,21 @@ private fun BookActionSheet(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFFB9B9BE))
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFFB9B9BE))
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            "H=${maxPanelH.value.toInt()}dp",
+                            fontSize = 9.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    }
                 }
 
                 // 封面 + 书名/作者
