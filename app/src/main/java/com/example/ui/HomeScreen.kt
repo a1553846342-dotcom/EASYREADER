@@ -1175,11 +1175,16 @@ private fun BookActionSheet(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val dismissThreshold = with(density) { 120.dp.toPx() }
 
+    /* 面板高度硬约束：50% 屏高 —— 菜单列内部滚动，
+       "删除图书"在任何设备上都物理不可能出界 */
+    val maxPanelH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.5f
+
     /* 下载管理中心同款容器：亚克力底部悬浮面板 */
     AcrylicBottomOverlay(onDismissRequest = onDismiss) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxPanelH)
                 .offset { IntOffset(0, dragOffsetY.roundToInt()) }
         ) {
             Column {
@@ -1260,11 +1265,11 @@ private fun BookActionSheet(
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
 
-                // 操作菜单（内部排版与原版一致）
+                // 操作菜单（内部排版与原版一致；weight 弹性填充剩余空间）
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 340.dp)
+                        .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                 ) {
                     val primary = MaterialTheme.colorScheme.primary
