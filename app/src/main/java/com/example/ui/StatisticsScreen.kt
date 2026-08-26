@@ -391,14 +391,18 @@ private fun PeriodOverviewCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
+                    val avgDailyText = if (avgDaily in 1..59) "不足1分钟" else formatShortDuration(avgDaily)
+                    val prevText = if (prevTotal <= 0 && periodTotal > 0) "首次记录" else "$deltaPct%"
+                    val prevColor = when {
+                        prevTotal <= 0 && periodTotal > 0 -> MintGold
+                        deltaPct > 0 -> MintPrimary
+                        deltaPct < 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MintGold
+                    }
                     Text(
-                        text = "日均 ${formatShortDuration(avgDaily)} · 较$prevName $deltaPct%",
+                        text = "日均 $avgDailyText · 较$prevName $prevText",
                         fontSize = 11.sp,
-                        color = when {
-                            deltaPct > 0 -> MintPrimary
-                            deltaPct < 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-                            else -> MintGold
-                        },
+                        color = prevColor,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -476,61 +480,56 @@ private fun PeriodOverviewCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // ── Block 3: 近7天趋势（含空数据兜底占位）──
-                val last7 = remember(dailyTotals) {
-                    val cal = java.util.Calendar.getInstance()
-                    val fmt = java.text.SimpleDateFormat("E", java.util.Locale.CHINA)
-                    val keyFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                    (0..6).map { back ->
-                        val c = (cal.clone() as java.util.Calendar)
-                        c.add(java.util.Calendar.DAY_OF_YEAR, -6 + back)
-                        fmt.format(c.time) to ((dailyTotals[keyFmt.format(c.time)] ?: 0L) / 60L).toInt()
-                    }
-                }
-                if (last7.all { it.second <= 0 }) {
-                    // 空数据兜底：不渲染空白条形区，显示引导文案占位
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
+                // ── Block 3: 分享本周/月/年阅读报告（替换原周条形图）──
+                val shareCtx = androidx.compose.ui.platform.LocalContext.current
+                val shareLabel = if (period == 0) "周" else if (period == 1) "月" else "年"
+                Surface(
+                    onClick = {
+                        val shareText = buildString {
+                            appendLine("📚 我的阅读${shareLabel}报 · Ciallo 阅读")
+                            appendLine("────────────────────")
+                            if (periodTotal > 0) {
+                                appendLine("⏱ ${periodName}阅读 ${formatReadDuration(periodTotal)}（日均 ${if (avgDaily in 1..59) "不足1分钟" else formatShortDuration(avgDaily)}）")
+                            } else {
+                                appendLine("⏱ ${periodName}暂无阅读记录，从一页开始 ✨")
+                            }
+                            appendLine("🎯 每日目标 ${dailyGoalMinutes} 分钟 · 完成 ${(animatedGoal * 100).toInt()}%")
+                            if (streak > 0) appendLine("🔥 连续阅读 $streak 天")
+                            if (daysRead > 0) appendLine("📖 ${periodName}阅读 $daysRead 天 · 读完 $finishedCount 本")
+                            appendLine("━━━━━━━━━━━━━━━━")
+                            appendLine("Ciallo 阅读 · Roxy 陪伴 ✨")
+                        }
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        }
+                        shareCtx.startActivity(android.content.Intent.createChooser(intent, "分享阅读报告"))
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MintPrimary.copy(alpha = 0.10f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MintPrimary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = null,
+                            tint = MintPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            "最近7天还没有阅读记录 · 去读几页吧",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "分享${periodName}阅读报告",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MintPrimary
                         )
                     }
-                } else {
-                    val maxMin = (last7.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(64.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        last7.forEach { (label, minutes) ->
-                            val isPeak = minutes == maxMin && minutes > 0
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.5f)
-                                        .height((12 + 42f * minutes / maxMin).dp.coerceAtMost(54.dp))
-                                        .background(
-                                            if (isPeak) MintGold else MintPrimary.copy(alpha = 0.55f),
-                                            RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-                                        )
-                                )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                            }
-                        }
-                    }
                 }
-
             Spacer(modifier = Modifier.height(12.dp))
 
             SegmentedPillSelector(

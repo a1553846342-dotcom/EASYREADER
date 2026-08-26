@@ -88,7 +88,7 @@ fun MascotOverlay(modifier: Modifier = Modifier) {
                     is MascotEvent.DeleteBook -> DeleteSadAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.AddBookmark -> BookmarkHappyAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.MoveBook -> MoveBookAnimation(onComplete = { currentInstance = null })
-                    is MascotEvent.BookComplete -> BookmarkHappyAnimation(onComplete = { currentInstance = null })
+                    is MascotEvent.BookComplete -> BookCompleteAnimation(onComplete = { currentInstance = null })
                     null -> {}
                 }
             }
