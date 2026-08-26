@@ -219,8 +219,10 @@ fun FluidSlider(
             val barCR = barH / 2f // 全胶囊：端面半圆
             val clampedThumbX = thumbCX.coerceIn(barCR, (w - barCR).coerceAtLeast(barCR))
 
-            // ── 裁剪路径：顶部矩形 ∪ 严格半圆胶囊（两子路径，非零环绕=并集）──
-            // 端点由真圆弧修剪 → 极端位置圆润无方角；上方矩形保留颈部升起空间。
+            // ── 裁剪路径：顶部矩形 ∪ 胶囊（端面 = 单三次贝塞尔半圆，k = 4r/3）──
+            // 不用 addArc：Compose 与 Canvas 的角度零点/扫描方向约定存在差异，
+            // 会把端面半圆镜像成楔形斜边（设备截图已证实）。
+            // 三次贝塞尔无角度歧义；k=4r/3 时曲线中点精确到达最外侧点。
             val midY = vOff + barH / 2f
             val capsuleClip = Path().apply {
                 // 子路径1：上方矩形（气泡/颈部区）
@@ -229,20 +231,17 @@ fun FluidSlider(
                 lineTo(w, vOff)
                 lineTo(0f, vOff)
                 close()
-                // 子路径2：严格胶囊（与轨道 roundRect 完全同参）
-                moveTo(barCR, vOff)
-                lineTo(w - barCR, vOff)
-                addArc(
-                    oval = Rect(left = w - barCR * 2f, top = vOff, right = w, bottom = vOff + barH),
-                    startAngleDegrees = -90f,
-                    sweepAngleDegrees = 180f
-                )
-                lineTo(barCR, vOff + barH)
-                addArc(
-                    oval = Rect(left = 0f, top = vOff, right = barCR * 2f, bottom = vOff + barH),
-                    startAngleDegrees = 90f,
-                    sweepAngleDegrees = 180f
-                )
+                // 子路径2：胶囊
+                val r = barCR
+                val k = r * 4f / 3f
+                moveTo(r, vOff)
+                lineTo(w - r, vOff)
+                // 右端半圆：经最右点 (w, midY)
+                cubicTo(w - r + k, vOff, w - r + k, vOff + barH, w - r, vOff + barH)
+                // 底边
+                lineTo(r, vOff + barH)
+                // 左端半圆：经最左点 (0, midY)
+                cubicTo(r - k, vOff + barH, r - k, vOff, r, vOff)
                 close()
             }
 
