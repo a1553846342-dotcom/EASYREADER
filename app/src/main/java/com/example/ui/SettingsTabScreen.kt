@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -49,6 +50,7 @@ import com.example.ui.pageturn.PageTurnType
 import com.example.ui.components.AppButton
 import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
+import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.ColorMorphSwatch
 import com.example.ui.components.AppLiquidButton
@@ -234,7 +236,11 @@ fun SettingsTabScreen(
                 }
             }
         ) { padding ->
+            // 设置列表滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
+            val settingsListState = rememberLazyListState()
+            settingsListState.scrollTiltSource()
             LazyColumn(
+                state = settingsListState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),

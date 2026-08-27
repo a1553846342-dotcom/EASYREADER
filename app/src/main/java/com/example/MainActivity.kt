@@ -135,6 +135,8 @@ class MainActivity : ComponentActivity() {
             // 卡片微调：设置页「自定义卡片参数」实时写入的共享状态，注入所有 GlassCard
             // （v2 默认档迁移已在 onCreate 中完成）
             val cardTweaks = remember { mutableStateOf(viewModel.prefs.readCardTweaks()) }
+            // 滚动惯性倾斜：全 App 单一信号源（任务书「整卡倾斜」§2）
+            val scrollTilt = remember { com.example.ui.components.ScrollTiltController() }
 
             MyApplicationTheme(
                 darkTheme = autoNightMode,
@@ -143,7 +145,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 val liquidGlass = rememberLiquidGlassProviderState()
                 CompositionLocalProvider(
-                    LocalLiquidGlassState provides liquidGlass
+                    LocalLiquidGlassState provides liquidGlass,
+                    com.example.ui.components.LocalScrollTilt provides scrollTilt
                 ) {
                     Surface(
                         modifier = Modifier
@@ -170,6 +173,13 @@ class MainActivity : ComponentActivity() {
                         val renderQualityIdx by viewModel.renderQuality.collectAsState()
                         val renderQuality = com.example.ui.components.RenderQuality.of(renderQualityIdx)
                         val glassEnabled = renderQuality.realtimeGlass
+                        // 滚动惯性倾斜帧循环：仅 MAX 档挂载（该档本就常驻极光等无限动效；
+                        // 低档不再引入常驻 ticker，保住「流畅」档的帧空闲与省电）
+                        if (renderQuality == com.example.ui.components.RenderQuality.MAX) {
+                            com.example.ui.components.ScrollTiltHost(scrollTilt)
+                        } else {
+                            scrollTilt.reset()
+                        }
                         // 页面有效背景平均亮度（已含遮罩）：标题文字据此实时取对比色
                         val bgTone: Float = if (bgActive) {
                             val appContext = LocalContext.current.applicationContext

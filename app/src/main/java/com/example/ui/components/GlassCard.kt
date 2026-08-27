@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -131,6 +134,70 @@ private fun buildIndentUnitPath(seed: Long): Path {
 /** π 的浮点常量（避免引 kotlin.math.PI 全限定名的重复书写）。 */
 private const val PI_F = Math.PI.toFloat()
 
+/** 全局固定光源方向（任务书「光源固定修正」指定）：恒为屏幕上方偏后，全 App 所有光照效果共用同一光源保证自洽。 */
+private const val LIGHT_DIR_X = 0.0f
+private const val LIGHT_DIR_Y = -0.6f
+
+/** 环境光底（任务书建议 0.75~0.85 取中）：把整体明暗压缩到 ~8% 以内的克制观感。 */
+private const val DENT_AMBIENT = 0.8f
+
+/**
+ * AGSL 着色器（仅 API 33+ 挂载，任务书「光源固定修正」实现）：
+ * 明暗 = 固定光源 × 倾斜后表面法线（整卡）＋ 坑壁法线扰动（局部），纯数学、无分支无循环；
+ * CPU 每帧只传原始角度弧度，不重复算法线。卡片不倾斜、坑外区域明暗退化为 <1% 常量底噪。
+ * 对称性由公式自带：左右按压的明暗镜像对称，无需任何方向特判。
+ */
+private const val DENT_LIGHT_AGLS = """
+    uniform shader inputShader;
+    uniform float2 pressCenter;
+    uniform float pressRadius;
+    uniform float pressIntensity;
+    uniform float cardRotationX;
+    uniform float cardRotationY;
+    uniform float2 lightDir;
+    uniform float ambientStrength;
+
+    half4 main(float2 coord) {
+        float4 base = float4(inputShader.eval(coord));
+
+        // ① 整卡倾斜后的表面法线：Z 轴单位法线绕 X / Y 旋转（小角模型）。
+        //    符号与 Compose 旋转矩阵严格对齐：rotationX>0 = 顶缘向屏幕里倒 → 法线向屏幕上方
+        //    （−y）偏，故 X 分量取负 sin；rotationY>0 = 右缘向里倒 → 法线 +x，取正 sin
+        float3 tiltNormal = normalize(float3(
+            sin(cardRotationY),
+            -sin(cardRotationX),
+            cos(cardRotationX) * cos(cardRotationY)
+        ));
+
+        // ② 压痕局部法线扰动：径向距离 t，坑壁斜率 sin(t·π)×intensity×0.6（任务书公式）；
+        //    step 做坑外裁剪，保持无分支
+        float2 rel = (coord - pressCenter) / max(pressRadius, 1.0);
+        float t = length(rel);
+        float inside = 1.0 - step(1.0, t);
+        float wall = sin(t * 3.14159265) * pressIntensity * 0.6 * inside;
+        float2 radialDir = rel / max(t, 0.0001);
+        float3 surfaceNormal = normalize(tiltNormal + float3(radialDir * wall, 0.0));
+
+        // ③ Lambert：固定光源 × 表面法线
+        float3 L = normalize(float3(lightDir.x, lightDir.y, 0.7));
+        float lighting = max(dot(surfaceNormal, L), 0.0);
+
+        // ④ 明暗合成（任务书系数）：全局倾斜 ×0.08、局部坑壁 ×0.6，环境光底压缩抬底
+        float shade = 1.0 - lighting;
+        float darken = clamp(shade * 0.08 + max(1.0 - t, 0.0) * shade * 0.6, 0.0, 0.35);
+        float lit = 1.0 - darken * (1.0 - ambientStrength);
+        return half4(base.rgb * lit, base.a);
+    }
+"""
+
+/**
+ * 把更新完 uniform 的着色器包装为图层 RenderEffect。
+ * 调用点位于 shader 非空分支内（shader 仅在 API 33+ 构造成功时非空）。
+ */
+private fun dentRenderEffect(shader: RuntimeShader): androidx.compose.ui.graphics.RenderEffect =
+    android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "inputShader")
+        .asComposeRenderEffect()
+
 /**
  * 「卡片圆角」滑条语义 = 全局圆角缩放：
  * 默认锚点 16dp，滑到 2dp 所有卡片趋近直角，48dp 明显圆润；
@@ -183,10 +250,18 @@ private fun DrawScope.glassDecoKey(
  *
  * MAX 极致档交互特效：
  *  A2 极光呼吸辉光；
- *  B1 3D 倾斜视差（cameraDistance 由参数控制，松手 spring 回正带轻微回弹）+ C1 内容反向视差；
+ *  B1 整卡刚体倾斜（任务书「整卡倾斜」跷跷板模型）：触点归一化偏移 × tiltMaxDeg 绕对应轴
+ *     倾斜（按偏左 → 整卡向左下沉、按正中 → 倾角≈0），Medium 刚度 + 低弹回正；
+ *     叠加列表滚动惯性倾斜（ScrollTiltController 全局信号，停止后缓慢回正），
+ *     两路之和钳制（按压上限+滚动上限）且按压优先；cameraDistance 与 C1 反向视差共用
+ *     「立体透视强度」参数；
  *  B2 顶棱高光随触点偏移（静态几何）；材质压痕层（随机 seed 扰动轮廓 + 径向渐变，
  *  范围全程固定，色差仅为卡片底色的 HSL 明度下移 ≤20%），圆心实时跟随手指，
- *  按下硬弹簧干脆形成、松手软弹簧原地缓慢回弹。C2 入场 spring 弹入。
+ *  按下硬弹簧干脆形成、松手软弹簧原地缓慢回弹；
+ *  光源固定（任务书「光源固定修正」）：全局光源常量 LIGHT_DIR 恒在屏幕上方偏后，压痕明暗
+ *  方向由「固定光源 × 倾斜后表面法线」实时算出——API 33+ 经 AGSL RuntimeShader 逐像素
+ *  法线光照（整卡倾斜暗化 + 坑壁方向性明暗随倾斜联动），API<33 回退为倾斜角驱动渐变中心
+ *  偏移。左右按压镜像对称由公式自带。C2 入场 spring 弹入。
  *  （曾经的 A3 触点涟漪扩散层已按"按压不得出现任何扩大圆环"的验收标准整体移除，
  *   触控反馈只保留静态凹陷 + 静态高光随动， CardTweaks.rippleAlpha 因此停用。）
  *
@@ -284,9 +359,13 @@ fun GlassCard(
         }
     }
 
-    // B1：倾斜角经 spring 追踪触点 —— 松手目标归零自带轻微回弹回正
-    // 手感调校：按压跟随敏捷（高刚度）、松手回正带明显过冲回弹（低阻尼）
-    val tiltSpec = spring<Float>(dampingRatio = 0.52f, stiffness = 380f)
+    // B1：倾斜角经 spring 追踪触点 —— 跷跷板模型（任务书「整卡倾斜」§1）：
+    // 触点归一化偏移 × tiltMaxDeg 绕对应轴倾斜（按偏左 → 整卡向左下沉、按正中 → 倾角≈0），
+    // 手感规格 STIFFNESS_MEDIUM + LOW_BOUNCY：响应快、松手回正带轻微回弹不生硬
+    val tiltSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioLowBouncy,
+        stiffness = Spring.StiffnessMedium
+    )
     val tiltX by animateFloatAsState(
         targetValue = if (isMax && handDown) -pressNorm.y * tweaks.tiltMaxDeg else 0f,
         animationSpec = tiltSpec,
@@ -297,6 +376,19 @@ fun GlassCard(
         animationSpec = tiltSpec,
         label = "cardTiltY"
     )
+
+    // 滚动惯性倾斜信号（任务书「整卡倾斜」§2）：全局共享实例，graphicsLayer 内延迟读取
+    val scrollTilt = LocalScrollTilt.current
+
+    // AGSL 着色器（仅 MAX 档 + API 33+）：「固定光源 × 倾斜后法线」逐像素光照，
+    // 组合期构造一次，按压期间仅更新 uniform（CPU 不重复算法线）。
+    // runCatching：个别 OEM ROM 的 SkSL 编译器若拒绝该源码，静默回退到 Canvas 压痕方案，
+    // 绝不让着色器构造失败炸掉整棵组合树（启动看门狗也无法救组合期崩溃）
+    val indentShader = remember(isMax) {
+        if (isMax && Build.VERSION.SDK_INT >= 33) {
+            runCatching { RuntimeShader(DENT_LIGHT_AGLS) }.getOrNull()
+        } else null
+    }
 
     // v3 深度线索：按压倾斜时环境光阴影随之抬升/增强 —— 真实 3D 手感的最大来源。
     // 倾角越大（即手指越靠边）卡片"离桌面越高"，投影范围与强度同步增长。
@@ -340,14 +432,54 @@ fun GlassCard(
                 scaleX = pressScale * (0.96f + 0.04f * e)
                 scaleY = pressScale * (0.96f + 0.04f * e)
                 if (isMax) {
-                    rotationX = tiltX
-                    rotationY = tiltY
+                    // 按压倾斜 + 滚动惯性叠加，总和钳制（任务书 §3）：
+                    // 上限 = 滑条按压上限 + 滚动惯性上限，保证「3D 倾斜最大角度」滑条
+                    // 拉满时 15° 本身不被静默削顶，只钳两路叠加的超出部分。
+                    // 按压优先：手指按在卡上时滚动信号不参与，两路动效不打架
+                    val scrollTiltDeg = if (handDown) 0f else scrollTilt.tiltDeg.floatValue
+                    val maxTotal = tweaks.tiltMaxDeg + ScrollTiltController.SCROLL_TILT_MAX_DEG
+                    rotationX = (tiltX + scrollTiltDeg).coerceIn(-maxTotal, maxTotal)
+                    rotationY = tiltY.coerceIn(-maxTotal, maxTotal)
                     // 相机距离与卡体尺寸绑定（设备无关的物理光学基准）：
                     // 「平面↔立体」滑条把距离从 4.2×短边 收紧到 0.42×短边 ——
                     // 近端卡片随倾斜产生明显的近大远小，远端几乎无透视畸变。
+                    // 整卡倾斜与 AGSL 光照共用这一套透视（任务书 §5.4，不另造相机）
                     val shortSide = min(size.width, size.height).coerceAtLeast(1f)
                     cameraDistance = shortSide *
                         (0.42f + 3.8f * ((tweaks.cameraDistMult - 3f) / 9f).coerceIn(0f, 1f))
+
+                    // 固定光源法线光照（任务书「光源固定修正」）：API 33+ 挂 AGSL RuntimeShader，
+                    // 由「固定光源 × 倾斜后表面法线」实时算明暗。仅按压深度可见期间挂载，
+                    // 松手收尾后立即卸载，无按压时零 GPU 开销。
+                    // 本块读的 pressAnim/tiltX/tiltY/handDown 均为延迟读取：只重建图层参数不触发重组
+                    val indentVal = pressAnim.value.coerceIn(0f, 1f)
+                    val strengthMult = tweaks.pressStrength.coerceIn(0f, 2f)
+                    val shader = indentShader
+                    if (shader != null && strengthMult > 0f && indentVal > 0.004f) {
+                        val cx = if (pressPos == Offset.Zero) size.width / 2f
+                                 else pressPos.x.coerceIn(0f, size.width)
+                        val cy = if (pressPos == Offset.Zero) size.height / 2f
+                                 else pressPos.y.coerceIn(0f, size.height)
+                        val rSafe = tweaks.pressRadius.coerceIn(0.25f, 2.5f)
+                        val rPx = min(shortSide * 0.52f * rSafe, shortSide * 0.78f)
+                        shader.setFloatUniform("pressCenter", cx, cy)
+                        shader.setFloatUniform("pressRadius", rPx)
+                        shader.setFloatUniform("pressIntensity", (indentVal * strengthMult).coerceIn(0f, 1f))
+                        // 任务书：传原始角度换算弧度即可，法线在 shader 内计算
+                        val degToRad = PI_F / 180f
+                        shader.setFloatUniform("cardRotationX", rotationX * degToRad)
+                        shader.setFloatUniform("cardRotationY", rotationY * degToRad)
+                        shader.setFloatUniform("lightDir", LIGHT_DIR_X, LIGHT_DIR_Y)
+                        shader.setFloatUniform("ambientStrength", DENT_AMBIENT)
+                        renderEffect = dentRenderEffect(shader)
+                    } else {
+                        renderEffect = null
+                    }
+                } else {
+                    // 画质档切换残留防线：离开 MAX 档时清掉本图层此前挂上的效果与旋转
+                    rotationX = 0f
+                    rotationY = 0f
+                    renderEffect = null
                 }
             }
             // B1/压力形变触点追踪（MAX 档挂载；不消费事件，纯观察）
@@ -529,31 +661,49 @@ fun GlassCard(
                                     0.92f to dentColor.copy(alpha = peakAlpha * 0.02f),
                                     1f to Color.Transparent
                                 ),
-                                // 压力中心绑定全局光向（左上光源 → 暗色核心偏向右下）：
-                                // 固定方向而非每次随机，符合"同一手指按压偏移一致"的真实直觉，
-                                // 同时让等值线偏离轮廓同心，与扰动轮廓共同打破圆规感（清单 #2）
-                                center = Offset(0.06f, 0.08f),
+                                // 光源固定修正（任务书）：全局光源 LIGHT_DIR 恒在屏幕上方，
+                                // 旧“左上 45° 光向”写死已废除，暗核方向分两档——
+                                // API 33+：坑壁方向性明暗由 AGSL 按「固定光源 × 倾斜法线」逐像素
+                                //   实时算出（暗壁恒在光源背侧=下壁，随倾斜联动），渐变暗核只需
+                                //   恒定偏向光源背侧（略向下）与之同向叠加，左右按压天然镜像；
+                                // API<33 回退（任务书指定方案）：无着色器，改用实时倾斜角驱动
+                                //   中心偏移，暗核偏向「沉入侧」，倾斜方向即明暗方向
+                                center = if (indentShader != null) {
+                                    Offset(0f, 0.08f)
+                                } else {
+                                    Offset(
+                                        (tiltY / tweaks.tiltMaxDeg.coerceAtLeast(0.01f))
+                                            .coerceIn(-1f, 1f) * 0.10f,
+                                        (-tiltX / tweaks.tiltMaxDeg.coerceAtLeast(0.01f))
+                                            .coerceIn(-1f, 1f) * 0.10f
+                                    )
+                                },
                                 radius = 1.06f
                             )
                         )
                     }
                 }
 
-                /* ── B1 光学反馈：倾转受光面响应 ──
-                 * 物理对应：绕 Y 轴右倾（tiltY>0）→ 右侧背离光收暗、左侧迎光提亮；
-                 * 绕 X 轴下俯（tiltX>0）→ 底部迎光提亮、顶部背光收暗。
+                /* ── B1 光学反馈：倾转受光面响应（镜像对称版）──
+                 * 模型：固定顶光（LIGHT_DIR）+ 跷跷板倾斜 → 沉入屏幕的远缘背离光收暗、
+                 * 翘向观察者的近缘迎光提亮。按左/按右、按上/按下严格镜像，对称由
+                 * fx/fy 的正负分支自带，无任何方向特判（任务书「光源固定修正」）。
+                 * 旧实现"按右暗左缘/按左亮右缘"是旧左上光源时代的非镜像残留，已修正。
                  * 幅度由倾角直接驱动（/15f 固定基准），滑条拉高即整体增强。 */
                 val tDeg = abs(tiltX) + abs(tiltY)
                 if (isMax && tDeg > 0.15f) {
                     val lit = (tDeg / 15f).coerceIn(0f, 1f)
-                    val fx = (tiltX / 15f).coerceIn(-1f, 1f)   // X 轴俯仰
-                    val fy = (tiltY / 15f).coerceIn(-1f, 1f)   // Y 轴左右
-                    // 垂直向：底缘提亮 / 顶缘压暗（随 fx 符号翻转方向）
+                    val fx = (tiltX / 15f).coerceIn(-1f, 1f)   // X 轴俯仰（>0 = 顶缘沉入）
+                    val fy = (tiltY / 15f).coerceIn(-1f, 1f)   // Y 轴左右（>0 = 右缘沉入）
+                    val pitchDown = max(fx, 0f); val pitchUp = max(-fx, 0f)
+                    val rollRight = max(fy, 0f); val rollLeft = max(-fy, 0f)
+
+                    // 垂直向：fx>0（顶沉）→ 底亮 + 顶暗；fx<0（底沉）→ 顶亮 + 底暗
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = (0.18f * lit * max(fx, 0f)).coerceAtMost(0.16f))
+                                Color.White.copy(alpha = (0.18f * lit * pitchDown).coerceAtMost(0.16f))
                             ),
                             startY = size.height * 0.55f,
                             endY = size.height
@@ -564,7 +714,7 @@ fun GlassCard(
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.Black.copy(alpha = (0.14f * lit * max(-fx, 0f)).coerceAtMost(0.14f)),
+                                Color.Black.copy(alpha = (0.14f * lit * pitchDown).coerceAtMost(0.14f)),
                                 Color.Transparent
                             ),
                             startY = 0f,
@@ -573,12 +723,48 @@ fun GlassCard(
                         topLeft = Offset.Zero,
                         size = Size(size.width, size.height * 0.45f)
                     )
-                    // 水平向：左缘提亮 / 右缘压暗（随 fy 符号翻转方向）
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = (0.18f * lit * pitchUp).coerceAtMost(0.16f)),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = size.height * 0.45f
+                        ),
+                        topLeft = Offset.Zero,
+                        size = Size(size.width, size.height * 0.45f)
+                    )
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = (0.14f * lit * pitchUp).coerceAtMost(0.14f))
+                            ),
+                            startY = size.height * 0.55f,
+                            endY = size.height
+                        ),
+                        topLeft = Offset(0f, size.height * 0.55f),
+                        size = Size(size.width, size.height * 0.45f)
+                    )
+                    // 水平向：fy>0（右沉）→ 左亮 + 右暗；fy<0（左沉）→ 右亮 + 左暗
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = (0.16f * lit * rollRight).coerceAtMost(0.14f)),
+                                Color.Transparent
+                            ),
+                            startX = 0f,
+                            endX = size.width * 0.45f
+                        ),
+                        topLeft = Offset.Zero,
+                        size = Size(size.width * 0.45f, size.height)
+                    )
                     drawRect(
                         brush = Brush.horizontalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = (0.16f * lit * max(-fy, 0f)).coerceAtMost(0.14f))
+                                Color.Black.copy(alpha = (0.12f * lit * rollRight).coerceAtMost(0.12f))
                             ),
                             startX = size.width * 0.55f,
                             endX = size.width
@@ -589,7 +775,19 @@ fun GlassCard(
                     drawRect(
                         brush = Brush.horizontalGradient(
                             colors = listOf(
-                                Color.Black.copy(alpha = (0.12f * lit * max(fy, 0f)).coerceAtMost(0.12f)),
+                                Color.Transparent,
+                                Color.White.copy(alpha = (0.16f * lit * rollLeft).coerceAtMost(0.14f))
+                            ),
+                            startX = size.width * 0.55f,
+                            endX = size.width
+                        ),
+                        topLeft = Offset(size.width * 0.55f, 0f),
+                        size = Size(size.width * 0.45f, size.height)
+                    )
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = (0.12f * lit * rollLeft).coerceAtMost(0.12f)),
                                 Color.Transparent
                             ),
                             startX = 0f,
@@ -798,6 +996,12 @@ fun GlassCard(
                     val shortSide = min(size.width, size.height).coerceAtLeast(1f)
                     cameraDistance = shortSide *
                         (0.42f + 3.8f * ((tweaks.cameraDistMult - 3f) / 9f).coerceIn(0f, 1f)) * 0.5f
+                } else {
+                    // 画质降档残留防线：与外层 else 对称，清掉视差与反向旋转
+                    translationX = 0f
+                    translationY = 0f
+                    rotationX = 0f
+                    rotationY = 0f
                 }
             }
     ) {

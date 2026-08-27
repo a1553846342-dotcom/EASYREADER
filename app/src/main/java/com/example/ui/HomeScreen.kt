@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -74,6 +75,7 @@ import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.StarryNightBackground
 import com.example.ui.components.GlassDialogWindowEffect
@@ -454,9 +456,13 @@ fun HomeScreen(
                 // RICH PREMIUM CONTENT STATE
                 val screenWidthDp = LocalConfiguration.current.screenWidthDp
                 val cols = if (screenWidthDp > 600) 4 else 3
+                // 主书架滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
+                val homeGridState = rememberLazyGridState()
+                homeGridState.scrollTiltSource()
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(cols),
+                    state = homeGridState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)

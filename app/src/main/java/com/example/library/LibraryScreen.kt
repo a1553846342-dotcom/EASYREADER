@@ -100,6 +100,7 @@ import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialogWindowEffect
+import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.PlayPauseMorphButton
 import com.example.ui.components.filmGrain
@@ -260,6 +261,9 @@ fun LibraryScreen(
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
     val staggeredGridState = rememberLazyStaggeredGridState()
+    // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
+    listState.scrollTiltSource()
+    staggeredGridState.scrollTiltSource()
 
     // 页面滚动时同步收起搜索历史面板
     LaunchedEffect(listState) {
