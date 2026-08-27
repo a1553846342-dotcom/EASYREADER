@@ -171,6 +171,59 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString("custom_font_path", "") ?: ""
         set(value) = prefs.edit().putString("custom_font_path", value).apply()
 
+    /* ── 卡片参数自定义（MAX 毛玻璃卡，设置页折叠栏可调）── */
+    var cardBlurRadiusDp: Float
+        get() = prefs.getFloat("card_blur_dp", 22f)
+        set(value) = prefs.edit().putFloat("card_blur_dp", value.coerceIn(8f, 40f)).apply()
+
+    var cardCornerRadiusDp: Float
+        get() = prefs.getFloat("card_corner_dp", 16f)
+        set(value) = prefs.edit().putFloat("card_corner_dp", value.coerceIn(2f, 48f)).apply()
+
+    var cardTiltMaxDeg: Float
+        get() = prefs.getFloat("card_tilt_deg", 6f)
+        set(value) = prefs.edit().putFloat("card_tilt_deg", value.coerceIn(0f, 15f)).apply()
+
+    var cardCameraDistMult: Float
+        get() = prefs.getFloat("card_cam_mult", 5f)
+        set(value) = prefs.edit().putFloat("card_cam_mult", value.coerceIn(3f, 12f)).apply()
+
+    var cardRippleAlpha: Float
+        get() = prefs.getFloat("card_ripple_a", 0.42f)
+        set(value) = prefs.edit().putFloat("card_ripple_a", value.coerceIn(0.1f, 0.8f)).apply()
+
+    var cardTintMix: Float
+        get() = prefs.getFloat("card_tint_mix", 0.08f)
+        set(value) = prefs.edit().putFloat("card_tint_mix", value.coerceIn(0f, 0.3f)).apply()
+
+    var cardPressStrength: Float
+        get() = prefs.getFloat("card_press_s", 1.25f)
+        set(value) = prefs.edit().putFloat("card_press_s", value.coerceIn(0f, 2f)).apply()
+
+    var cardPressRadius: Float
+        get() = prefs.getFloat("card_press_r", 1.1f)
+        set(value) = prefs.edit().putFloat("card_press_r", value.coerceIn(0.5f, 2.5f)).apply()
+
+    var cardAlpha: Float
+        get() = prefs.getFloat("card_alpha", 1f)
+        set(value) = prefs.edit().putFloat("card_alpha", value.coerceIn(0.4f, 1f)).apply()
+
+    /**
+     * 一次性迁移：把旧安装里沉淀的 v1 出厂参数升到 v2 更醒目的默认档。
+     * 已执行过则幂等跳过；用户手动调过的自定义值会被本次覆盖一次（升级代价，仅此一回）。
+     */
+    fun migrateCardTweaksDefaultsV2() {
+        if (prefs.getBoolean("card_tweaks_migrated_v2", false)) return
+        prefs.edit()
+            .putFloat("card_tilt_deg", 6f)
+            .putFloat("card_cam_mult", 5f)
+            .putFloat("card_ripple_a", 0.42f)
+            .putFloat("card_press_s", 1.25f)
+            .putFloat("card_press_r", 1.1f)
+            .putBoolean("card_tweaks_migrated_v2", true)
+            .apply()
+    }
+
     var hasSeenOnboarding: Boolean
         get() = prefs.getBoolean("has_seen_onboarding", false)
         set(value) = prefs.edit().putBoolean("has_seen_onboarding", value).apply()

@@ -14,3 +14,6 @@ debug.keystore
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Mimosa 安全工具本地状态
+.mimosa/

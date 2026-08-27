@@ -43,6 +43,9 @@ import dev.liquidglass.compose.liquidGlassProvider
 import dev.liquidglass.compose.rememberLiquidGlassProviderState
 import com.example.ui.components.LocalLiquidGlassState
 import com.example.ui.components.LocalGlassBackdrop
+import com.example.ui.components.CardTweaks
+import com.example.ui.components.LocalCardTweaks
+import com.example.ui.components.readCardTweaks
 import com.example.ui.components.AppBottomTabBar
 import com.example.ui.components.AppTabItem
 import com.example.ui.components.rememberTabBarCollapseState
@@ -91,6 +94,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         com.example.library.ZLibraryNodeManager.restoreSelection(applicationContext)
+        // 卡片微调 v2 默认档：一次性迁移（幂等）必须在 setContent 之前完成，
+        // 避免在组合期执行持久化副作用
+        com.example.data.PreferencesManager(this).migrateCardTweaksDefaultsV2()
         // 冷启动兜底：清空书架分享的"用完即焚"临时文件，防止异常残留堆积
         Thread {
             com.example.library.BookShareHelper.cleanupTempShareDir(applicationContext)
@@ -112,7 +118,9 @@ class MainActivity : ComponentActivity() {
                 if (intent?.getBooleanExtra("smoke_test", false) == true) {
                     libraryViewModel.runSourceSmokeTest(
                         filter = intent?.getStringExtra("smoke_source") ?: "",
-                        keyword = intent?.getStringExtra("smoke_keyword") ?: ""
+                        keyword = intent?.getStringExtra("smoke_keyword") ?: "",
+                        smokeUser = intent?.getStringExtra("smoke_user"),
+                        smokePassword = intent?.getStringExtra("smoke_pass")
                     )
                 }
             }
@@ -123,6 +131,10 @@ class MainActivity : ComponentActivity() {
             val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
             val colorSecondaryIndex by viewModel.colorSecondaryIndex.collectAsState()
             val orientationLock by viewModel.screenOrientationLock.collectAsState()
+
+            // 卡片微调：设置页「自定义卡片参数」实时写入的共享状态，注入所有 GlassCard
+            // （v2 默认档迁移已在 onCreate 中完成）
+            val cardTweaks = remember { mutableStateOf(viewModel.prefs.readCardTweaks()) }
 
             MyApplicationTheme(
                 darkTheme = autoNightMode,
@@ -207,7 +219,8 @@ class MainActivity : ComponentActivity() {
                                 LocalAppBackgroundActive provides bgActive,
                                 LocalBackgroundTone provides bgTone,
                                 LocalGlassBackdrop provides (bgBackdrop.takeIf { glassEnabled }),
-                                com.example.ui.components.LocalRenderQuality provides renderQuality
+                                com.example.ui.components.LocalRenderQuality provides renderQuality,
+                                LocalCardTweaks provides cardTweaks.value
                             ) {
                         val navController = rememberNavController()
                         // 启动时用持久化配置初始化背景（设置页改动会通过 AppBackgroundController 实时更新）
@@ -517,7 +530,8 @@ class MainActivity : ComponentActivity() {
                                                 orientationLockVal = orientationLock,
                                                 onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
                                                 renderQualityVal = renderQualityIdx,
-                                                onRenderQualityChange = { viewModel.updateRenderQuality(it) }
+                                                onRenderQualityChange = { viewModel.updateRenderQuality(it) },
+                                                cardTweaksState = cardTweaks
                                             )
                                         }
                                     }
@@ -563,7 +577,8 @@ class MainActivity : ComponentActivity() {
                                 orientationLockVal = orientationLock,
                                 onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
                                 renderQualityVal = renderQualityIdx,
-                                onRenderQualityChange = { viewModel.updateRenderQuality(it) }
+                                onRenderQualityChange = { viewModel.updateRenderQuality(it) },
+                                cardTweaksState = cardTweaks
                             )
                         }
 
