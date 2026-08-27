@@ -734,7 +734,7 @@ fun SettingsTabScreen(
                                     Column {
                                         Text("自定义卡片参数", fontWeight = FontWeight.SemiBold)
                                         Text(
-                                            "毛玻璃 / 涟漪 / 3D 倾斜 / 压力形变实时调节",
+                                            "毛玻璃 / 3D 倾斜 / 材质压痕实时调节",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -805,13 +805,8 @@ fun SettingsTabScreen(
                                         startText = "平面",
                                         endText = "立体",
                                     ) { v -> updateCardTweaks { it.copy(cameraDistMult = 12f - v * 9f) } }
-                                    CardTweakSlider(
-                                        label = "涟漪颜色透明度",
-                                        valueText = "${(tw.rippleAlpha * 100).toInt()}%",
-                                        position = (tw.rippleAlpha - 0.1f) / 0.7f,
-                                        startText = "10%",
-                                        endText = "80%",
-                                    ) { v -> updateCardTweaks { it.copy(rippleAlpha = 0.1f + v * 0.7f) } }
+                                    // 「涟漪颜色透明度」滑条已随触点涟漪层整体移除
+                                    // （按压反馈只保留静态压痕，不再有任何扩大圆环）
                                     CardTweakSlider(
                                         label = "主题色叠加浓度",
                                         valueText = "${(tw.tintMix * 100).toInt()}%",

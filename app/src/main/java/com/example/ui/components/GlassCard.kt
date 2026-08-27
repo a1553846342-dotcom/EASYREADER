@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -41,11 +40,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.Outline
@@ -185,11 +182,13 @@ private fun DrawScope.glassDecoKey(
  *  4. 双层浮空物理柔光投影。
  *
  * MAX 极致档交互特效：
- *  A2 极光呼吸辉光；A3 主题色触点涟漪（半径 0→上限、alpha→0，跟手实时圆心，播完无残影）；
+ *  A2 极光呼吸辉光；
  *  B1 3D 倾斜视差（cameraDistance 由参数控制，松手 spring 回正带轻微回弹）+ C1 内容反向视差；
- *  B2 顶棱高光随触点偏移；材质压痕层（随机 seed 扰动轮廓 + 两停靠点径向渐变，
+ *  B2 顶棱高光随触点偏移（静态几何）；材质压痕层（随机 seed 扰动轮廓 + 径向渐变，
  *  范围全程固定，色差仅为卡片底色的 HSL 明度下移 ≤20%），圆心实时跟随手指，
- *  按下硬弹簧干脆形成、松手软弹簧原地缓慢回弹，绘制于涟漪之下互不遮盖。C2 入场 spring 弹入。
+ *  按下硬弹簧干脆形成、松手软弹簧原地缓慢回弹。C2 入场 spring 弹入。
+ *  （曾经的 A3 触点涟漪扩散层已按"按压不得出现任何扩大圆环"的验收标准整体移除，
+ *   触控反馈只保留静态凹陷 + 静态高光随动， CardTweaks.rippleAlpha 因此停用。）
  *
  * 所有可调数值来自 [LocalCardTweaks]（设置页「自定义卡片参数」实时写入并持久化）。
  */
@@ -236,7 +235,7 @@ fun GlassCard(
         label = "glassPressScale"
     )
 
-    /* ═══ MAX 完整包（A2/A3/B1/B2/C1/C2 + 压力形变）共用状态 ═══ */
+    /* ═══ MAX 完整包（A2/B1/B2/C1/C2 + 压力形变）共用状态 ═══ */
     val isMax = quality == RenderQuality.MAX
     val tertiary = MaterialTheme.colorScheme.tertiary
 
@@ -254,34 +253,15 @@ fun GlassCard(
     }
     val auroraBreath by breathSource
 
-    // A3/B1/压力形变：触点追踪（按下位置 + 归一化偏移 −1..1）
+    // B1/压力形变：触点追踪（按下位置 + 归一化偏移 −1..1）
     var pressPos by remember { mutableStateOf(Offset.Zero) }
     var pressNorm by remember { mutableStateOf(Offset.Zero) }
 
     // 按压门控：触点观察器仅在 MAX 档挂载，handDown 天然只在 MAX 为真。
-    // 落卡即响应（涟漪/压痕/倾斜），松手后各自动画缓慢收尾 —— 划过卡片也是一次真实的轻按。
+    // 落卡即响应（压痕/倾斜/顶棱高光），松手后各自动画缓慢收尾 —— 划过卡片也是一次真实的轻按。
     var handDown by remember { mutableStateOf(false) }
     // 按压起始时刻：松手时按保持时长衰减回弹刚度（应力松弛的廉价模拟）
     var pressStartAt by remember { mutableStateOf(0L) }
-
-    // A3：涟漪进度（手指落卡即起爆扩散 → 完全消散；中途松手快速淡出补完）
-    val rippleProgress = remember { Animatable(1f) }
-    LaunchedEffect(handDown) {
-        if (handDown) {
-            // 连点保护：上一波还在飞行时先 80ms 快速收拢再重爆，避免 snapTo 硬回卷的径向闪断
-            if (rippleProgress.value > 0.08f) {
-                rippleProgress.animateTo(0f, tween(80, easing = LinearEasing))
-            } else {
-                rippleProgress.snapTo(0f)
-            }
-            rippleProgress.animateTo(1f, tween(760, easing = LinearEasing))
-        } else if (rippleProgress.value < 1f) {
-            rippleProgress.snapTo(rippleProgress.value)
-            rippleProgress.animateTo(1f, tween(180))
-        } else {
-            rippleProgress.snapTo(1f)
-        }
-    }
 
     // 压力形变量 = 「深度强度」（任务书 §5）：驱动的是凹陷深浅，绝不是半径。
     // 按下硬弹簧（高刚度、无回弹）干脆落底；松手软弹簧缓慢原地回弹，
@@ -370,7 +350,7 @@ fun GlassCard(
                         (0.42f + 3.8f * ((tweaks.cameraDistMult - 3f) / 9f).coerceIn(0f, 1f))
                 }
             }
-            // A3/B1/压力形变触点追踪（MAX 档挂载；不消费事件，纯观察）
+            // B1/压力形变触点追踪（MAX 档挂载；不消费事件，纯观察）
             .then(
                 if (isMax) {
                     Modifier.pointerInput(Unit) {
@@ -496,7 +476,7 @@ fun GlassCard(
                     Modifier
                 }
             )
-            // MAX 压力形变层（任务书四，底层持续凹陷感）+ 按压涟漪（A3）+ 顶棱高光随动（B2）
+            // MAX 压力形变层（任务书四，静态凹陷）+ 顶棱高光随动（B2）
             .drawWithContent {
                 drawContent()
 
@@ -620,104 +600,17 @@ fun GlassCard(
                     )
                 }
 
-                /* ── A3 触点涟漪（墨滴冲击波版）：深能量色波体 + 白热波前 + 延迟回声波
-                 *    + 随扩散旋转的三色棱镜环；圆心实时跟手，松手后播完淡出无残影。 ── */
-                val p = rippleProgress.value
-                if (isMax && p < 1f) {
-                    val w = tweaks.rippleAlpha
-                    // 能量色随 A2 极光呼吸在主色↔第三色间流转，与卡片极光同源
-                    val energy = lerp(primary, tertiary, 0.22f + 0.18f * auroraBreath)
-                    val deepEnergy = lerp(energy, Color.Black, 0.30f)
-                    val fade = (1f - p) * (1f - p * 0.45f)   // 后段慢衰减，中途仍有可见色
-                    val echoP = ((p - 0.22f) / 0.78f).coerceIn(0f, 1f)   // 回声波延迟启动
-                    val cx = if (pressPos == Offset.Zero) size.width / 2f
-                             else pressPos.x.coerceIn(0f, size.width)
-                    val cy = if (pressPos == Offset.Zero) size.height / 2f
-                             else pressPos.y.coerceIn(0f, size.height)
-                    val rippleR = minDim * (0.04f + 0.86f * p)
-
-                    // 波体：内部近乎透明 → 深能量堆积 → 白热波前 → 锐利外缘收束
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0.00f to Color.Transparent,
-                            0.60f to Color.Transparent,
-                            0.76f to deepEnergy.copy(alpha = (w * 0.95f * fade).coerceAtMost(0.74f)),
-                            0.875f to Color.White.copy(alpha = (w * 1.55f * fade).coerceAtMost(0.88f)),
-                            0.94f to deepEnergy.copy(alpha = (w * 1.10f * fade).coerceAtMost(0.68f)),
-                            1f to Color.Transparent,
-                            center = Offset(cx, cy),
-                            radius = rippleR
-                        ),
-                        radius = rippleR,
-                        center = Offset(cx, cy)
-                    )
-
-                    // 回声波：延迟启动的第二道细波纹，墨滴落水的余韵
-                    if (echoP > 0f) {
-                        val echoR = minDim * (0.05f + 0.72f * echoP)
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                0.86f to Color.Transparent,
-                                0.93f to lerp(secondary, Color.White, 0.35f).copy(
-                                    alpha = (w * 1.05f * (1f - echoP)).coerceAtMost(0.46f)
-                                ),
-                                1f to Color.Transparent,
-                                center = Offset(cx, cy),
-                                radius = echoR
-                            ),
-                            radius = echoR,
-                            center = Offset(cx, cy)
-                        )
-                    }
-
-                    // v3 冲击内芯：起手 30% 段落在触点中心炸开一团高亮光核后迅速熄灭
-                    if (p < 0.32f) {
-                        val coreA = ((w * 3.2f) * (1f - p / 0.32f)).coerceAtMost(0.95f)
-                        val coreR = minDim * (0.02f + 0.20f * p)
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                listOf(
-                                    Color.White.copy(alpha = coreA),
-                                    energy.copy(alpha = coreA * 0.55f),
-                                    Color.Transparent
-                                ),
-                                center = Offset(cx, cy),
-                                radius = coreR
-                            ),
-                            radius = coreR,
-                            center = Offset(cx, cy)
-                        )
-                    }
-
-                    // 棱镜环：三色 sweep 渐变沿环旋转扩散，像一枚转动的棱镜环扣
-                    val rimA = (w * 2.0f * fade).coerceAtMost(0.88f)
-                    // 透明度直接烘进色标（Brush 无 copy）：亮锚点全强度，体色段略收敛
-                    val rimHot = lerp(energy, Color.White, 0.65f).copy(alpha = rimA)
-                    val rimBrush = Brush.sweepGradient(
-                        0.00f to rimHot,
-                        0.18f to energy.copy(alpha = rimA * 0.88f),
-                        0.42f to secondary.copy(alpha = rimA * 0.78f),
-                        0.62f to lerp(energy, Color.White, 0.85f).copy(alpha = rimA),
-                        0.80f to tertiary.copy(alpha = rimA * 0.82f),
-                        1.00f to rimHot,
-                        center = Offset(cx, cy)
-                    )
-                    rotate(degrees = p * 260f, pivot = Offset(cx, cy)) {
-                        drawCircle(
-                            brush = rimBrush,
-                            radius = rippleR.coerceAtLeast(2f),
-                            center = Offset(cx, cy),
-                            style = Stroke(width = 2.dp.toPx() + 3.2f * p, cap = StrokeCap.Round)
-                        )
-                    }
-
-                    // B2：顶棱聚光带中心随触点 x 偏移
+                /* ── B2：顶棱聚光带中心随触点 x 偏移 ──
+                 * 静态几何：固定 4dp 高光带，无任何扩散/增长；
+                 * 原实现寄生在涟漪进度的 fade 上，涟漪层整体移除后改由 pressAnim 驱动。 */
+                val b2Fade = pressAnim.value.coerceIn(0f, 1f)
+                if (isMax && b2Fade > 0.02f) {
                     val bandCx = if (pressPos == Offset.Zero) 0.5f else (pressPos.x / size.width).coerceIn(0f, 1f)
                     drawRect(
                         brush = Brush.horizontalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = 0.16f * fade),
+                                Color.White.copy(alpha = 0.16f * b2Fade),
                                 Color.Transparent
                             ),
                             startX = size.width * (bandCx - 0.35f),
