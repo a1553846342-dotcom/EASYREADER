@@ -441,7 +441,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
      * 对每个 JS 漫画源 + MangaDex 依次做 搜索 → 章节 → 图片列表 → 真实拉取第一张图并解码，
      * 结果输出到 Logcat 的 SmokeTest 标签，用于排查“黑屏”问题。
      */
-    fun runSourceSmokeTest(filter: String = "", keyword: String = "") {
+    /**
+     * picacg 登录子项的凭据由开发者经 adb intent extras 现场传入
+     * （--es smoke_user <u> --es smoke_pass <p>），不再写入源码；未提供则跳过该子项。
+     */
+    fun runSourceSmokeTest(
+        filter: String = "",
+        keyword: String = "",
+        smokeUser: String? = null,
+        smokePassword: String? = null
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             Log.i("SmokeTest", "=== smoke test start ===")
             val client = OkHttpClient.Builder()
@@ -466,13 +475,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val started = System.currentTimeMillis()
                 try {
                     if (source.id == "js_picacg") {
-                        val loginResult = source.login(
-                            LoginCredential(
-                                username = "a1553846342",
-                                password = "a1553846342"
-                            )
-                        )
-                        Log.i("SmokeTest", "$name|login=${loginResult is SourceResult.Success}")
+                        val user = smokeUser
+                        val pass = smokePassword
+                        if (user.isNullOrBlank() || pass.isNullOrBlank()) {
+                            Log.i("SmokeTest", "$name|login=SKIP|需 adb 传入 --es smoke_user / smoke_pass")
+                        } else {
+                            val loginResult = source.login(LoginCredential(username = user, password = pass))
+                            Log.i("SmokeTest", "$name|login=${loginResult is SourceResult.Success}")
+                        }
                     }
                     var books = emptyList<SearchBook>()
                     var second: SourceResult<List<SearchBook>>? = null
