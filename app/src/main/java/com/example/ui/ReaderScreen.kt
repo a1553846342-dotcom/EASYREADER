@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 
 import androidx.compose.ui.draw.shadow
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 
 import androidx.compose.foundation.border
@@ -385,13 +386,29 @@ fun ReaderScreen(
 
                 val inputStream = context.contentResolver.openInputStream(it)
 
-                val file = java.io.File(context.filesDir, "custom_poster.jpg")
+                // 换新文件名：固定路径下 URI 不变会让图片加载器命中旧缓存（同软件背景 bug）
+
+                val file = java.io.File(context.filesDir, "custom_poster_${System.currentTimeMillis()}.jpg")
 
                 inputStream?.use { input ->
 
                     file.outputStream().use { output ->
 
                         input.copyTo(output)
+
+                    }
+
+                }
+
+                // 删除旧海报文件
+
+                runCatching {
+
+                    prefs.customSplashPosterUri?.let { old ->
+
+                        val oldFile = java.io.File(android.net.Uri.parse(old).path ?: "")
+
+                        if (oldFile.exists() && oldFile.name.startsWith("custom_poster")) oldFile.delete()
 
                     }
 
@@ -3295,75 +3312,7 @@ fun ReaderScreen(
                     }
                 }
 
-                /* ── 分组：文字 ── */
-                Text(
-                    "文 字",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("字号", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text("${fontSize.toInt()} sp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
-                }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                FluidSlider(
-                    position = (fontSize - 12f) / 24f,
-                    onPositionChange = { fontSize = 12f + it * 24f; prefs.fontSize = fontSize },
-                    modifier = Modifier.fillMaxWidth(),
-                    barHeightDp = 30,
-                    bubbleText = "${fontSize.toInt()}",
-                    startText = null,
-                    endText = null,
-                    colorBar = MintPrimary
-                )
-                }
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("行间距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text("${lineHeight.toInt()} sp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
-                }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                FluidSlider(
-                    position = (lineHeight - 20f) / 28f,
-                    onPositionChange = { lineHeight = 20f + it * 28f; prefs.lineHeight = lineHeight },
-                    modifier = Modifier.fillMaxWidth(),
-                    barHeightDp = 30,
-                    bubbleText = "${lineHeight.toInt()}",
-                    startText = null,
-                    endText = null,
-                    colorBar = MintPrimary
-                )
-                }
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("页边距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text("${marginHorizontal} dp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
-                }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                FluidSlider(
-                    position = (marginHorizontal - 8f) / 40f,
-                    onPositionChange = { marginHorizontal = Math.round(8f + it * 40f); prefs.marginHorizontal = marginHorizontal },
-                    modifier = Modifier.fillMaxWidth(),
-                    barHeightDp = 30,
-                    bubbleText = "$marginHorizontal",
-                    startText = null,
-                    endText = null,
-                    colorBar = MintPrimary
-                )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                /* ── 分组：显示 ── */
+                /* ── 分组：显示（亮度 + 首行缩进）── */
                 Text(
                     "显 示",
                     fontSize = 12.sp,
@@ -3371,102 +3320,282 @@ fun ReaderScreen(
                     letterSpacing = 1.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("亮度", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text("${(readerBrightness * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintGold)
-                }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                FluidSlider(
-                    position = (readerBrightness - 0.2f) / 0.8f,
-                    onPositionChange = { readerBrightness = 0.2f + it * 0.8f; prefs.readerBrightness = readerBrightness },
-                    modifier = Modifier.fillMaxWidth(),
-                    barHeightDp = 30,
-                    bubbleText = "${(readerBrightness * 100).toInt()}%",
-                    startText = null,
-                    endText = null,
-                    colorBar = MintGold
-                )
-                }
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("首行缩进", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    SquishyToggleSwitch(
-                        color = MintPrimary,
-                        checked = firstLineIndent,
-                        onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text("字体", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    val fonts = listOf(0 to "默认", 1 to "衬线", 2 to "黑体", 3 to "等宽")
-                    fonts.forEach { (idx, name) ->
-                        FilterChip(
-                            selected = fontFamilyIndex == idx,
-                            onClick = { fontFamilyIndex = idx; prefs.fontFamilyIndex = idx },
-                            label = { Text(name, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
-                            modifier = Modifier.weight(1f)
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.WbSunny,
+                                contentDescription = null,
+                                tint = MintGold,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("亮度", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("${(readerBrightness * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintGold)
+                        }
+                        Slider(
+                            value = ((readerBrightness - 0.2f) / 0.8f).coerceIn(0f, 1f),
+                            onValueChange = { readerBrightness = 0.2f + it * 0.8f; prefs.readerBrightness = readerBrightness },
+                            colors = SliderDefaults.colors(
+                                thumbColor = MintGold,
+                                activeTrackColor = MintGold,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("首行缩进", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "段落首行自动空两格",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                )
+                            }
+                            SquishyToggleSwitch(
+                                color = MintPrimary,
+                                checked = firstLineIndent,
+                                onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
+                            )
+                        }
                     }
-                    FilterChip(
-                        selected = fontFamilyIndex == 4,
-                        onClick = { fontFileLauncher.launch("font/ttf") },
-                        label = { Text(if (prefs.customFontPath.isNotEmpty()) "✓自定义" else "+导入", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) },
-                        modifier = Modifier.weight(1f)
-                    )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                /* ── 分组：主题 ── */
+                /* ── 分组：文字（字号 / 字体 / 行间距 / 页边距）── */
+                Spacer(modifier = Modifier.height(18.dp))
                 Text(
-                    "主 题",
+                    "文 字",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        // 字号：A− / 当前 / A+ 紧凑步进器
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("字号", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(
+                                        onClick = {
+                                            val next = (Math.round(fontSize) - 1).coerceAtLeast(12).toFloat()
+                                            if (next != fontSize) { fontSize = next; prefs.fontSize = fontSize }
+                                        },
+                                        enabled = fontSize > 12f,
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) { Text("A−", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                                    Box(
+                                        modifier = Modifier.widthIn(min = 30.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "${fontSize.toInt()}",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MintPrimary,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            val next = (Math.round(fontSize) + 1).coerceAtMost(36).toFloat()
+                                            if (next != fontSize) { fontSize = next; prefs.fontSize = fontSize }
+                                        },
+                                        enabled = fontSize < 36f,
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) { Text("A+", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                                }
+                            }
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+                        )
+
+                        // 字体：当前字体一行 + 展开列表（示例文字直接用对应字体渲染）
+                        var fontPanelOpen by remember { mutableStateOf(false) }
+                        val currentFontName = when (fontFamilyIndex) {
+                            1 -> "衬线体"; 2 -> "黑体"; 3 -> "等宽体"
+                            4 -> if (customTypeface != null) "自定义字体" else "自定义字体（未导入）"
+                            else -> "默认字体"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 44.dp)
+                                .clickable { fontPanelOpen = !fontPanelOpen },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("字体", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                currentFontName,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MintPrimary,
+                                fontFamily = selectedFontFamily,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1
+                            )
+                            Icon(
+                                if (fontPanelOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = if (fontPanelOpen) "收起字体列表" else "展开字体列表",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        AnimatedVisibility(
+                            visible = fontPanelOpen,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                listOf(
+                                    Triple(0, "默认字体", FontFamily.Default),
+                                    Triple(1, "衬线体", FontFamily.Serif),
+                                    Triple(2, "黑体", FontFamily.SansSerif),
+                                    Triple(3, "等宽体", FontFamily.Monospace)
+                                ).forEach { (idx, name, family) ->
+                                    ReaderFontOptionRow(
+                                        name = name,
+                                        sample = "永字八法，安静阅读 Aa 123",
+                                        family = family,
+                                        selected = fontFamilyIndex == idx,
+                                        onClick = { fontFamilyIndex = idx; prefs.fontFamilyIndex = idx }
+                                    )
+                                }
+                                val customLoaded = prefs.customFontPath.isNotEmpty() && customTypeface != null
+                                ReaderFontOptionRow(
+                                    name = "自定义字体",
+                                    sample = if (customLoaded) "已导入字体效果预览 Aa" else "选择 TTF 文件后可在此预览",
+                                    family = customTypeface?.let { FontFamily(it) } ?: FontFamily.Default,
+                                    selected = fontFamilyIndex == 4 && customLoaded,
+                                    onClick = {
+                                        if (customLoaded) {
+                                            fontFamilyIndex = 4; prefs.fontFamilyIndex = 4
+                                        } else {
+                                            fontFileLauncher.launch("font/ttf")
+                                        }
+                                    },
+                                    trailing = {
+                                        TextButton(
+                                            onClick = { fontFileLauncher.launch("font/ttf") },
+                                            contentPadding = PaddingValues(horizontal = 6.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Text(
+                                                if (customLoaded) "换字体" else "+导入",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MintPrimary
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+                        )
+
+                        // 行间距 / 页边距：紧凑滑杆行
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("行间距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("${lineHeight.toInt()} sp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
+                        }
+                        Slider(
+                            value = ((lineHeight - 20f) / 28f).coerceIn(0f, 1f),
+                            onValueChange = { lineHeight = 20f + it * 28f; prefs.lineHeight = lineHeight },
+                            colors = SliderDefaults.colors(
+                                thumbColor = MintPrimary,
+                                activeTrackColor = MintPrimary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("页边距", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("${marginHorizontal} dp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
+                        }
+                        Slider(
+                            value = ((marginHorizontal - 8f) / 40f).coerceIn(0f, 1f),
+                            onValueChange = { marginHorizontal = Math.round(8f + it * 40f); prefs.marginHorizontal = marginHorizontal },
+                            colors = SliderDefaults.colors(
+                                thumbColor = MintPrimary,
+                                activeTrackColor = MintPrimary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                    }
+                }
+
+                /* ── 分组：阅读主题（真实底色预览卡）── */
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    "阅读主题",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                // 与阅读区 when(readerTheme) 的真实配色一一对应；
+                // 「薄荷」阅读区为白底+薄荷点缀，预览用淡薄荷底示意以免与「白底」混淆
+                val themePreviews = listOf(
+                    ReaderThemePreview(0, "薄荷", Color(0xFFE9F5EE), Color(0xFF2F5D50)),
+                    ReaderThemePreview(1, "白底", Color.White, Color(0xFF18191C)),
+                    ReaderThemePreview(2, "羊皮", Color(0xFFFBF0D9), Color(0xFF5F4B32)),
+                    ReaderThemePreview(3, "夜间", Color(0xFF18191C), Color(0xFFD4D4D4)),
+                    ReaderThemePreview(4, "护眼", Color(0xFFE8F5E9), Color(0xFF1B5E20)),
+                    ReaderThemePreview(5, "纯黑", Color.Black, Color(0xFFE0E0E0))
+                )
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val themes = listOf(0 to "薄荷", 1 to "白底", 2 to "羊皮", 3 to "夜间", 4 to "护眼", 5 to "纯黑")
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        themes.take(3).forEach { (id, name) ->
-                            FilterChip(
-                                selected = readerTheme == id,
-                                onClick = { readerTheme = id; prefs.readerTheme = id },
-                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                        themePreviews.take(3).forEach { preview ->
+                            ReaderThemePreviewCard(
+                                preview = preview,
+                                selected = readerTheme == preview.id,
+                                onClick = { readerTheme = preview.id; prefs.readerTheme = preview.id },
                                 modifier = Modifier.weight(1f)
                             )
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        themes.drop(3).forEach { (id, name) ->
-                            FilterChip(
-                                selected = readerTheme == id,
-                                onClick = { readerTheme = id; prefs.readerTheme = id },
-                                label = { Text(name, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+                        themePreviews.drop(3).forEach { preview ->
+                            ReaderThemePreviewCard(
+                                preview = preview,
+                                selected = readerTheme == preview.id,
+                                onClick = { readerTheme = preview.id; prefs.readerTheme = preview.id },
                                 modifier = Modifier.weight(1f)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                /* ── 分组：翻页 ── */
+                /* ── 分组：翻页（选中态明显的紧凑选择卡）── */
+                Spacer(modifier = Modifier.height(18.dp))
                 Text(
                     "翻 页",
                     fontSize = 12.sp,
@@ -3474,24 +3603,24 @@ fun ReaderScreen(
                     letterSpacing = 1.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PageTurnType.entries.take(3).forEach { modeType ->
-                            FilterChip(
+                            ReaderPageModeChip(
+                                label = modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""),
                                 selected = pageTurnMode == modeType.id,
                                 onClick = { switchPageMode(modeType.id) },
-                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PageTurnType.entries.drop(3).forEach { modeType ->
-                            FilterChip(
+                            ReaderPageModeChip(
+                                label = modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""),
                                 selected = pageTurnMode == modeType.id,
                                 onClick = { switchPageMode(modeType.id) },
-                                label = { Text(modeType.title.replace("翻页", "").replace("卷页", "").replace("渐变", ""), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -4236,6 +4365,151 @@ private fun RenderSinglePage(
 
     }
 
+}
+
+/** 阅读排版面板：主题预览数据（id 与阅读区 readerTheme 配置一致）。 */
+private data class ReaderThemePreview(val id: Int, val name: String, val bg: Color, val fg: Color)
+
+/**
+ * 阅读排版面板：主题预览卡。
+ * 直接用该主题的真实底色/文字色渲染一小段中文示例，选中态为克制的主色描边 + 角标。
+ */
+@Composable
+private fun ReaderThemePreviewCard(
+    preview: ReaderThemePreview,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = preview.bg,
+        border = if (selected) {
+            BorderStroke(2.dp, MintPrimary)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        },
+        modifier = modifier.height(66.dp)
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
+            Text(
+                "永远相信美好的\n事情正在发生",
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                color = preview.fg,
+                maxLines = 2,
+                modifier = Modifier.align(Alignment.TopStart)
+            )
+            Text(
+                preview.name,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = preview.fg.copy(alpha = 0.6f),
+                modifier = Modifier.align(Alignment.BottomStart)
+            )
+            if (selected) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = "已选择",
+                    tint = MintPrimary,
+                    modifier = Modifier
+                        .size(14.dp)
+                        .align(Alignment.TopEnd)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 阅读排版面板：翻页方式选择卡。
+ * 选中态 = 主色淡底 + 主色描边 + 勾选角标，未选中为低对比中性底，整行紧凑。
+ */
+@Composable
+private fun ReaderPageModeChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) {
+            MintPrimary.copy(alpha = 0.14f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        },
+        border = if (selected) BorderStroke(1.dp, MintPrimary.copy(alpha = 0.8f)) else null,
+        modifier = modifier.heightIn(min = 40.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MintPrimary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                label,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+            )
+        }
+    }
+}
+
+/**
+ * 阅读排版面板：字体候选项行。
+ * 名称与示例文字都用目标字体渲染，用户选中前即可直览字体效果。
+ */
+@Composable
+private fun ReaderFontOptionRow(
+    name: String,
+    sample: String,
+    family: FontFamily,
+    selected: Boolean,
+    onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) MintPrimary.copy(alpha = 0.10f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (selected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) MintPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, fontFamily = family)
+            Text(
+                sample,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                fontFamily = family,
+                maxLines = 1
+            )
+        }
+        trailing?.invoke()
+    }
 }
 
 

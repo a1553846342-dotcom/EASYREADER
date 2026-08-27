@@ -141,10 +141,18 @@ fun SettingsTabScreen(
         uri?.let {
             try {
                 val inputStream = context.contentResolver.openInputStream(it)
-                val file = java.io.File(context.filesDir, "custom_poster.jpg")
+                // 换新文件名：固定路径下 URI 不变会让图片加载器命中旧缓存（同背景图 bug）
+                val file = java.io.File(context.filesDir, "custom_poster_${System.currentTimeMillis()}.jpg")
                 inputStream?.use { input ->
                     file.outputStream().use { output ->
                         input.copyTo(output)
+                    }
+                }
+                // 删除旧海报文件
+                runCatching {
+                    prefs.customSplashPosterUri?.let { old ->
+                        val oldFile = java.io.File(Uri.parse(old).path ?: "")
+                        if (oldFile.exists() && oldFile.name.startsWith("custom_poster")) oldFile.delete()
                     }
                 }
                 val localUriStr = Uri.fromFile(file).toString()
@@ -157,16 +165,26 @@ fun SettingsTabScreen(
         }
     }
 
-    // 软件背景：选择图片后复制到私有目录（横竖屏统一 Crop 填充，不拉伸变形）
+    // 软件背景：选择图片后复制到私有目录（横竖屏统一 Crop 填充，不拉伸变形）。
+    // 必须每次换新文件名：固定路径下 URI 字符串不变 → AppBackgroundController 的
+    // StateFlow 因配置相等不会重发（页面零重组），Coil 也会按相同 URI 命中旧缓存，
+    // 表现为“更换照片后背景未变”。
     val bgLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             try {
                 val inputStream = context.contentResolver.openInputStream(it)
-                val file = java.io.File(context.filesDir, "custom_app_bg.jpg")
+                val file = java.io.File(context.filesDir, "custom_app_bg_${System.currentTimeMillis()}.jpg")
                 inputStream?.use { input ->
                     file.outputStream().use { output -> input.copyTo(output) }
+                }
+                // 删除旧背景文件，避免私有目录残留堆积
+                runCatching {
+                    prefs.customAppBackgroundUri?.let { old ->
+                        val oldFile = java.io.File(Uri.parse(old).path ?: "")
+                        if (oldFile.exists() && oldFile.name.startsWith("custom_app_bg")) oldFile.delete()
+                    }
                 }
                 val localUriStr = Uri.fromFile(file).toString()
                 appBgUri = localUriStr
@@ -351,7 +369,7 @@ fun SettingsTabScreen(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("软件背景", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(
-                                "选择默认主题色，或自定义一张背景图（横竖屏自动裁剪铺满）",
+                                "默认主题色，或自定义背景图",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -412,7 +430,7 @@ fun SettingsTabScreen(
                                                     color = previewCardColor.onColor()
                                                 )
                                                 Text(
-                                                    "背景遮罩 ${appBgDim}% · 文字与卡片保持清晰",
+                                                    "背景遮罩 ${appBgDim}%",
                                                     fontSize = 11.sp,
                                                     color = previewCardColor.onColor().copy(alpha = 0.65f)
                                                 )
@@ -767,14 +785,9 @@ fun SettingsTabScreen(
                                     // 防误触提示 + 一键恢复默认
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        horizontalArrangement = Arrangement.End,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            "直接拖动滑条调参，上下滚动划过自动防误触",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
                                         TextButton(onClick = {
                                             updateCardTweaks { com.example.ui.components.CardTweaks() }
                                             Toast.makeText(context, "已恢复默认卡片参数", Toast.LENGTH_SHORT).show()
@@ -843,18 +856,6 @@ fun SettingsTabScreen(
                                     ) { v -> updateCardTweaks { it.copy(cardAlpha = 0.4f + v * 0.6f) } }
 
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "所有参数立即生效并自动保存，重开 App 后仍保留。",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = "「透视相机距离」控制按压倾斜时的近大远小程度：滑到「立体」" +
-                                            "卡片边缘随倾斜明显放大/缩小，滑到「平面」则几乎无透视畸变。" +
-                                            "该效果在按压卡片拖动时最明显。",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
                             }
                         }
@@ -1056,7 +1057,7 @@ fun SettingsTabScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text("缓存管理", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    Text("清理下载与临时文件", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("查看应用占用，清理缓存与离线数据", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))

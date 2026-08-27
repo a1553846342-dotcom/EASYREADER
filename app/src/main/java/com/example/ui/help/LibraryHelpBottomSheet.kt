@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import com.example.ui.components.AppIconButton
 
@@ -35,6 +38,7 @@ fun LibraryHelpBottomSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -290,17 +294,25 @@ fun LibraryHelpBottomSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickableWithFeedback {
-                            val cacheDir = File(context.cacheDir, "downloads")
-                            val count = cacheDir.listFiles()?.size ?: 0
-                            cacheDir.deleteRecursively()
-                            Toast.makeText(context, "已清除 $count 个下载临时缓存文件", Toast.LENGTH_SHORT).show()
+                            // 真正的下载临时文件在 filesDir/downloads/*.tmp；只清 30 分钟前的旧文件，
+                            // 避免误伤进行中/暂停待续传的下载；磁盘 IO 放后台线程
+                            scope.launch {
+                                val msg = withContext(Dispatchers.IO) {
+                                    val dlDir = File(context.filesDir, "downloads")
+                                    val cutoff = System.currentTimeMillis() - 30 * 60_000L
+                                    val stale = dlDir.listFiles { f -> f.isFile && f.name.endsWith(".tmp") && f.lastModified() < cutoff }?.toList() ?: emptyList()
+                                    stale.forEach { runCatching { it.delete() } }
+                                    if (stale.isNotEmpty()) "已清除 ${stale.size} 个下载临时文件" else "没有可清理的下载临时文件"
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
                         }
                         .testTag("shortcut_clear_cache"),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = "清除下载缓存",
+                        text = "清除下载临时文件",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.error,
