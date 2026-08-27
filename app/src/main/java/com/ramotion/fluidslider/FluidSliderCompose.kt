@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -96,6 +97,10 @@ private const val TEXT_OFFSET_DP = 8
 fun FluidSlider(
     position: Float,
     onPositionChange: (Float) -> Unit,
+    /** 一次触摸手势结束（正常抬手，或被外层手势守卫中途认领）时回调一次 */
+    onPositionChangeFinished: (() -> Unit)? = null,
+    /** 拖动开始/结束（含点按跳转的瞬时拖动）时上报，供外部联动 UI（如隐藏文字标签） */
+    onDraggingChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
     barHeightDp: Int = 48,
     bubbleText: String? = null,
@@ -143,6 +148,11 @@ fun FluidSlider(
         }
     }
 
+    // 拖动状态上报：外部据此联动 UI（例如设置页拖动时淡出文字标签，避免气泡盖字）
+    LaunchedEffect(isDragging) {
+        onDraggingChange?.invoke(isDragging)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -152,43 +162,90 @@ fun FluidSlider(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = down.position.x
                     val y = down.position.y
-                    // 扩大触控区域：轨道 ±20dp 内都响应（原版 rectBar.contains 太严格）
+                    // 扩大触控区域：轨道上/下各加 barH×0.5 的缓冲带（原版 rectBar.contains 太严格）
                     val touchPadding = barH * 0.5f
                     val barTop = vOff
                     if (y < barTop - touchPadding || y > barTop + barH + touchPadding ||
                         x < -touchPadding || x > size.width + touchPadding) return@awaitEachGesture
 
-                    isDragging = true
                     val maxMove = (size.width - touchD).coerceAtLeast(1f)
-                    // 点按跳转（不在拇指上时）
-                    val thumbX = touchD / 2f + maxMove * localFraction
-                    if (abs(x - thumbX) > touchD) {
-                        val f = ((x - touchD / 2f) / maxMove).coerceIn(0f, 1f)
-                        localFraction = f
-                        onPositionChange(f)
-                    }
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    // 方向仲裁阈值：横向起手让位给本滑条，纵向起手整段静默退出
+                    val slopH = with(density) { 10.dp.toPx() }
+                    val slopV = with(density) { 14.dp.toPx() }
 
-                    var lastX = x
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        change.consume()
-                        val newPos = (localFraction + (change.position.x - lastX) / maxMove).coerceIn(0f, 1f)
-                        lastX = change.position.x
-                        if (abs(newPos - localFraction) > 0.0005f) {
-                            localFraction = newPos
-                            onPositionChange(newPos)
-                            val atEdge = newPos <= 0.005f || newPos >= 0.995f
-                            if (atEdge && !wasAtBound) {
+                    /*
+                     * 【方向仲裁窗】（仅调整事件时序，视觉与手感零变化）：
+                     *  · 判明「横向意图」前绝不改写取值 —— 页面纵向滚动划过此处时，
+                     *    本次触摸在滑条上不留任何痕迹，也不会触发点按跳转；
+                     *  · 抬手时仍无纵向证据 → 视作一次轻点，沿用原版「点按跳转」语义；
+                     *  · 拖动一旦确立，行为与原版完全一致（锁定父级滚动、逐帧回调）。
+                     */
+                    var sawVertical = false
+                    var dragEngaged = false
+                    var ended = false
+                    while (!dragEngaged && !ended) {
+                        val ev = awaitPointerEvent(PointerEventPass.Main)
+                        val ch = ev.changes.firstOrNull { it.id == down.id }
+                        if (ch == null) { ended = true; break }
+                        if (!ch.pressed || ch.isConsumed) {
+                            ended = true
+                            // 被外层守卫/他人认领，或带纵向证据的抬手 → 静默收场
+                            if (!ch.isConsumed && !sawVertical) {
+                                // 纯轻点：沿用原版「点按跳转」（不在拇指上时）
+                                isDragging = true
+                                val thumbX = touchD / 2f + maxMove * localFraction
+                                if (abs(x - thumbX) > touchD) {
+                                    val f = ((x - touchD / 2f) / maxMove).coerceIn(0f, 1f)
+                                    localFraction = f
+                                    onPositionChange(f)
+                                }
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onPositionChangeFinished?.invoke()
                             }
-                            wasAtBound = atEdge
+                            break
+                        }
+                        val dx = ch.position.x - down.position.x
+                        val dy = ch.position.y - down.position.y
+                        when {
+                            abs(dy) > slopV && abs(dy) > abs(dx) * 1.4f -> {
+                                sawVertical = true
+                                ended = true
+                            }
+                            abs(dx) > slopH && abs(dx) >= abs(dy) -> dragEngaged = true
                         }
                     }
-                    isDragging = false
-                    wasAtBound = false
+
+                    if (dragEngaged && !ended) {
+                        isDragging = true
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+
+                        var lastX = down.position.x
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Main)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            // 外层手势守卫认领（消费事件）或已抬手 → 结束本次拖动，同样视为松手
+                            if (!change.pressed || change.isConsumed) break
+                            change.consume()
+                            val newPos = (localFraction + (change.position.x - lastX) / maxMove).coerceIn(0f, 1f)
+                            lastX = change.position.x
+                            if (abs(newPos - localFraction) > 0.0005f) {
+                                localFraction = newPos
+                                onPositionChange(newPos)
+                                val atEdge = newPos <= 0.005f || newPos >= 0.995f
+                                if (atEdge && !wasAtBound) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                                wasAtBound = atEdge
+                            }
+                        }
+                        isDragging = false
+                        wasAtBound = false
+                        onPositionChangeFinished?.invoke()
+                    } else {
+                        // 轻点或纵向静默退出：确保气泡回落（无拖动分支的收尾）
+                        isDragging = false
+                        wasAtBound = false
+                    }
                 }
             }
             .semantics {
@@ -197,12 +254,16 @@ fun FluidSlider(
                 customActions = listOf(
                     androidx.compose.ui.semantics.CustomAccessibilityAction("增加") {
                         val f = (localFraction + 0.05f).coerceIn(0f, 1f)
+                        localFraction = f
                         onPositionChange(f)
+                        onPositionChangeFinished?.invoke()
                         true
                     },
                     androidx.compose.ui.semantics.CustomAccessibilityAction("减少") {
                         val f = (localFraction - 0.05f).coerceIn(0f, 1f)
+                        localFraction = f
                         onPositionChange(f)
+                        onPositionChangeFinished?.invoke()
                         true
                     }
                 )

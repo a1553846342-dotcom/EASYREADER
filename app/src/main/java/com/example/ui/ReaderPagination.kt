@@ -102,6 +102,9 @@ fun rememberChapterPages(
     )
 
     var pages by remember(key) {
+        // TODO(size-change 双缓冲)：缓存未命中时先短暂空页再异步补齐；
+        // 真正会走到这里的场景只剩窗口尺寸真实变化（旋转/分屏），可择机
+        // 保留上一尺寸的页面直到新结果就绪，消除单帧空白。
         mutableStateOf(ReaderPaginationCache.get(key) ?: emptyList())
     }
 

@@ -301,7 +301,10 @@ fun ReaderScreen(
 
 
 
-    var currentChapterIndex by remember(book) { mutableIntStateOf(book?.currentChapterIndex ?: 0) }
+    // 键必须是 book.id 而非 book 对象：进度保存会让 ViewModel 发出新的 book 副本，
+    // 若以对象为键，异步时序差会把 currentChapterIndex 重置回副本携带的值 ——
+    // 表现就是"拖动条松手后被弹回原章节"。以 id 为键仅在换书时重建，进度竞态免疫。
+    var currentChapterIndex by remember(book?.id) { mutableIntStateOf(book?.currentChapterIndex ?: 0) }
 
     var showBars by remember { mutableStateOf(false) }
 
@@ -1578,7 +1581,9 @@ fun ReaderScreen(
 
                             ) {
 
-                            if (prefs.showOverlayHeaderFooter && !showBars) {
+                            // 常驻占位版页眉：尺寸永不随菜单开合变化（只切透明度）——
+                            // 正文容器高度与 showBars 彻底解耦，分页缓存键不再失配触发整章重算
+                            if (prefs.showOverlayHeaderFooter) {
 
                                 Row(
 
@@ -1586,7 +1591,11 @@ fun ReaderScreen(
 
                                         .fillMaxWidth()
 
-                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp),
+                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp)
+
+                                        // 此链禁止添加 clickable/pointerInput：
+                                        // graphicsLayer alpha=0 不豁免 Compose 命中测试，会变成幽灵热区
+                                        .graphicsLayer { alpha = if (showBars) 0f else 1f },
 
                                     horizontalArrangement = Arrangement.SpaceBetween
 
@@ -1594,7 +1603,7 @@ fun ReaderScreen(
 
                                     Text(chapter.title, fontSize = 10.sp, color = textColor.copy(alpha = 0.5f), maxLines = 1)
 
-                                    val timeStr = remember { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
+                                    val timeStr = remember(showBars) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
 
                                     Text(timeStr, fontSize = 10.sp, color = textColor.copy(alpha = 0.5f))
 
@@ -1766,7 +1775,7 @@ fun ReaderScreen(
 
                                             ) {
 
-                                                if (currentChapterIndex > 0 && !showBars) {
+                                                if (currentChapterIndex > 0) {
 
                                                     Text(
 
@@ -1796,7 +1805,7 @@ fun ReaderScreen(
 
                                                     color = textColor,
 
-                                                    modifier = Modifier.padding(bottom = 20.dp, top = if (!showBars) 12.dp else 0.dp)
+                                                    modifier = Modifier.padding(bottom = 20.dp, top = 12.dp)
 
                                                 )
 
@@ -2297,17 +2306,21 @@ fun ReaderScreen(
 
 
 
-                            if (prefs.showOverlayHeaderFooter && !showBars) {
+                            if (prefs.showOverlayHeaderFooter) {
 
                                 val pct = if (chapters.isNotEmpty()) ((currentChapterIndex + 1).toFloat() / chapters.size * 100).toInt() else 0
 
+                                // 常驻占位版页脚：同页眉原理 —— 菜单开合只改透明度，绝不挤压正文
+                                // 此链禁止添加 clickable/pointerInput：alpha=0 不豁免命中测试
                                 Row(
 
                                     modifier = Modifier
 
                                         .fillMaxWidth()
 
-                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp),
+                                        .padding(horizontal = marginHorizontal.dp, vertical = 6.dp)
+
+                                        .graphicsLayer { alpha = if (showBars) 0f else 1f },
 
                                     horizontalArrangement = Arrangement.SpaceBetween
 
@@ -2930,6 +2943,12 @@ fun ReaderScreen(
 
                                         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
 
+                                            // 章节拖动预览：拖动中只更新显示，松手才真正切章
+                                            var dragPos by remember { mutableStateOf<Float?>(null) }
+                                            val previewIdx = dragPos?.let {
+                                                Math.round(it * (chapters.size - 1).coerceAtLeast(1).toFloat())
+                                            }?.coerceIn(0, chapters.lastIndex.coerceAtLeast(0)) ?: currentChapterIndex
+
                                             Row(verticalAlignment = Alignment.CenterVertically) {
 
                                                 TextButton(
@@ -2956,33 +2975,33 @@ fun ReaderScreen(
 
                 
 
-                                                FluidSlider(
-
-                                                    position = currentChapterIndex.toFloat() /
-
-                                                        (chapters.size - 1).coerceAtLeast(1).toFloat(),
-
-                                                    onPositionChange = {
-
-                                                        currentChapterIndex = Math.round(it * (chapters.size - 1).coerceAtLeast(1).toFloat())
-
-                                                        scope.launch { scrollState.scrollTo(0) }
-
-                                                    },
-
-                                                    modifier = Modifier.weight(1f),
-
-                                                    barHeightDp = 26,
-
-                                                    bubbleText = "${currentChapterIndex + 1}",
-
-                                                    startText = null,
-
-                                                    endText = null,
-
-                                                    colorBar = barContentColor
-
-                                                 )
+                                                // 基线原版 FluidSlider 视觉（用户设计零改动）；
+                                                // 横向拖动实时预览，松手(onPositionChangeFinished)才真正切章
+                                                Box(modifier = Modifier.weight(1f)) {
+                                                    FluidSlider(
+                                                        position = dragPos ?: currentChapterIndex.toFloat() /
+                                                            (chapters.size - 1).coerceAtLeast(1).toFloat(),
+                                                        onPositionChange = { dragPos = it },
+                                                        onPositionChangeFinished = {
+                                                            val p = dragPos
+                                                            // 终态必清预览（含被纵向滚动逃生门中断的情况）
+                                                            dragPos = null
+                                                            if (p != null) {
+                                                                val target = Math.round(p * (chapters.size - 1).coerceAtLeast(1).toFloat())
+                                                                    .coerceIn(0, chapters.lastIndex.coerceAtLeast(0))
+                                                                if (target != currentChapterIndex) {
+                                                                    currentChapterIndex = target
+                                                                    scope.launch { scrollState.scrollTo(0) }
+                                                                }
+                                                            }
+                                                        },
+                                                        bubbleText = "${previewIdx + 1}",
+                                                        barHeightDp = 26,
+                                                        startText = null,
+                                                        endText = null,
+                                                        colorBar = barContentColor
+                                                    )
+                                                }
 
                 
 
@@ -3024,11 +3043,17 @@ fun ReaderScreen(
 
                                                 Text(
 
-                                                    "第 ${currentChapterIndex + 1} / ${chapters.size} 章",
-
+                                                    text = if (dragPos != null && chapters.isNotEmpty()) {
+                                                        val t = chapters.getOrNull(previewIdx)?.title.orEmpty()
+                                                        "跳转 → 第 ${previewIdx + 1}/${chapters.size} 章 · $t"
+                                                    } else {
+                                                        "第 ${currentChapterIndex + 1} / ${chapters.size} 章"
+                                                    },
                                                     fontSize = 12.sp,
-
-                                                    color = barContentColor
+                                                    color = barContentColor,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
 
                                                 )
 
@@ -3253,6 +3278,21 @@ fun ReaderScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text("阅读排版", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        fontSize = 18f
+                        lineHeight = 28f
+                        marginHorizontal = 16
+                        readerBrightness = 1f
+                        prefs.fontSize = fontSize
+                        prefs.lineHeight = lineHeight
+                        prefs.marginHorizontal = marginHorizontal
+                        prefs.readerBrightness = readerBrightness
+                        Toast.makeText(context, "排版参数已重置", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("重置", fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 /* ── 分组：文字 ── */
@@ -3270,6 +3310,7 @@ fun ReaderScreen(
                     Spacer(modifier = Modifier.weight(1f))
                     Text("${fontSize.toInt()} sp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
                 }
+                Box(modifier = Modifier.fillMaxWidth()) {
                 FluidSlider(
                     position = (fontSize - 12f) / 24f,
                     onPositionChange = { fontSize = 12f + it * 24f; prefs.fontSize = fontSize },
@@ -3280,6 +3321,7 @@ fun ReaderScreen(
                     endText = null,
                     colorBar = MintPrimary
                 )
+                }
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -3287,6 +3329,7 @@ fun ReaderScreen(
                     Spacer(modifier = Modifier.weight(1f))
                     Text("${lineHeight.toInt()} sp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
                 }
+                Box(modifier = Modifier.fillMaxWidth()) {
                 FluidSlider(
                     position = (lineHeight - 20f) / 28f,
                     onPositionChange = { lineHeight = 20f + it * 28f; prefs.lineHeight = lineHeight },
@@ -3297,6 +3340,7 @@ fun ReaderScreen(
                     endText = null,
                     colorBar = MintPrimary
                 )
+                }
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -3304,6 +3348,7 @@ fun ReaderScreen(
                     Spacer(modifier = Modifier.weight(1f))
                     Text("${marginHorizontal} dp", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintPrimary)
                 }
+                Box(modifier = Modifier.fillMaxWidth()) {
                 FluidSlider(
                     position = (marginHorizontal - 8f) / 40f,
                     onPositionChange = { marginHorizontal = Math.round(8f + it * 40f); prefs.marginHorizontal = marginHorizontal },
@@ -3314,6 +3359,7 @@ fun ReaderScreen(
                     endText = null,
                     colorBar = MintPrimary
                 )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -3332,6 +3378,7 @@ fun ReaderScreen(
                     Spacer(modifier = Modifier.weight(1f))
                     Text("${(readerBrightness * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MintGold)
                 }
+                Box(modifier = Modifier.fillMaxWidth()) {
                 FluidSlider(
                     position = (readerBrightness - 0.2f) / 0.8f,
                     onPositionChange = { readerBrightness = 0.2f + it * 0.8f; prefs.readerBrightness = readerBrightness },
@@ -3342,6 +3389,7 @@ fun ReaderScreen(
                     endText = null,
                     colorBar = MintGold
                 )
+                }
                 Spacer(modifier = Modifier.height(18.dp))
 
                 Row(

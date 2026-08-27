@@ -4,7 +4,13 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,21 +52,17 @@ import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.ColorMorphSwatch
 import com.example.ui.components.AppLiquidButton
-import com.example.ui.components.AppLiquidSwitch
 import com.example.ui.components.SegmentedPillSelector
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.GlassCard
-import com.example.ui.components.LocalRenderQuality
-import com.example.ui.components.RenderQuality
-import com.example.ui.components.SegmentedPillSelector
-import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
 import com.ramotion.fluidslider.FluidSlider
+import com.example.ui.components.readCardTweaks
+import com.example.ui.components.writeCardTweaks
+import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
-import com.example.ui.components.JunoSlider
 import com.example.ui.components.AppIconButton
 import com.example.ui.theme.MintPrimary
-import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.onColor
 import com.example.ui.theme.glassTitleColor
@@ -89,7 +92,9 @@ fun SettingsTabScreen(
     orientationLockVal: Int = prefs.screenOrientationLock,
     onOrientationLockChange: (Int) -> Unit = { prefs.screenOrientationLock = it },
     renderQualityVal: Int = prefs.renderQuality,
-    onRenderQualityChange: (Int) -> Unit = { prefs.renderQuality = it }
+    onRenderQualityChange: (Int) -> Unit = { prefs.renderQuality = it },
+    /** 卡片微调共享状态：由 MainActivity 持有并注入 LocalCardTweaks；滑块实时改写。 */
+    cardTweaksState: MutableState<com.example.ui.components.CardTweaks>? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,6 +122,16 @@ fun SettingsTabScreen(
     var newCategoryText by remember { mutableStateOf("") }
     var showHelpBottomSheet by remember { mutableStateOf(false) }
     var showCacheManager by remember { mutableStateOf(false) }
+
+    // 卡片参数自定义：折叠栏展开态（跨重建保留）+ 实时写回 prefs / 共享状态
+    var showCardPanel by rememberSaveable { mutableStateOf(false) }
+    val tweaksState = cardTweaksState
+    fun updateCardTweaks(transform: (com.example.ui.components.CardTweaks) -> com.example.ui.components.CardTweaks) {
+        val next = transform(tweaksState?.value ?: prefs.readCardTweaks())
+        prefs.writeCardTweaks(next)
+        // 回读经过 setter coerce 的真值 —— 共享状态永不持有越界 raw 值（重启后不跳变）
+        tweaksState?.value = prefs.readCardTweaks()
+    }
 
     val posterLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -407,6 +422,8 @@ fun SettingsTabScreen(
                                         Spacer(modifier = Modifier.weight(1f))
                                         Text("$appBgDim%", fontSize = 12.sp, color = MintPrimary, fontWeight = FontWeight.Bold)
                                     }
+                                    // 原版 FluidSlider（基线样式零改动）；纵向让位由滑条内部方向仲裁承担
+                                    Box(modifier = Modifier.fillMaxWidth()) {
                                     FluidSlider(
                                         position = appBgDim / 50f,
                                         onPositionChange = {
@@ -425,6 +442,7 @@ fun SettingsTabScreen(
                                         colorBubbleText = MintPrimary,
                                         colorBarText = glassTitleColor()
                                     )
+                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                 }
                                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -698,6 +716,150 @@ fun SettingsTabScreen(
                     }
                 }
 
+                // Section 2.6: 卡片视觉微调（自定义卡片参数折叠栏）
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.Palette, contentDescription = null, tint = MintPrimary)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text("自定义卡片参数", fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            "毛玻璃 / 涟漪 / 3D 倾斜 / 压力形变实时调节",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                SquishyToggleSwitch(
+                                    color = MintPrimary,
+                                    checked = showCardPanel,
+                                    onCheckedChange = { showCardPanel = it }
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = showCardPanel,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val tw = tweaksState?.value ?: prefs.readCardTweaks()
+
+                                    // 防误触提示 + 一键恢复默认
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "直接拖动滑条调参，上下滚动划过自动防误触",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        TextButton(onClick = {
+                                            updateCardTweaks { com.example.ui.components.CardTweaks() }
+                                            Toast.makeText(context, "已恢复默认卡片参数", Toast.LENGTH_SHORT).show()
+                                        }) {
+                                            Text("重置默认", color = MintPrimary, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    CardTweakSlider(
+                                        label = "毛玻璃模糊强度",
+                                        valueText = "${tw.blurRadiusDp.toInt()}dp",
+                                        position = (tw.blurRadiusDp - 8f) / 32f,
+                                        startText = "8",
+                                        endText = "40",
+                                    ) { v -> updateCardTweaks { it.copy(blurRadiusDp = 8f + v * 32f) } }
+                                    CardTweakSlider(
+                                        label = "卡片圆角",
+                                        valueText = "${tw.cornerRadiusDp.toInt()}dp",
+                                        position = (tw.cornerRadiusDp - 2f) / 46f,
+                                        startText = "2",
+                                        endText = "48",
+                                    ) { v -> updateCardTweaks { it.copy(cornerRadiusDp = 2f + v * 46f) } }
+                                    CardTweakSlider(
+                                        label = "3D 倾斜最大角度",
+                                        valueText = "%.1f°".format(tw.tiltMaxDeg),
+                                        position = kotlin.math.sqrt(tw.tiltMaxDeg / 15f),
+                                        startText = "0°",
+                                        endText = "15°",
+                                    ) { v -> updateCardTweaks { it.copy(tiltMaxDeg = v * v * 15f) } }
+                                    CardTweakSlider(
+                                        label = "立体透视强度（越大越立体）",
+                                        valueText = "${((12f - tw.cameraDistMult) / 9f * 100).toInt()}%",
+                                        position = (12f - tw.cameraDistMult) / 9f,
+                                        startText = "平面",
+                                        endText = "立体",
+                                    ) { v -> updateCardTweaks { it.copy(cameraDistMult = 12f - v * 9f) } }
+                                    CardTweakSlider(
+                                        label = "涟漪颜色透明度",
+                                        valueText = "${(tw.rippleAlpha * 100).toInt()}%",
+                                        position = (tw.rippleAlpha - 0.1f) / 0.7f,
+                                        startText = "10%",
+                                        endText = "80%",
+                                    ) { v -> updateCardTweaks { it.copy(rippleAlpha = 0.1f + v * 0.7f) } }
+                                    CardTweakSlider(
+                                        label = "主题色叠加浓度",
+                                        valueText = "${(tw.tintMix * 100).toInt()}%",
+                                        position = tw.tintMix / 0.3f,
+                                        startText = "0%",
+                                        endText = "30%",
+                                    ) { v -> updateCardTweaks { it.copy(tintMix = v * 0.3f) } }
+                                    CardTweakSlider(
+                                        label = "压力形变强度",
+                                        valueText = "${(tw.pressStrength * 100).toInt()}%",
+                                        position = tw.pressStrength / 2f,
+                                        startText = "0%",
+                                        endText = "200%",
+                                    ) { v -> updateCardTweaks { it.copy(pressStrength = v * 2f) } }
+                                    CardTweakSlider(
+                                        label = "压力形变半径",
+                                        valueText = "×%.1f".format(tw.pressRadius),
+                                        position = (tw.pressRadius - 0.5f) / 2.0f,
+                                        startText = "0.5×",
+                                        endText = "2.5×",
+                                    ) { v -> updateCardTweaks { it.copy(pressRadius = 0.5f + v * 2.0f) } }
+                                    CardTweakSlider(
+                                        label = "卡片不透明度",
+                                        valueText = "${(tw.cardAlpha * 100).toInt()}%",
+                                        position = (tw.cardAlpha - 0.4f) / 0.6f,
+                                        startText = "40%",
+                                        endText = "100%",
+                                    ) { v -> updateCardTweaks { it.copy(cardAlpha = 0.4f + v * 0.6f) } }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "所有参数立即生效并自动保存，重开 App 后仍保留。",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "「透视相机距离」控制按压倾斜时的近大远小程度：滑到「立体」" +
+                                            "卡片边缘随倾斜明显放大/缩小，滑到「平面」则几乎无透视畸变。" +
+                                            "该效果在按压卡片拖动时最明显。",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Section 3: Page Turn Effect
                 item {
                     SettingsSectionHeader("翻页效果")
@@ -850,6 +1012,7 @@ fun SettingsTabScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
+                                Box(modifier = Modifier.fillMaxWidth()) {
                                 FluidSlider(
                                     position = blueLightAlpha,
                                     onPositionChange = {
@@ -865,6 +1028,7 @@ fun SettingsTabScreen(
                                     colorBarText = glassTitleColor(),
                                     barHeightDp = 28
                                 )
+                                }
                             }
                         }
                     }
@@ -1055,4 +1219,75 @@ private fun SettingsSectionHeader(text: String) {
         fontSize = 14.sp,
         color = adaptiveTitleColor()
     )
+}
+
+/**
+ * 卡片微调滑块行（基线原版 FluidSlider 样式，零改动）：
+ *  1. 标签行与滑条容器零间距、共用同一左右内边距，视觉强关联；
+ *  2. 防误触由滑条内部的方向仲裁独自承担（纵向起手静默让位给页面滚动）。
+ */
+@Composable
+private fun CardTweakSlider(
+    label: String,
+    valueText: String,
+    position: Float,
+    startText: String,
+    endText: String,
+    onChange: (Float) -> Unit
+) {
+    var dragging by remember { mutableStateOf(false) }
+    /*
+     * FluidSlider 容器 = 2.5×barH：底部 1×barH 轨道 + 顶部 1.5×barH 气泡预留空区。
+     * 标签行与气泡同处预留空区：静止时标签可见；拖动开始整行淡出、
+     * 让数值气泡独占该区域（不遮任何文字），松手后淡回 —— 两态互斥永不叠印。
+     */
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        val labelAlpha by animateFloatAsState(
+            targetValue = if (dragging) 0f else 1f,
+            animationSpec = tween(140),
+            label = "tweakLabelAlpha"
+        )
+        // 标签行先组合 → 绘制在滑条下层；拖动时 alpha→0 交还区域给数值气泡
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 4.dp)
+                .offset(y = (-30).dp)   // 抬到轨道上沿之上
+                .graphicsLayer { alpha = labelAlpha },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                maxLines = 1,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                valueText,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                maxLines = 1,
+                color = MintPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        FluidSlider(
+            position = position.coerceIn(0f, 1f),
+            onPositionChange = onChange,
+            bubbleText = valueText,
+            startText = startText,
+            endText = endText,
+            colorBar = MintPrimary,
+            colorBubble = Color.White,
+            colorBubbleText = MintPrimary,
+            colorBarText = glassTitleColor(),
+            barHeightDp = 28,
+            onDraggingChange = { dragging = it }
+        )
+    }
 }
