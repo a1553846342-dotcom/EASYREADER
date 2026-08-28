@@ -285,11 +285,6 @@ fun SettingsTabScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("自定义开屏海报", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text(
-                                        if (splashPosterUri.isNullOrEmpty()) "从手机相册选择启动页海报" else "已更换自定义相册海报",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
 
                                 Row {
@@ -368,11 +363,6 @@ fun SettingsTabScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("软件背景", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text(
-                                "默认主题色，或自定义背景图",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                             Spacer(modifier = Modifier.height(10.dp))
                             SegmentedPillSelector(
                                 options = listOf(0 to "默认", 1 to "自定义"),
@@ -704,19 +694,6 @@ fun SettingsTabScreen(
                                 Text("渲染画质", fontWeight = FontWeight.SemiBold)
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                text = when (renderQualityVal) {
-                                    0 -> "流畅：极简玻璃质感，任何设备都能满帧滚动"
-                                    1 -> "均衡：保留玻璃质感与细节，关闭实时模糊"
-                                    2 -> "高：完整液态玻璃实时模糊（默认推荐）"
-                                    else -> "极致：折射透镜 + 更浓郁的玻璃色彩，旗舰机专属"
-                                },
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
                             Spacer(modifier = Modifier.height(10.dp))
 
                             SegmentedPillSelector(
@@ -728,13 +705,6 @@ fun SettingsTabScreen(
                                 ),
                                 selected = renderQualityVal.coerceIn(0, 3),
                                 onSelect = onRenderQualityChange
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "切换立即生效；主要影响界面玻璃效果与动效数量，不影响阅读排版。",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -757,11 +727,6 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text("自定义卡片参数", fontWeight = FontWeight.SemiBold)
-                                        Text(
-                                            "毛玻璃 / 3D 倾斜 / 材质压痕实时调节",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
                                     }
                                 }
                                 SquishyToggleSwitch(

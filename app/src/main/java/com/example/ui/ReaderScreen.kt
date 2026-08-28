@@ -1272,23 +1272,33 @@ fun ReaderScreen(
 
 
 
-            // 读完庆祝：最后一章最后一页时触发吉祥物庆祝动画（每次打开书只触发一次）
+            // 读完庆祝：本次阅读中真正翻到最后一章最后一页才触发（打开时恢复的旧进度停在末页不算读完）
 
             var celebratedBookComplete by remember(book) { mutableStateOf(false) }
 
+            var hasLeftLastPage by remember(book) { mutableStateOf(false) }
+
             LaunchedEffect(currentChapterIndex, currentSubPageIndex, pagesList.size, isScrollMode) {
 
-                if (celebratedBookComplete || isScrollMode || pagesList.isEmpty()) return@LaunchedEffect
+                if (celebratedBookComplete || isScrollMode || pagesList.isEmpty() || chapters.isEmpty()) return@LaunchedEffect
 
                 val atLastPageOfLastChapter = currentChapterIndex >= chapters.size - 1 &&
 
                         currentSubPageIndex >= pagesList.size - 1
 
-                if (atLastPageOfLastChapter && !celebratedBookComplete) {
+                if (atLastPageOfLastChapter) {
 
-                    celebratedBookComplete = true
+                    if (hasLeftLastPage && !celebratedBookComplete) {
 
-                    MascotAnimationController.play(MascotEvent.BookComplete)
+                        celebratedBookComplete = true
+
+                        MascotAnimationController.play(MascotEvent.BookComplete)
+
+                    }
+
+                } else {
+
+                    hasLeftLastPage = true
 
                 }
 
@@ -3276,7 +3286,7 @@ fun ReaderScreen(
 
             onDismissRequest = { showSettingsSheet = false },
 
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f)
 
         ) {
 
@@ -3561,10 +3571,8 @@ fun ReaderScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                // 与阅读区 when(readerTheme) 的真实配色一一对应；
-                // 「薄荷」阅读区为白底+薄荷点缀，预览用淡薄荷底示意以免与「白底」混淆
+                // 与阅读区 when(readerTheme) 的真实配色一一对应，选中态用描边+角标
                 val themePreviews = listOf(
-                    ReaderThemePreview(0, "薄荷", Color(0xFFE9F5EE), Color(0xFF2F5D50)),
                     ReaderThemePreview(1, "白底", Color.White, Color(0xFF18191C)),
                     ReaderThemePreview(2, "羊皮", Color(0xFFFBF0D9), Color(0xFF5F4B32)),
                     ReaderThemePreview(3, "夜间", Color(0xFF18191C), Color(0xFFD4D4D4)),
