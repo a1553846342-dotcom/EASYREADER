@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,31 +42,34 @@ import androidx.compose.ui.unit.sp
  * 收起/展开由 [rememberHeaderCollapsed] 的 derivedStateOf 派生——只在状态翻转时重组，
  * 滚动过程中零监听开销；高度动画 220ms 一次性补间，无逐帧常驻计算。
  *
- * 视觉效果：滚动后头部从 ~88dp 收缩到 ~48dp，为列表让出约 10% 可视高度；
- * 标题始终保留（位置感不丢失），副标题只属于 Expanded 态。
+ * 视觉效果：滚动后头部收缩（Statistics 无大槽位约 51dp；Library/Home 因 48dp 最小触控
+ * 槽位收起态约 62-74dp），为列表让出可视高度；标题始终保留（位置感不丢失）。
  */
 
-/** 折叠判定：滚过首项顶部 60px（约 20dp）即收起，回到顶部恢复。derivedStateOf 只在布尔翻转时通知。 */
+/** 折叠判定：滚过首项顶部约 20dp（密度无关，LocalDensity 换算）即收起，回到顶部恢复。derivedStateOf 只在布尔翻转时通知。 */
 @Composable
 fun rememberHeaderCollapsed(state: LazyListState, forceCollapsed: Boolean = false): Boolean {
-    val scrolled by remember(state) {
-        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 60 }
+    val thresholdPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val scrolled by remember(state, thresholdPx) {
+        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > thresholdPx }
     }
     return scrolled || forceCollapsed
 }
 
 @Composable
 fun rememberHeaderCollapsed(state: LazyGridState, forceCollapsed: Boolean = false): Boolean {
-    val scrolled by remember(state) {
-        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 60 }
+    val thresholdPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val scrolled by remember(state, thresholdPx) {
+        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > thresholdPx }
     }
     return scrolled || forceCollapsed
 }
 
 @Composable
 fun rememberHeaderCollapsed(state: LazyStaggeredGridState, forceCollapsed: Boolean = false): Boolean {
-    val scrolled by remember(state) {
-        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 60 }
+    val thresholdPx = with(LocalDensity.current) { 20.dp.toPx() }
+    val scrolled by remember(state, thresholdPx) {
+        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > thresholdPx }
     }
     return scrolled || forceCollapsed
 }

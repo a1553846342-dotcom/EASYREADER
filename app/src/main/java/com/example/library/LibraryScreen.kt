@@ -967,10 +967,19 @@ fun LibraryScreen(
                 visibleSources = visibleSources,
                 onSelectAggregate = {
                     viewModel.setAggregateMode(true)
+                    // 双状态残留修复：切模式后非活跃视图的滚动位置不清零会让折叠头部错误保持收起
+                    scope.launch {
+                        staggeredGridState.scrollToItem(0)
+                        listState.scrollToItem(0)
+                    }
                     showSourceSheet = false
                 },
                 onSelectSource = { id ->
                     viewModel.selectSource(id)
+                    scope.launch {
+                        staggeredGridState.scrollToItem(0)
+                        listState.scrollToItem(0)
+                    }
                     showSourceSheet = false
                 },
                 onManageSources = {
