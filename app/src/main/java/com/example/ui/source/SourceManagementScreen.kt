@@ -187,6 +187,56 @@ fun SourceManagementScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
+                // JS 源网络代理：picacg 等被墙源直连必然超时，命中域名的请求改走此代理
+                item {
+                    val jsPrefs = remember { com.example.data.PreferencesManager(context) }
+                    var proxyAddr by remember { mutableStateOf(jsPrefs.jsProxyAddress) }
+                    var proxyDomains by remember { mutableStateOf(jsPrefs.jsProxyDomains) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.Lock,
+                                    contentDescription = null,
+                                    tint = MintPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("JS 源网络代理", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            }
+                            Text(
+                                "picacg 等被墙源直连会一直超时。填入手机上代理软件的本地端口（如 127.0.0.1:7890），只有命中下方域名的请求会走代理，其余源不受影响。",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = proxyAddr,
+                                onValueChange = { proxyAddr = it; jsPrefs.jsProxyAddress = it },
+                                label = { Text("代理地址 host:port（留空 = 直连）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = proxyDomains,
+                                onValueChange = { proxyDomains = it; jsPrefs.jsProxyDomains = it },
+                                label = { Text("走代理的域名（逗号分隔，* = 全部）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
                 // Z-Library 登录状态检测卡片：未登录时提醒并提供跳转登录按钮
                 if (zlibSource != null) {
                     item {

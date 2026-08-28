@@ -55,6 +55,9 @@ class JsMessageHandler(
     private val settingDefaults = HashMap<String, String>()
     private val client = buildClient(insecureTls)
 
+    /** 命中 JS 源代理路由的 URL 改走 OkHttp（代理在 client 的 ProxySelector 里；Cronet 不支持显式代理）。 */
+    private fun useProxyRoute(url: String): Boolean = JsSourceProxy.matches(context, url)
+
     // ---- 真实 Bitmap 图像桥：供 onImageLoad.modifyImage 等脚本做像素级重排 ----
     private val images = object : LinkedHashMap<Int, Bitmap>(48, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Bitmap>?): Boolean = size > 48
@@ -89,6 +92,15 @@ class JsMessageHandler(
 
     /** 用 Cronet（Chromium 网络栈）直接下载图片字节，用于 H@H 等 OkHttp 握手不兼容的图床。 */
     fun fetchImageBytes(url: String, headers: Map<String, String>): ByteArray? {
+        if (useProxyRoute(url)) {
+            return runCatching {
+                val builder = Request.Builder().url(url)
+                headers.forEach { (k, v) -> builder.header(k, v) }
+                client.newCall(builder.build()).execute().use { resp ->
+                    if (!resp.isSuccessful) null else resp.body?.bytes()
+                }
+            }.getOrNull()
+        }
         val res = cronetRequest("GET", url, headers, null)
         if (res.error != null || res.status !in 200..299) return null
         return res.body
@@ -192,6 +204,8 @@ class JsMessageHandler(
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            // 命中 JS 源代理路由的域名走显式/系统代理，其余直连
+            .proxySelector(JsSourceProxy.selector(context))
             // Venera(Dio) 默认 HTTP/1.1；部分站点/代理对 HTTP/2 直接断连，禁用 h2 提高兼容性
             .protocols(listOf(Protocol.HTTP_1_1))
             .addInterceptor { chain ->
@@ -384,7 +398,8 @@ class JsMessageHandler(
                 }
             }
 
-            if (!insecureTls) {
+            val proxied = useProxyRoute(url)
+            if (!insecureTls && !proxied) {
                 // 走 Cronet（Chromium 网络栈）：浏览器级 TLS 指纹，绕过按 Java 客户端封禁的站点
                 val bodyBytes = when (val data = msg["data"]) {
                     is ByteArray -> data
@@ -419,7 +434,7 @@ class JsMessageHandler(
                 return obj.toString()
             }
 
-            // 证书有问题的源走 OkHttp（可忽略证书校验）
+            // 证书有问题的源走 OkHttp（可忽略证书校验）；命中代理路由的请求也走 OkHttp（代理见 ProxySelector）
             val builder = Request.Builder().url(url)
             effectiveHeaders.forEach { (k, v) -> builder.header(k, v) }
             val request = builder.method(httpMethod, body).build()

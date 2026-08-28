@@ -255,6 +255,16 @@ class PreferencesManager(context: Context) {
         ) ?: "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/index.json"
         set(value) = prefs.edit().putString("js_source_repo_url", value).apply()
 
+    /** JS 漫画源 HTTP 代理（如 127.0.0.1:7890）；空 = 直连。被墙的源（picacg 等）需要。 */
+    var jsProxyAddress: String
+        get() = prefs.getString("js_proxy_address", "") ?: ""
+        set(value) = prefs.edit().putString("js_proxy_address", value.trim()).apply()
+
+    /** 命中这些域名（逗号分隔）的 JS 源请求才走上述代理；* 表示全部 JS 源请求走代理。 */
+    var jsProxyDomains: String
+        get() = prefs.getString("js_proxy_domains", "picaapi.picacomic.com") ?: "picaapi.picacomic.com"
+        set(value) = prefs.edit().putString("js_proxy_domains", value.trim()).apply()
+
     var searchHistory: List<String>
         get() {
             val raw = prefs.getString("search_history_v1", "[]") ?: "[]"

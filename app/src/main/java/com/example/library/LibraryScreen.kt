@@ -2156,6 +2156,12 @@ private fun AggregateSourceError(
     val timedOut = error?.contains("timeout", ignoreCase = true) == true ||
         error?.contains("timed out", ignoreCase = true) == true ||
         error?.contains("超时") == true
+    // 源正常返回空列表（error=null）才是真正的「无结果」；任何真实错误都翻译成可行动的提示
+    val message = when {
+        error.isNullOrBlank() -> "无结果"
+        timedOut -> "链接超时"
+        else -> com.example.source.js.friendlyJsSourceError(error)
+    }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -2175,7 +2181,7 @@ private fun AggregateSourceError(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (timedOut) "链接超时" else "无结果",
+                text = message,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

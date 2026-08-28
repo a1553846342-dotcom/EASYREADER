@@ -35,11 +35,20 @@ object ComicLocalImporter {
     private const val TAG = "ComicDownload"
     private const val UA = "EASYREADER/0.21 (CialloReader)"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
+    @Volatile
+    private var cachedClient: OkHttpClient? = null
+
+    /** 命中 JS 源代理路由（如 picacg）的图片域名走显式/系统代理，其余直连。 */
+    private fun client(context: Context): OkHttpClient =
+        cachedClient ?: synchronized(this) {
+            cachedClient ?: OkHttpClient.Builder()
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .protocols(listOf(Protocol.HTTP_1_1))
+                .proxySelector(com.example.source.js.JsSourceProxy.selector(context.applicationContext))
+                .build()
+                .also { cachedClient = it }
+        }
 
     suspend fun importChapter(
         context: Context,
@@ -120,7 +129,7 @@ object ComicLocalImporter {
                     requestBuilder.header("Referer", referer)
                 }
                 val request = requestBuilder.build()
-                client.newCall(request).execute().use { response ->
+                client(context).newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         throw IOException("图片下载失败 HTTP ${response.code} (${url.take(80)})")
                     }
@@ -135,7 +144,7 @@ object ComicLocalImporter {
                                 val cookie2 = JsCookieJar.cookieHeader(context, candidate)
                                 if (cookie2.isNotBlank()) rb.header("Cookie", cookie2)
                                 if (!referer.isNullOrBlank()) rb.header("Referer", referer)
-                                client.newCall(rb.build()).execute().use { r2 ->
+                                client(context).newCall(rb.build()).execute().use { r2 ->
                                     if (r2.isSuccessful) {
                                         val b2 = r2.body?.bytes()
                                         if (b2 != null) {

@@ -16,6 +16,29 @@ import java.io.File
  * 一个 Venera 兼容的 JS 漫画源。
  * 通过 JsSourceEngine 调用源脚本的 search.load / comic.loadInfo / comic.loadEp。
  */
+
+/**
+ * 把 JS 源桥层的原始错误翻译成用户能看懂、能行动的中文提示。
+ * 此前聚合搜索把所有非超时错误一律显示成「无结果」，真实原因（被墙需代理/需登录/登录过期）完全不可见。
+ */
+internal fun friendlyJsSourceError(raw: String): String {
+    val text = raw.trim()
+    return when {
+        text.isEmpty() -> "JS 执行失败"
+        text.contains("Not logged in", ignoreCase = true) -> "该源需要登录：请在书源管理中登录"
+        text.contains("Invalid status code: 401") -> "登录已过期：请在书源管理中重新登录"
+        text.contains("ERR_", ignoreCase = true) ||
+            text.contains("timed out", ignoreCase = true) ||
+            text.contains("timeout", ignoreCase = true) ||
+            text.contains("请求超时") ||
+            text.contains("Connection reset", ignoreCase = true) ||
+            text.contains("SocketException", ignoreCase = true) ||
+            text.contains("Unable to resolve host", ignoreCase = true) ->
+            "网络连接失败：被墙的源需要在书源管理中配置 JS 源代理"
+        else -> text.take(120)
+    }
+}
+
 class JsComicSource(
     private val context: Context,
     val sourceKey: String,
@@ -100,7 +123,9 @@ class JsComicSource(
                 val obj = callJsWithRetry("src.search.load.call(src, ${q(keyword)}, [], 1)")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val comics = obj.optJSONObject("data")?.optJSONArray("comics") ?: JSONArray()
                 val books = (0 until comics.length()).mapNotNull { i ->
@@ -137,7 +162,9 @@ class JsComicSource(
                 val obj = callJsWithRetry("src.comic.loadInfo.call(src, ${q(bookId)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val data = obj.optJSONObject("data") ?: return@withContext SourceResult.Error(
                     SourceException.ParseError("JS 源无数据")
@@ -184,7 +211,9 @@ class JsComicSource(
                 val obj = callJsWithRetry("src.comic.loadEp.call(src, ${q(pair.first)}, ${q(pair.second)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val images = obj.optJSONObject("data")?.optJSONArray("images") ?: JSONArray()
                 val rawUrls = (0 until images.length()).mapNotNull { i ->
@@ -355,9 +384,20 @@ class JsComicSource(
                     getEngine().setLoggedIn(true)
                     SourceResult.Success(true)
                 } else {
-                    SourceResult.Error(
-                        SourceException.Unknown(obj?.optString("error", "登录失败") ?: "登录失败")
-                    )
+                    val raw = obj?.optString("error", "") ?: ""
+                    Log.w("JsComic[$sourceKey]", "login error: $raw")
+                    val msg = when {
+                        raw.isBlank() -> "登录失败：账号或密码错误"
+                        raw.contains("Invalid email", ignoreCase = true) ||
+                            raw.contains("invalid password", ignoreCase = true) -> "登录失败：账号或密码错误"
+                        raw.contains("ERR_", ignoreCase = true) ||
+                            raw.contains("timed out", ignoreCase = true) ||
+                            raw.contains("timeout", ignoreCase = true) ||
+                            raw.contains("请求超时") ->
+                            "登录失败：网络无法连接该源（被墙的源需在书源管理中配置 JS 源代理）"
+                        else -> "登录失败：${friendlyJsSourceError(raw)}"
+                    }
+                    SourceResult.Error(SourceException.Unknown(msg))
                 }
             } catch (e: Exception) {
                 SourceResult.Error(SourceException.Unknown("登录失败: ${e.message}", e))
