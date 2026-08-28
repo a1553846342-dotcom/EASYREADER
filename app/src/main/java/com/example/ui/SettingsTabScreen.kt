@@ -52,6 +52,8 @@ import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AppButtonVariant
+import com.example.ui.components.TabScreenHeader
+import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.ColorMorphSwatch
 import com.example.ui.components.AppLiquidButton
 import com.example.ui.components.SegmentedPillSelector
@@ -207,56 +209,36 @@ fun SettingsTabScreen(
                 else MaterialTheme.colorScheme.background
             )
     ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            topBar = {
-                // 仿书架页顶部栏：毛玻璃卡 + Serif 标题层级（HomeScreen 顶部栏同款）
-                GlassCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (onBack != null) {
-                            AppIconButton(onClick = onBack) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "返回",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        Column {
-                            Text(
-                                text = "设置",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = glassTitleColor(),
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "SETTINGS & PREFERENCES",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = glassTitleColor().copy(alpha = 0.75f),
-                                letterSpacing = 1.5.sp
-                            )
-                        }
-                    }
+    // 滚动联动折叠头部：state 提前声明供 topBar 与列表共用
+    val settingsListState = rememberLazyListState()
+    settingsListState.scrollTiltSource()
+    val settingsHeaderCollapsed = rememberHeaderCollapsed(settingsListState)
+    val backAction = onBack
+    val settingsLeading: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? =
+        if (backAction != null) {
+            {
+                AppIconButton(onClick = backAction) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
+        } else null
+    Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TabScreenHeader(
+                    collapsed = settingsHeaderCollapsed,
+                    modifier = Modifier.statusBarsPadding(),
+                    title = "设置",
+                    subtitle = "SETTINGS & PREFERENCES",
+                    titleColor = glassTitleColor(),
+                    leading = settingsLeading
+                )
+            }
         ) { padding ->
-            // 设置列表滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
-            val settingsListState = rememberLazyListState()
-            settingsListState.scrollTiltSource()
             LazyColumn(
                 state = settingsListState,
                 modifier = Modifier

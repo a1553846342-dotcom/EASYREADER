@@ -75,6 +75,8 @@ import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GlassCard
+import com.example.ui.components.TabScreenHeader
+import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.StarryNightBackground
@@ -308,11 +310,17 @@ fun HomeScreen(
         )
     }
 
+    // 主书架滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）；同时驱动头部折叠（原声明在内容分支内，头部够不到，上提）
+    val homeGridState = rememberLazyGridState()
+    homeGridState.scrollTiltSource()
+    val homeHeaderCollapsed = rememberHeaderCollapsed(homeGridState)
+
     StarryNightBackground(showLamp = true) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // 1. TOP BAR GREETINGS & SEARCH
@@ -323,46 +331,13 @@ fun HomeScreen(
             val iconBtnBgColor = if (isDark) Color(0xFF2B2D31) else Color(0xFFF4F4F4)
             val iconCloseTint = if (isDark) Color.LightGray else Color.DarkGray
 
-            GlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!isSearchExpanded) {
-                    Column(
-                        modifier = Modifier.animateContentSize()
-                    ) {
-                        Text(
-                            text = "我的书架",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = glassTitleColor(),
-                            fontFamily = FontFamily.Serif
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "欢迎回到私人数字书库",
-                            fontSize = 12.sp,
-                            color = glassTitleColor().copy(alpha = 0.75f),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                // Smoothly animated Expandable Search bar
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End,
-                    modifier = Modifier.weight(if (isSearchExpanded) 1f else 0.5f)
-                ) {
+            TabScreenHeader(
+                collapsed = homeHeaderCollapsed,
+                title = "我的书架",
+                subtitle = "欢迎回到私人数字书库",
+                titleColor = glassTitleColor(),
+                titleVisible = !isSearchExpanded,
+                trailing = {
                     AnimatedVisibility(
                         visible = isSearchExpanded,
                         enter = expandHorizontally(expandFrom = Alignment.End) + fadeIn(),
@@ -400,10 +375,8 @@ fun HomeScreen(
                             }
                         )
                     }
-
                 }
-            }
-            }
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -456,9 +429,6 @@ fun HomeScreen(
                 // RICH PREMIUM CONTENT STATE
                 val screenWidthDp = LocalConfiguration.current.screenWidthDp
                 val cols = if (screenWidthDp > 600) 4 else 3
-                // 主书架滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
-                val homeGridState = rememberLazyGridState()
-                homeGridState.scrollTiltSource()
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(cols),

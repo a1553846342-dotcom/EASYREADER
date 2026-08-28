@@ -107,6 +107,8 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
+import com.example.ui.components.TabScreenHeader
+import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.PlayPauseMorphButton
 import com.example.ui.components.filmGrain
 import com.example.ui.components.iridescentBorder
@@ -240,8 +242,24 @@ fun LibraryScreen(
         }
     }
 
+    var searchFieldFocused by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val staggeredGridState = rememberLazyStaggeredGridState()
+    // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
+    listState.scrollTiltSource()
+    staggeredGridState.scrollTiltSource()
+
+    // 滚动联动折叠头部（四 Tab 统一）：滚过约 20dp 收起，回顶恢复；搜索聚焦强制收起给结果让位
+    val libraryHeaderCollapsed = rememberHeaderCollapsed(staggeredGridState) ||
+        rememberHeaderCollapsed(listState) || searchFieldFocused
+
     val performSearch: (String) -> Unit = { keyword ->
         if (keyword.isNotBlank()) {
+            // 新搜索从顶部开始：结果首屏回到中上部（修复视觉重心下移）
+            scope.launch {
+                staggeredGridState.scrollToItem(0)
+                listState.scrollToItem(0)
+            }
             viewModel.recordSearch(keyword)
             if (aggregateMode) {
                 viewModel.aggregateSearch(keyword)
@@ -250,10 +268,10 @@ fun LibraryScreen(
             }
         }
     }
-    
+
     val hasSeenWelcome by viewModel.hasSeenWelcome.collectAsState()
     val isCurrentSourceLoggedIn by viewModel.isCurrentSourceLoggedIn.collectAsState()
-    
+
     // Filter environment-only sources in production UI
     val visibleSources = remember(availableSources) {
         availableSources.filter { !it.capabilities.environmentOnly }
@@ -261,14 +279,8 @@ fun LibraryScreen(
 
     var loginDialogSource by remember { mutableStateOf<BookSource?>(null) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchFieldFocused by remember { mutableStateOf(false) }
     var showSourceSheet by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    val listState = rememberLazyListState()
-    val staggeredGridState = rememberLazyStaggeredGridState()
-    // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
-    listState.scrollTiltSource()
-    staggeredGridState.scrollTiltSource()
 
     // 页面滚动时同步收起搜索历史面板
     LaunchedEffect(listState) {
@@ -384,39 +396,14 @@ fun LibraryScreen(
                         if (showLoginDialog || showDownloadPanel) Modifier.haze(hazeState) else Modifier
                     )
             ) {
-            // 仿书架页顶部栏：毛玻璃卡 + Serif 标题层级（HomeScreen 顶部栏同款）
-            GlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "书库",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = glassTitleColor(),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "LIBRARY & SEARCH",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = glassTitleColor().copy(alpha = 0.75f),
-                            letterSpacing = 1.5.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
+            // 滚动联动折叠头部（与统计/设置/书架统一）：滚过约 20dp 收起，副标题淡出，标题保留位置感
+            TabScreenHeader(
+                collapsed = libraryHeaderCollapsed,
+                modifier = Modifier.statusBarsPadding(),
+                title = "书库",
+                subtitle = "LIBRARY & SEARCH",
+                titleColor = glassTitleColor(),
+                trailing = {
                     val latestSt = activeDownloadBook?.let { downloadStates[it.id] }
                     val comicActive = comicDownloading.isNotEmpty()
                     IconButton(onClick = { showDownloadPanel = !showDownloadPanel }) {
@@ -446,15 +433,23 @@ fun LibraryScreen(
                         }
                     }
                 }
-            }
+            )
             
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(0.dp)
+                    // 根因修复：键盘弹出时压缩本布局而非覆盖（此前无 imePadding，结果网格被键盘遮住约 40% 屏高）
+                    .imePadding()
             ) {
                 // Source Selector & Search
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // 搜索聚焦时书源选择行收起（返回键或失焦即恢复），给搜索框与结果让出首屏
+                    AnimatedVisibility(
+                        visible = !searchFieldFocused,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -484,6 +479,7 @@ fun LibraryScreen(
                                 }
                             )
                         }
+                    }
                     }
 
                     SearchBar(
@@ -637,7 +633,7 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp,
-                            top = 12.dp,
+                            top = 8.dp,
                             end = 16.dp,
                             bottom = 16.dp + extraBottomPadding
                         ),
@@ -815,7 +811,7 @@ fun LibraryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
+                        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(searchResults, key = { it.id }) { book ->
