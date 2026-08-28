@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -44,6 +47,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.CubicBezierEasing
@@ -283,6 +288,37 @@ fun LibraryScreen(
                     focusManager.clearFocus()
                 }
             }
+    }
+
+    // 聚合结果「源速跳」：面板开关 / 当前所处源组 / 流式结果跳转防漂移目标
+    var showJumpSheet by remember { mutableStateOf(false) }
+    var pendingJumpSourceId by remember { mutableStateOf<String?>(null) }
+    val aggResults = uiState as? LibraryUiState.AggregateResults
+    val activeGroupIdx by remember(aggResults?.groups) {
+        derivedStateOf {
+            val groups = aggResults?.groups ?: return@derivedStateOf -1
+            val first = staggeredGridState.firstVisibleItemIndex
+            var acc = 0
+            var result = groups.lastIndex
+            groups.forEachIndexed { i, g ->
+                if (first >= acc) result = i
+                acc += 1 + aggregateGroupItemCount(g)
+            }
+            result
+        }
+    }
+
+    // 跳转后数据仍在流式刷新（加载组完成会改变 item 数）→ 数据一变就对准目标组头，直至该组加载完成
+    LaunchedEffect(aggResults?.groups) {
+        val targetId = pendingJumpSourceId ?: return@LaunchedEffect
+        val groups = aggResults?.groups ?: return@LaunchedEffect
+        val idx = groups.indexOfFirst { it.sourceId == targetId }
+        if (idx < 0) {
+            pendingJumpSourceId = null
+            return@LaunchedEffect
+        }
+        staggeredGridState.scrollToItem(groupHeaderIndex(groups, idx))
+        if (!groups[idx].loading) pendingJumpSourceId = null
     }
 
     loginDialogSource?.let { src ->
@@ -594,12 +630,11 @@ fun LibraryScreen(
 
                 if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
                     val agg = uiState as LibraryUiState.AggregateResults
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(2),
                         state = staggeredGridState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             top = 12.dp,
@@ -617,7 +652,8 @@ fun LibraryScreen(
                                 AggregateSourceHeader(
                                     name = group.sourceName,
                                     loading = group.loading,
-                                    resultCount = group.books.size
+                                    resultCount = group.books.size,
+                                    onClick = { showJumpSheet = true }
                                 )
                             }
                             if (group.loading) {
@@ -664,6 +700,51 @@ fun LibraryScreen(
                                 )
                             }
                         }
+                    }
+                    // 聚合结果回顶：滑过一屏后浮现，点击回到搜索顶部
+                    val showTopFab by remember {
+                        derivedStateOf { staggeredGridState.firstVisibleItemIndex > 8 }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showTopFab,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 20.dp, bottom = extraBottomPadding + 16.dp),
+                        enter = scaleIn(
+                            initialScale = 0.6f,
+                            animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                        ) + fadeIn(),
+                        exit = scaleOut(targetScale = 0.6f) + fadeOut()
+                    ) {
+                        SmallFloatingActionButton(
+                            onClick = { scope.launch { staggeredGridState.animateScrollToItem(0) } },
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MintPrimary,
+                            shape = CircleShape,
+                            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp)
+                        ) {
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = "回到顶部")
+                        }
+                    }
+                    }
+                    if (showJumpSheet) {
+                        AggregateJumpSheet(
+                            groups = agg.groups,
+                            activeGroupIdx = activeGroupIdx,
+                            onDismiss = { showJumpSheet = false },
+                            onJump = { idx ->
+                                showJumpSheet = false
+                                scope.launch {
+                                    if (idx < 0) {
+                                        pendingJumpSourceId = null
+                                        staggeredGridState.animateScrollToItem(0)
+                                    } else {
+                                        pendingJumpSourceId = agg.groups[idx].sourceId
+                                        staggeredGridState.animateScrollToItem(groupHeaderIndex(agg.groups, idx))
+                                    }
+                                }
+                            }
+                        )
                     }
                 } else if (isSearching) {
                     Box(
@@ -2090,7 +2171,8 @@ private fun AggregateSourceHeader(
     name: String,
     loading: Boolean,
     resultCount: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
@@ -2102,7 +2184,8 @@ private fun AggregateSourceHeader(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(20.dp)
             )
-            .background(MaterialTheme.colorScheme.surface),
+            .background(MaterialTheme.colorScheme.surface)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -2142,6 +2225,163 @@ private fun AggregateSourceHeader(
                         color = MintPrimary,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                     )
+                }
+            }
+            if (onClick != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    Icons.Filled.UnfoldMore,
+                    contentDescription = "打开源组跳转面板",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+            }
+        }
+    }
+}
+
+/** 每个源组在 StaggeredGrid 占用的 item 数：组头 + (shimmer×4 | 书卡 | 错误卡)，与网格 emit 逻辑一一对应。 */
+private fun aggregateGroupItemCount(group: LibraryUiState.AggregateGroup): Int = when {
+    group.loading -> 4
+    group.books.isNotEmpty() -> group.books.size
+    else -> 1
+}
+
+/** 目标源组组头的 item index（跳转定位用）。 */
+private fun groupHeaderIndex(groups: List<LibraryUiState.AggregateGroup>, target: Int): Int {
+    var index = 0
+    for (i in 0 until target.coerceIn(0, groups.lastIndex)) {
+        index += 1 + aggregateGroupItemCount(groups[i])
+    }
+    return index
+}
+
+/**
+ * 「源速跳」面板：列出全部源组（头像 + 名称 + 数量/状态 + 当前位置标记）与「回到搜索顶部」。
+ * 由组头胶囊点击唤起，选中后弹性滚动直达对应组头。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AggregateJumpSheet(
+    groups: List<LibraryUiState.AggregateGroup>,
+    activeGroupIdx: Int,
+    onDismiss: () -> Unit,
+    onJump: (Int) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxHeight(0.6f)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "跳转到源组",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 6.dp)) {
+                item(key = "jump_top") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onJump(-1) },
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "回到搜索顶部",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(groups, key = { _, g -> "jump_${g.sourceId}" }) { idx, group ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onJump(idx) },
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SourceAvatar(
+                                sourceId = "agg_${group.sourceName}",
+                                sourceName = group.sourceName,
+                                size = 28.dp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                group.sourceName,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            when {
+                                group.loading -> ChasingDots(size = 14.dp, color = MintPrimary)
+                                group.books.isNotEmpty() -> Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MintPrimary.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        "${group.books.size}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MintPrimary,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                                else -> Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = "无结果",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            if (idx == activeGroupIdx) {
+                                Icon(Icons.Filled.CheckCircle, "当前位置", tint = MintPrimary, modifier = Modifier.size(18.dp))
+                            } else {
+                                Spacer(Modifier.width(18.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
