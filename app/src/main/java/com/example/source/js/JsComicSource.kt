@@ -34,7 +34,7 @@ internal fun friendlyJsSourceError(raw: String): String {
             text.contains("Connection reset", ignoreCase = true) ||
             text.contains("SocketException", ignoreCase = true) ||
             text.contains("Unable to resolve host", ignoreCase = true) ->
-            "网络连接失败：被墙的源需要在书源管理中配置 JS 源代理"
+            "网络连接失败：该源被墙，请在系统代理或 VPN 环境下使用"
         else -> text.take(120)
     }
 }
@@ -394,7 +394,7 @@ class JsComicSource(
                             raw.contains("timed out", ignoreCase = true) ||
                             raw.contains("timeout", ignoreCase = true) ||
                             raw.contains("请求超时") ->
-                            "登录失败：网络无法连接该源（被墙的源需在书源管理中配置 JS 源代理）"
+                            "登录失败：网络无法连接该源（该源被墙，请开系统代理或 VPN）"
                         else -> "登录失败：${friendlyJsSourceError(raw)}"
                     }
                     SourceResult.Error(SourceException.Unknown(msg))
