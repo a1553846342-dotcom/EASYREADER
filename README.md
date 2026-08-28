@@ -30,7 +30,7 @@ TXT / EPUB / 漫画阅读
 
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
-![Release](https://img.shields.io/badge/Release-v0.99.18-orange)
+![Release](https://img.shields.io/badge/Release-v1.0.0-orange)
 ![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)
@@ -144,6 +144,7 @@ TXT / EPUB / 漫画阅读
 <summary>🌟 其他亮点</summary>
 
 - **液态玻璃整套 UI**：悬浮收缩 Tab 栏（真实背景模糊 + 虹彩描边 + 自动对比色图标）、亚克力弹窗、果冻开关、凝胶按钮、ChasingDots 加载动画。
+- **整卡 3D 视觉与物理反馈**：玻璃卡片像跷跷板一样随按压倾斜、随滚动手势惯性摆动并极软回正；配合固定光源的 AGSL 法线光照压痕（Android 13+，低版本自动降级为渐变模拟），整套 UI 有真实“玻璃厚度”。
 - **吉祥物动画**：蓝发巫师少女 Roxy 五套姿态（待机/欢呼/奔跑/捧书/低落）按场景自动切换，配合呼吸、漂浮、弹跳、抖动等微动效，让 App 有点人情味。
 
 </details>
@@ -166,7 +167,7 @@ TXT / EPUB / 漫画阅读
 
 ### ① Release / APK 直装（推荐）
 
-1. 前往本仓库 **Releases** 下载 `app-release.apk`（约 7.6MB，arm64-v8a）。
+1. 前往本仓库 **Releases** 下载 `app-release.apk`（约 8.1MB，arm64-v8a）。
 2. 手机系统设置中允许「安装未知来源应用」。
 3. 打开 APK 按提示安装；华为设备按系统流程确认风险提示即可。
 
@@ -214,7 +215,7 @@ APK 输出路径：`app/build/outputs/apk/release/app-release.apk`
 
 ### 如何配置阅读设置
 
-阅读器内点屏幕中央呼出工具栏：字号、行距、页边距、主题、翻页模式、定时休息都在这里；全局护眼强度、夜间模式、屏幕方向在设置页统一管理。
+阅读器内点屏幕中央呼出工具栏 →「阅读排版」：亮度、首行缩进、字号步进（A−/A+）、行距、页边距、五套主题预览卡、五种翻页模式都在同一面板，面板半透明设计可边调边对照书页；支持直接导入 TTF 字体文件。全局护眼强度、夜间模式、屏幕方向、渲染画质在设置页统一管理。
 
 ### Z-Library 登录与下载
 
@@ -249,6 +250,7 @@ app/src/main/java/com/example/
 ### 核心模块说明
 
 - **架构**：MVVM + StateFlow + Repository；单一 Activity + Navigation Compose。
+- **存储管理**：应用内可视化存储统计（应用总占用 = 缓存/用户数据/书籍数据/其他精确分段），缓存一键清理零风险，离线数据删除需确认且下载进行中自动拦截。
 - **书源体系**：所有书源统一实现 `BookSource` 接口，网络层由 OkHttp 拦截器链处理 DiamWall/Cloudflare 验证。
 - **下载**：WorkManager 后台任务，任务状态实时广播，页面切换不中断。
 - **渲染**：LiquidGlass + KMPLiquidGlass 提供真实背景采样与毛玻璃；`backdrop`/`liquidglass-*` 均为 vendored 源码，无需外部 Maven 私有仓库。
@@ -293,17 +295,17 @@ app/src/main/java/com/example/
 书库 → 帮助手册 →「查看 JSON 模板」；规则兼容 Legado 的 `@css:` / `@json:` 语法。
 
 **Q8：APK 为什么只有 arm64？**
-为把体积压到 7.6MB，Release 只打包 arm64-v8a（覆盖近三年主流设备）；模拟器请使用 Debug 包或自行调整 `abiFilters`。
+为把体积压到 8.1MB，Release 只打包 arm64-v8a（覆盖近三年主流设备）；模拟器请使用 Debug 包或自行调整 `abiFilters`。
 
 ---
 
 ## 8. 🗺️ Roadmap / 后续计划
 
 - [x] MOBI / AZW3 / AZW 格式支持（已支持：正文解析、封面提取、DRM 检测）
+- [x] 自定义字体包导入（阅读器「阅读排版」内直接导入 TTF）
 - [ ] PDF 文本解析支持（当前 PDF 仅支持漫画按页渲染）
 - [ ] 阅读记录 JSON 导出 / 导入
 - [ ] WebDAV 云同步
-- [ ] 自定义字体包导入
 - [ ] 音量键翻页、屏幕常亮快捷开关
 - [ ] 电子墨水模式、全局手势自定义
 - [ ] 更多内置漫画源与特殊漫画源连通性优化
@@ -349,3 +351,30 @@ app/src/main/java/com/example/
 ## 12. 📄 License
 
 本仓库当前**未附带开源许可证（All Rights Reserved）**，代码仅作学习交流。第三方组件分别遵循其自身许可证（Apache-2.0 / MIT / GPL-3.0）。如需商用或二次分发，请联系作者获取授权。
+
+---
+
+## 13. 🕹️ 更新日志
+
+### v1.0.0（2026-08-28）
+
+**阅读体验**
+
+- 「阅读排版」面板全新设计：显示 / 文字 / 阅读主题 / 翻页四组卡片布局，字号步进器（A−/A+）、字体选择列表按对应字体实时渲染示例、主题预览卡片化，面板半透明可边调边对照书页。
+- 移除「薄荷」阅读主题（与白底渲染重复），保留白底 / 羊皮 / 夜间 / 护眼 / 纯黑五套。
+- 修复：打开书籍时若恢复的进度停在最后一章最后一页，会误触发“读完庆祝”动画；现在需要本次阅读中真正翻回末页才庆祝。
+
+**视觉与动效**
+
+- 整卡 3D 视觉：玻璃卡片随按压跷跷板倾斜、随滚动惯性摆动并极软回正；固定光源 AGSL 法线光照压痕（Android 13+，低版本自动降级渐变模拟）。
+
+**存储管理**
+
+- 缓存管理重写为三区安全模型：缓存区一键即时清理（零风险，进行中的分享/导入自动保留）；离线书籍/漫画/封面/网页浏览数据等用户数据删除需确认并量化后果；书籍数据与设置只读。
+- 统计口径修正：应用总占用精确覆盖缓存、离线内容、封面、个性化文件、书源、数据库等九个分量，「其他」杂项兜底使总数自洽；新增设备剩余空间显示与清理实测释放量反馈；下载进行中自动拦截删除。
+
+**修复与优化**
+
+- 修复：自定义软件背景 / 开屏海报更换后不生效（唯一文件名 + 旧文件清理，杜绝缓存去重失效）。
+- 修复：书库手册「清除下载临时文件」清错目录，现精确清理 `downloads/*.tmp` 且移至后台线程。
+- 精简设置页多处冗余说明文案；版本号升级至 1.0.0。
