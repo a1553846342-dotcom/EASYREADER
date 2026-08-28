@@ -125,6 +125,10 @@ class JsComicSource(
                 if (!obj.optBoolean("ok")) {
                     val err = obj.optString("error", "JS 执行失败")
                     Log.w("JsComic[$sourceKey]", "call error: $err")
+                    // 号码牌直达：源搜索接口报错（部分源对纯数字 ID 无搜索结果甚至报错）时，按 ID 直接加载详情
+                    numericIdFallback(keyword)?.let {
+                        return@withContext SourceResult.Success(listOf(it))
+                    }
                     return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val comics = obj.optJSONObject("data")?.optJSONArray("comics") ?: JSONArray()
@@ -149,12 +153,52 @@ class JsComicSource(
                         format = "漫画"
                     )
                 }
+                // 号码牌直达：搜索结果为空且关键词是纯数字号牌时，按 ID 直接加载详情
+                if (books.isEmpty()) {
+                    numericIdFallback(keyword)?.let {
+                        return@withContext SourceResult.Success(listOf(it))
+                    }
+                }
                 SourceResult.Success(books)
             } catch (e: Exception) {
                 Log.e("JsComic[$sourceKey]", "search failed", e)
                 SourceResult.Error(SourceException.Unknown("JS 搜索失败: ${e.message}", e))
             }
         }
+
+    /**
+     * 号码牌直达：部分漫画源的搜索接口对纯数字 ID 无结果（原 App 里这类输入会直接跳转到
+     * 漫画页面），这里用 comic.loadInfo 按号牌直接加载详情并作为单条搜索结果返回，
+     * 点开即进入漫画页。仅当关键词是纯数字号牌（可带 # 前缀，1~15 位）时尝试一次；
+     * 失败或源不支持则返回 null，维持原有搜索结果——正常关键词搜索永远不会走到这里。
+     */
+    private suspend fun numericIdFallback(keyword: String): SearchBook? {
+        val numericId = keyword.trim().removePrefix("#")
+        if (!numericId.matches(Regex("\\d{1,15}"))) return null
+        return try {
+            val obj = callJs("src.comic.loadInfo.call(src, ${q(numericId)})") ?: return null
+            if (!obj.optBoolean("ok")) return null
+            val data = obj.optJSONObject("data") ?: return null
+            val title = data.optString("title").trim()
+            if (title.isBlank()) return null
+            Log.i("JsComic[$sourceKey]", "号码牌直达命中: $numericId → $title")
+            SearchBook(
+                id = numericId,
+                sourceId = id,
+                title = title,
+                author = data.optString("subTitle").ifBlank {
+                    data.optString("author").ifBlank { "未知作者" }
+                },
+                cover = data.optString("cover").ifBlank { null },
+                description = data.optString("description").ifBlank { null },
+                comicId = numericId,
+                format = "漫画"
+            )
+        } catch (e: Exception) {
+            Log.w("JsComic[$sourceKey]", "号码牌直达尝试失败: ${e.message}")
+            null
+        }
+    }
 
     override suspend fun getChapters(bookId: String): SourceResult<List<ComicChapter>> =
         withContext(Dispatchers.IO) {
