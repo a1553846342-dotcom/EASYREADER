@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +44,8 @@ import com.example.data.ReadingSession
 import com.example.ui.components.AcrylicBottomOverlay
 import com.example.ui.components.GlassCard
 import com.example.ui.components.SegmentedPillSelector
+import com.example.ui.components.TabScreenHeader
+import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.ReadingCalendarCard
 import com.example.ui.components.ReadingTrendCard
 import com.example.ui.components.WeeklyReadingChart
@@ -106,45 +109,26 @@ fun StatisticsScreen(
                 else MaterialTheme.colorScheme.background
             )
     ) {
+        // 滚动联动折叠头部：此前 LazyColumn 无 state 可挂，先补 state（代理B方案挂点）
+        val statisticsListState = rememberLazyListState()
+        val statsHeaderCollapsed = rememberHeaderCollapsed(statisticsListState)
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                // 与书架/设置页统一：固定顶栏（statusBarsPadding + 24dp 玻璃卡，不随内容滚走）
-                GlassCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                    ) {
-                        Text(
-                            text = "阅读统计",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = glassTitleColor(),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "STATISTICS & INSIGHTS",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = glassTitleColor().copy(alpha = 0.75f),
-                            letterSpacing = 1.5.sp
-                        )
-                    }
-                }
+                TabScreenHeader(
+                    collapsed = statsHeaderCollapsed,
+                    modifier = Modifier.statusBarsPadding(),
+                    title = "阅读统计",
+                    subtitle = "STATISTICS & INSIGHTS",
+                    titleColor = glassTitleColor()
+                )
             }
         ) { padding ->
             // 性能优化（视觉零变化）：原为普通 Column+verticalScroll，
             // 5 张玻璃卡 + 3 个图表在滚动时全部参与绘制命令录制（低端机卡顿主因）。
             // 改 LazyColumn 后屏幕外的卡片/图表不再组合与绘制，布局顺序间距完全一致。
             LazyColumn(
+                state = statisticsListState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)

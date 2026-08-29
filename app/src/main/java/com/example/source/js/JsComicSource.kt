@@ -16,6 +16,29 @@ import java.io.File
  * 一个 Venera 兼容的 JS 漫画源。
  * 通过 JsSourceEngine 调用源脚本的 search.load / comic.loadInfo / comic.loadEp。
  */
+
+/**
+ * 把 JS 源桥层的原始错误翻译成用户能看懂、能行动的中文提示。
+ * 此前聚合搜索把所有非超时错误一律显示成「无结果」，真实原因（被墙需代理/需登录/登录过期）完全不可见。
+ */
+internal fun friendlyJsSourceError(raw: String): String {
+    val text = raw.trim()
+    return when {
+        text.isEmpty() -> "JS 执行失败"
+        text.contains("Not logged in", ignoreCase = true) -> "该源需要登录：请在书源管理中登录"
+        text.contains("Invalid status code: 401") -> "登录已过期：请在书源管理中重新登录"
+        text.contains("ERR_", ignoreCase = true) ||
+            text.contains("timed out", ignoreCase = true) ||
+            text.contains("timeout", ignoreCase = true) ||
+            text.contains("请求超时") ||
+            text.contains("Connection reset", ignoreCase = true) ||
+            text.contains("SocketException", ignoreCase = true) ||
+            text.contains("Unable to resolve host", ignoreCase = true) ->
+            "网络连接失败：该源被墙，请在系统代理或 VPN 环境下使用"
+        else -> text.take(120)
+    }
+}
+
 class JsComicSource(
     private val context: Context,
     val sourceKey: String,
@@ -100,7 +123,13 @@ class JsComicSource(
                 val obj = callJsWithRetry("src.search.load.call(src, ${q(keyword)}, [], 1)")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    // 号码牌直达：源搜索接口报错（部分源对纯数字 ID 无搜索结果甚至报错）时，按 ID 直接加载详情
+                    numericIdFallback(keyword)?.let {
+                        return@withContext SourceResult.Success(listOf(it))
+                    }
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val comics = obj.optJSONObject("data")?.optJSONArray("comics") ?: JSONArray()
                 val books = (0 until comics.length()).mapNotNull { i ->
@@ -124,6 +153,12 @@ class JsComicSource(
                         format = "漫画"
                     )
                 }
+                // 号码牌直达：搜索结果为空且关键词是纯数字号牌时，按 ID 直接加载详情
+                if (books.isEmpty()) {
+                    numericIdFallback(keyword)?.let {
+                        return@withContext SourceResult.Success(listOf(it))
+                    }
+                }
                 SourceResult.Success(books)
             } catch (e: Exception) {
                 Log.e("JsComic[$sourceKey]", "search failed", e)
@@ -131,13 +166,49 @@ class JsComicSource(
             }
         }
 
+    /**
+     * 号码牌直达：部分漫画源的搜索接口对纯数字 ID 无结果（原 App 里这类输入会直接跳转到
+     * 漫画页面），这里用 comic.loadInfo 按号牌直接加载详情并作为单条搜索结果返回，
+     * 点开即进入漫画页。仅当关键词是纯数字号牌（可带 # 前缀，1~15 位）时尝试一次；
+     * 失败或源不支持则返回 null，维持原有搜索结果——正常关键词搜索永远不会走到这里。
+     */
+    private suspend fun numericIdFallback(keyword: String): SearchBook? {
+        val numericId = keyword.trim().removePrefix("#")
+        if (!numericId.matches(Regex("\\d{1,15}"))) return null
+        return try {
+            val obj = callJs("src.comic.loadInfo.call(src, ${q(numericId)})") ?: return null
+            if (!obj.optBoolean("ok")) return null
+            val data = obj.optJSONObject("data") ?: return null
+            val title = data.optString("title").trim()
+            if (title.isBlank()) return null
+            Log.i("JsComic[$sourceKey]", "号码牌直达命中: $numericId → $title")
+            SearchBook(
+                id = numericId,
+                sourceId = id,
+                title = title,
+                author = data.optString("subTitle").ifBlank {
+                    data.optString("author").ifBlank { "未知作者" }
+                },
+                cover = data.optString("cover").ifBlank { null },
+                description = data.optString("description").ifBlank { null },
+                comicId = numericId,
+                format = "漫画"
+            )
+        } catch (e: Exception) {
+            Log.w("JsComic[$sourceKey]", "号码牌直达尝试失败: ${e.message}")
+            null
+        }
+    }
+
     override suspend fun getChapters(bookId: String): SourceResult<List<ComicChapter>> =
         withContext(Dispatchers.IO) {
             try {
                 val obj = callJsWithRetry("src.comic.loadInfo.call(src, ${q(bookId)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val data = obj.optJSONObject("data") ?: return@withContext SourceResult.Error(
                     SourceException.ParseError("JS 源无数据")
@@ -184,7 +255,9 @@ class JsComicSource(
                 val obj = callJsWithRetry("src.comic.loadEp.call(src, ${q(pair.first)}, ${q(pair.second)})")
                     ?: return@withContext SourceResult.Error(SourceException.ParseError("JS 源无响应"))
                 if (!obj.optBoolean("ok")) {
-                    return@withContext SourceResult.Error(SourceException.ParseError(obj.optString("error", "JS 执行失败")))
+                    val err = obj.optString("error", "JS 执行失败")
+                    Log.w("JsComic[$sourceKey]", "call error: $err")
+                    return@withContext SourceResult.Error(SourceException.ParseError(friendlyJsSourceError(err)))
                 }
                 val images = obj.optJSONObject("data")?.optJSONArray("images") ?: JSONArray()
                 val rawUrls = (0 until images.length()).mapNotNull { i ->
@@ -355,9 +428,20 @@ class JsComicSource(
                     getEngine().setLoggedIn(true)
                     SourceResult.Success(true)
                 } else {
-                    SourceResult.Error(
-                        SourceException.Unknown(obj?.optString("error", "登录失败") ?: "登录失败")
-                    )
+                    val raw = obj?.optString("error", "") ?: ""
+                    Log.w("JsComic[$sourceKey]", "login error: $raw")
+                    val msg = when {
+                        raw.isBlank() -> "登录失败：账号或密码错误"
+                        raw.contains("Invalid email", ignoreCase = true) ||
+                            raw.contains("invalid password", ignoreCase = true) -> "登录失败：账号或密码错误"
+                        raw.contains("ERR_", ignoreCase = true) ||
+                            raw.contains("timed out", ignoreCase = true) ||
+                            raw.contains("timeout", ignoreCase = true) ||
+                            raw.contains("请求超时") ->
+                            "登录失败：网络无法连接该源（该源被墙，请开系统代理或 VPN）"
+                        else -> "登录失败：${friendlyJsSourceError(raw)}"
+                    }
+                    SourceResult.Error(SourceException.Unknown(msg))
                 }
             } catch (e: Exception) {
                 SourceResult.Error(SourceException.Unknown("登录失败: ${e.message}", e))

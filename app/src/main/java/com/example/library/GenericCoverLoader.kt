@@ -38,6 +38,8 @@ object GenericCoverLoader {
                 )
             }
         SystemProxyResolver.resolve(context)?.let { clientBuilder.proxy(it) }
+        // JS 源代理路由：命中配置域名（如 picacg）的封面走显式/系统代理，其余直连
+        clientBuilder.proxySelector(com.example.source.js.JsSourceProxy.selector(context))
         return ImageLoader.Builder(context)
             .okHttpClient(clientBuilder.build())
             .crossfade(true)

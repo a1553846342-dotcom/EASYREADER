@@ -92,6 +92,7 @@ fun OnlineComicReaderScreen(
     val imageLoader = remember {
         val client = OkHttpClient.Builder()
             .protocols(listOf(Protocol.HTTP_1_1))
+            .proxySelector(com.example.source.js.JsSourceProxy.selector(context))
             .addInterceptor { chain ->
                 var original = chain.request()
                 if (currentResolveImage != null) {

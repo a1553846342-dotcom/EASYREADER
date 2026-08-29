@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -46,6 +49,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.CubicBezierEasing
@@ -105,6 +110,8 @@ import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
+import com.example.ui.components.TabScreenHeader
+import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.PlayPauseMorphButton
 import com.example.ui.components.filmGrain
 import com.example.ui.components.iridescentBorder
@@ -239,8 +246,24 @@ fun LibraryScreen(
         }
     }
 
+    var searchFieldFocused by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val staggeredGridState = rememberLazyStaggeredGridState()
+    // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
+    listState.scrollTiltSource()
+    staggeredGridState.scrollTiltSource()
+
+    // 滚动联动折叠头部（四 Tab 统一）：滚过约 20dp 收起，回顶恢复；搜索聚焦强制收起给结果让位
+    val libraryHeaderCollapsed = rememberHeaderCollapsed(staggeredGridState) ||
+        rememberHeaderCollapsed(listState) || searchFieldFocused
+
     val performSearch: (String) -> Unit = { keyword ->
         if (keyword.isNotBlank()) {
+            // 新搜索从顶部开始：结果首屏回到中上部（修复视觉重心下移）
+            scope.launch {
+                staggeredGridState.scrollToItem(0)
+                listState.scrollToItem(0)
+            }
             viewModel.recordSearch(keyword)
             if (aggregateMode) {
                 viewModel.aggregateSearch(keyword)
@@ -249,10 +272,10 @@ fun LibraryScreen(
             }
         }
     }
-    
+
     val hasSeenWelcome by viewModel.hasSeenWelcome.collectAsState()
     val isCurrentSourceLoggedIn by viewModel.isCurrentSourceLoggedIn.collectAsState()
-    
+
     // Filter environment-only sources in production UI
     val visibleSources = remember(availableSources) {
         availableSources.filter { !it.capabilities.environmentOnly }
@@ -260,14 +283,8 @@ fun LibraryScreen(
 
     var loginDialogSource by remember { mutableStateOf<BookSource?>(null) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchFieldFocused by remember { mutableStateOf(false) }
     var showSourceSheet by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    val listState = rememberLazyListState()
-    val staggeredGridState = rememberLazyStaggeredGridState()
-    // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
-    listState.scrollTiltSource()
-    staggeredGridState.scrollTiltSource()
 
     // 页面滚动时同步收起搜索历史面板
     LaunchedEffect(listState) {
@@ -287,6 +304,37 @@ fun LibraryScreen(
                     focusManager.clearFocus()
                 }
             }
+    }
+
+    // 聚合结果「源速跳」：面板开关 / 当前所处源组 / 流式结果跳转防漂移目标
+    var showJumpSheet by remember { mutableStateOf(false) }
+    var pendingJumpSourceId by remember { mutableStateOf<String?>(null) }
+    val aggResults = uiState as? LibraryUiState.AggregateResults
+    val activeGroupIdx by remember(aggResults?.groups) {
+        derivedStateOf {
+            val groups = aggResults?.groups ?: return@derivedStateOf -1
+            val first = staggeredGridState.firstVisibleItemIndex
+            var acc = 0
+            var result = groups.lastIndex
+            groups.forEachIndexed { i, g ->
+                if (first >= acc) result = i
+                acc += 1 + aggregateGroupItemCount(g)
+            }
+            result
+        }
+    }
+
+    // 跳转后数据仍在流式刷新（加载组完成会改变 item 数）→ 数据一变就对准目标组头，直至该组加载完成
+    LaunchedEffect(aggResults?.groups) {
+        val targetId = pendingJumpSourceId ?: return@LaunchedEffect
+        val groups = aggResults?.groups ?: return@LaunchedEffect
+        val idx = groups.indexOfFirst { it.sourceId == targetId }
+        if (idx < 0) {
+            pendingJumpSourceId = null
+            return@LaunchedEffect
+        }
+        staggeredGridState.scrollToItem(groupHeaderIndex(groups, idx))
+        if (!groups[idx].loading) pendingJumpSourceId = null
     }
 
     loginDialogSource?.let { src ->
@@ -352,39 +400,14 @@ fun LibraryScreen(
                         if (showLoginDialog || showDownloadPanel) Modifier.haze(hazeState) else Modifier
                     )
             ) {
-            // 仿书架页顶部栏：毛玻璃卡 + Serif 标题层级（HomeScreen 顶部栏同款）
-            GlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "书库",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = glassTitleColor(),
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "LIBRARY & SEARCH",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = glassTitleColor().copy(alpha = 0.75f),
-                            letterSpacing = 1.5.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
+            // 滚动联动折叠头部（与统计/设置/书架统一）：滚过约 20dp 收起，副标题淡出，标题保留位置感
+            TabScreenHeader(
+                collapsed = libraryHeaderCollapsed,
+                modifier = Modifier.statusBarsPadding(),
+                title = "书库",
+                subtitle = "LIBRARY & SEARCH",
+                titleColor = glassTitleColor(),
+                trailing = {
                     val latestSt = activeDownloadBook?.let { downloadStates[it.id] }
                     val comicActive = comicDownloading.isNotEmpty()
                     IconButton(onClick = { showDownloadPanel = !showDownloadPanel }) {
@@ -414,15 +437,23 @@ fun LibraryScreen(
                         }
                     }
                 }
-            }
+            )
             
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(0.dp)
+                    // 根因修复：键盘弹出时压缩本布局而非覆盖（此前无 imePadding，结果网格被键盘遮住约 40% 屏高）
+                    .imePadding()
             ) {
                 // Source Selector & Search
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // 搜索聚焦时书源选择行收起（返回键或失焦即恢复），给搜索框与结果让出首屏
+                    AnimatedVisibility(
+                        visible = !searchFieldFocused,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -453,6 +484,7 @@ fun LibraryScreen(
                                 }
                             )
                         }
+                    }
                     }
 
                     SearchBar(
@@ -602,15 +634,14 @@ fun LibraryScreen(
                     // 各源分组折叠状态：默认展开，点击组头切换
                     val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
                     LaunchedEffect(searchQuery) { collapsedGroups.clear() }
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(2),
                         state = staggeredGridState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
                             start = 16.dp,
-                            top = 12.dp,
+                            top = 8.dp,
                             end = 16.dp,
                             bottom = 16.dp + extraBottomPadding
                         ),
@@ -630,7 +661,8 @@ fun LibraryScreen(
                                     onToggle = {
                                         collapsedGroups[group.sourceId] =
                                             !(collapsedGroups[group.sourceId] == true)
-                                    }
+                                    },
+                                    onClick = { showJumpSheet = true }
                                 )
                             }
                             if (collapsedGroups[group.sourceId] != true) when {
@@ -682,6 +714,51 @@ fun LibraryScreen(
                                 )
                             }
                         }
+                    }
+                    // 聚合结果回顶：滑过一屏后浮现，点击回到搜索顶部
+                    val showTopFab by remember {
+                        derivedStateOf { staggeredGridState.firstVisibleItemIndex > 8 }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showTopFab,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 20.dp, bottom = extraBottomPadding + 16.dp),
+                        enter = scaleIn(
+                            initialScale = 0.6f,
+                            animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                        ) + fadeIn(),
+                        exit = scaleOut(targetScale = 0.6f) + fadeOut()
+                    ) {
+                        SmallFloatingActionButton(
+                            onClick = { scope.launch { staggeredGridState.animateScrollToItem(0) } },
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MintPrimary,
+                            shape = CircleShape,
+                            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp)
+                        ) {
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = "回到顶部")
+                        }
+                    }
+                    }
+                    if (showJumpSheet) {
+                        AggregateJumpSheet(
+                            groups = agg.groups,
+                            activeGroupIdx = activeGroupIdx,
+                            onDismiss = { showJumpSheet = false },
+                            onJump = { idx ->
+                                showJumpSheet = false
+                                scope.launch {
+                                    if (idx < 0) {
+                                        pendingJumpSourceId = null
+                                        staggeredGridState.animateScrollToItem(0)
+                                    } else {
+                                        pendingJumpSourceId = agg.groups[idx].sourceId
+                                        staggeredGridState.animateScrollToItem(groupHeaderIndex(agg.groups, idx))
+                                    }
+                                }
+                            }
+                        )
                     }
                 } else if (isSearching) {
                     Box(
@@ -757,7 +834,7 @@ fun LibraryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
+                        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(searchResults, key = { it.id }) { book ->
@@ -924,10 +1001,19 @@ fun LibraryScreen(
                 onSelectAggregate = { kind ->
                     viewModel.setAggregateMode(true)
                     viewModel.setAggregateKind(kind)
+                    // 双状态残留修复：切模式后非活跃视图的滚动位置不清零会让折叠头部错误保持收起
+                    scope.launch {
+                        staggeredGridState.scrollToItem(0)
+                        listState.scrollToItem(0)
+                    }
                     showSourceSheet = false
                 },
                 onSelectSource = { id ->
                     viewModel.selectSource(id)
+                    scope.launch {
+                        staggeredGridState.scrollToItem(0)
+                        listState.scrollToItem(0)
+                    }
                     showSourceSheet = false
                 },
                 onManageSources = {
@@ -2194,7 +2280,8 @@ private fun AggregateSourceHeader(
     resultCount: Int,
     collapsed: Boolean = false,
     onToggle: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier
@@ -2207,7 +2294,8 @@ private fun AggregateSourceHeader(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(20.dp)
             )
-            .background(MaterialTheme.colorScheme.surface),
+            .background(MaterialTheme.colorScheme.surface)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -2259,7 +2347,164 @@ private fun AggregateSourceHeader(
                     modifier = Modifier.size(20.dp)
                 )
             }
+            if (onClick != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    Icons.Filled.UnfoldMore,
+                    contentDescription = "打开源组跳转面板",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+            }
             Spacer(modifier = Modifier.width(8.dp))
+        }
+    }
+}
+
+/** 每个源组在 StaggeredGrid 占用的 item 数：组头 + (shimmer×4 | 书卡 | 错误卡)，与网格 emit 逻辑一一对应。 */
+private fun aggregateGroupItemCount(group: LibraryUiState.AggregateGroup): Int = when {
+    group.loading -> 4
+    group.books.isNotEmpty() -> group.books.size
+    else -> 1
+}
+
+/** 目标源组组头的 item index（跳转定位用）。 */
+private fun groupHeaderIndex(groups: List<LibraryUiState.AggregateGroup>, target: Int): Int {
+    var index = 0
+    for (i in 0 until target.coerceIn(0, groups.lastIndex)) {
+        index += 1 + aggregateGroupItemCount(groups[i])
+    }
+    return index
+}
+
+/**
+ * 「源速跳」面板：列出全部源组（头像 + 名称 + 数量/状态 + 当前位置标记）与「回到搜索顶部」。
+ * 由组头胶囊点击唤起，选中后弹性滚动直达对应组头。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AggregateJumpSheet(
+    groups: List<LibraryUiState.AggregateGroup>,
+    activeGroupIdx: Int,
+    onDismiss: () -> Unit,
+    onJump: (Int) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxHeight(0.6f)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "跳转到源组",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "关闭", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 6.dp)) {
+                item(key = "jump_top") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onJump(-1) },
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.ArrowUpward, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "回到搜索顶部",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(groups, key = { _, g -> "jump_${g.sourceId}" }) { idx, group ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { onJump(idx) },
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SourceAvatar(
+                                sourceId = "agg_${group.sourceName}",
+                                sourceName = group.sourceName,
+                                size = 28.dp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                group.sourceName,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            when {
+                                group.loading -> ChasingDots(size = 14.dp, color = MintPrimary)
+                                group.books.isNotEmpty() -> Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MintPrimary.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        "${group.books.size}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MintPrimary,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                                else -> Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = "无结果",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            if (idx == activeGroupIdx) {
+                                Icon(Icons.Filled.CheckCircle, "当前位置", tint = MintPrimary, modifier = Modifier.size(18.dp))
+                            } else {
+                                Spacer(Modifier.width(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -2272,6 +2517,12 @@ private fun AggregateSourceError(
     val timedOut = error?.contains("timeout", ignoreCase = true) == true ||
         error?.contains("timed out", ignoreCase = true) == true ||
         error?.contains("超时") == true
+    // 源正常返回空列表（error=null）才是真正的「无结果」；任何真实错误都翻译成可行动的提示
+    val message = when {
+        error.isNullOrBlank() -> "无结果"
+        timedOut -> "链接超时"
+        else -> com.example.source.js.friendlyJsSourceError(error)
+    }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -2291,7 +2542,7 @@ private fun AggregateSourceError(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (timedOut) "链接超时" else "无结果",
+                text = message,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
