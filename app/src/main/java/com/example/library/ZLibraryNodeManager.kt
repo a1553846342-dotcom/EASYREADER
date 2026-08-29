@@ -18,7 +18,9 @@ import java.util.concurrent.TimeUnit
  * - 选择的节点写入 SharedPreferences，并在启动时恢复。
  */
 object ZLibraryNodeManager {
-    const val DEFAULT_NODE = "z-library.sk"
+    // 2026-08-28 实测：zh.101z.by 是入口页，/s/ 搜索会 302 丢路径跳到 101k.by 首页；
+    // 真实镜像站是 zh.101k.by（DiamWall 防护由 App 自动解，免登录可搜索/下载），故默认切到它。
+    const val DEFAULT_NODE = "zh.101k.by"
     const val SCRAPE_URL = "https://z.wwwnav.com/rkfby.html"
 
     private const val PREFS_NAME = "zlib_node_manager"
@@ -26,12 +28,18 @@ object ZLibraryNodeManager {
     private const val KEY_CUSTOM_NODES = "custom_nodes"
     private const val KEY_SELECTED_NODE = "selected_node"
 
-    /** 首次使用即内置的官网/备用入口节点，扒取成功后可替换刷新。 */
+    /** 首次使用即内置的官网/备用入口节点，扒取成功后可替换刷新。
+     *  2026-08-28 实测：z-library.sk / z-lib.by 等官方域名国内超时；
+     *  zh.101k.by 真实镜像（免登录可搜索/下载，实测通过）；tw.101k.by / 101z.by 为入口跳转域。 */
     val INITIAL_SCRAPED_NODES = listOf(
+        "zh.101k.by",
+        "tw.101k.by",
+        "zh.101z.by",
+        "zlib.ch",
+        "zlib.re",
+        "z-lib.sk",
         "z-library.sk",
-        "z-lib.by",
-        "zh.z-library.by",
-        "z-lib.sk"
+        "zh.z-library.by"
     )
 
     private fun prefs(context: Context) =

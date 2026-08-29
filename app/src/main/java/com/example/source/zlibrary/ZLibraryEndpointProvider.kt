@@ -18,11 +18,18 @@ class ZLibraryEndpointProvider(
         private const val CACHE_DURATION_MS = 24 * 60 * 60 * 1000L // 24 hours
         
         // Preset high-availability mirror domains
+        // 2026-08-28 实测：zh.101k.by 为真实镜像（免登录可搜/下载，搜索/详情/下载全链路验证通过）；
+        // zh.101z.by / tw.101k.by 为入口跳转域（/s/ 会 302 丢路径）；旧官方域名国内超时，保留末尾兼容海外。
         val PRESET_DOMAINS = listOf(
+            "zh.101k.by",
+            "tw.101k.by",
+            "zh.101z.by",
+            "zlib.ch",
+            "zlib.re",
+            "z-lib.sk",
             "z-library.sk",
             "z-lib.by",
-            "zh.z-library.by",
-            "z-lib.sk"
+            "zh.z-library.by"
         )
         val FALLBACK_DOMAINS = PRESET_DOMAINS
     }

@@ -1,4 +1,4 @@
-// Gradle build config
+﻿// Gradle build config
 
 plugins {
   id("com.android.application")
@@ -35,8 +35,8 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 193
-    versionName = "1.0.0"
+    versionCode = 194
+    versionName = "1.0.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

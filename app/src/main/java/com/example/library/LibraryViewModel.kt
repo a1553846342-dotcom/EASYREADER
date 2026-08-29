@@ -143,6 +143,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _comicBook = MutableStateFlow<SearchBook?>(null)
     val comicBook: StateFlow<SearchBook?> = _comicBook.asStateFlow()
 
+    /** 章节页是否为文本小说模式（Legado 网文源：点击章节进入文字阅读而非图片阅读） */
+    private val _comicIsTextMode = MutableStateFlow(false)
+    val comicIsTextMode: StateFlow<Boolean> = _comicIsTextMode.asStateFlow()
+
+    private val _novelChapterText = MutableStateFlow("")
+    val novelChapterText: StateFlow<String> = _novelChapterText.asStateFlow()
+
+    private val _novelChapterLoading = MutableStateFlow(false)
+    val novelChapterLoading: StateFlow<Boolean> = _novelChapterLoading.asStateFlow()
+
+    private val _novelChapterError = MutableStateFlow<String?>(null)
+    val novelChapterError: StateFlow<String?> = _novelChapterError.asStateFlow()
+
+    private val _activeNovelChapter = MutableStateFlow<ComicChapter?>(null)
+    val activeNovelChapter: StateFlow<ComicChapter?> = _activeNovelChapter.asStateFlow()
+
     private val _comicChapters = MutableStateFlow<List<ComicChapter>>(emptyList())
     val comicChapters: StateFlow<List<ComicChapter>> = _comicChapters.asStateFlow()
 
@@ -234,25 +250,62 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun openComic(book: SearchBook) {
         _comicBook.value = book
+        _comicIsTextMode.value = sourceManager.availableSources.value
+            .firstOrNull { it.id == book.sourceId }?.capabilities?.supportOnlineText == true
         _comicChapters.value = emptyList()
         _comicChaptersError.value = null
         _comicChapterImages.value = emptyList()
         _comicChapterHeaders.value = emptyMap()
         _comicChapterError.value = null
+        _novelChapterText.value = ""
+        _novelChapterError.value = null
+        _activeNovelChapter.value = null
         loadChapters(book)
+    }
+
+    /** 文本小说源：加载章节正文 */
+    fun loadChapterText(chapter: ComicChapter) {
+        val source = sourceManager.availableSources.value
+            .firstOrNull { it.id == _comicBook.value?.sourceId } as? ComicSource
+        if (source == null) {
+            _novelChapterError.value = "当前书源不可用"
+            return
+        }
+        viewModelScope.launch {
+            _activeNovelChapter.value = chapter
+            _novelChapterLoading.value = true
+            _novelChapterError.value = null
+            _novelChapterText.value = ""
+            when (val result = source.getChapterText(chapter.id)) {
+                is SourceResult.Success -> _novelChapterText.value = result.data
+                is SourceResult.Error -> _novelChapterError.value = result.exception.message ?: "章节加载失败"
+            }
+            _novelChapterLoading.value = false
+        }
     }
 
     private val _aggregateMode = MutableStateFlow(true)
     val aggregateMode: StateFlow<Boolean> = _aggregateMode.asStateFlow()
 
+    /** 聚合搜索类别："comic" 漫画源 / "novel" 小说源 */
+    private val _aggregateKind = MutableStateFlow("comic")
+    val aggregateKind: StateFlow<String> = _aggregateKind.asStateFlow()
+
     fun setAggregateMode(enabled: Boolean) {
         _aggregateMode.value = enabled
+    }
+
+    fun setAggregateKind(kind: String) {
+        _aggregateKind.value = kind
     }
 
     private var aggregateSearchSeq = 0L
 
     fun aggregateSearch(keyword: String) {
-        val sources = sourceManager.availableSources.value.filter { it.capabilities.supportComic }
+        val novel = _aggregateKind.value == "novel"
+        val sources = sourceManager.availableSources.value.filter {
+            if (novel) it.isNovelSource else it.capabilities.supportComic && !it.isNovelSource
+        }
         Log.i("Aggregate", "aggregateSearch '$keyword' sources=${sources.map { it.name }}")
         if (sources.isEmpty()) {
             _uiState.value = LibraryUiState.Error(LibraryError.SourceUnavailable)
@@ -712,9 +765,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 is SourceResult.Error -> {
                     val error = when (val e = result.exception) {
                         is SourceException.NetworkError -> {
-                            if (e.message?.contains("Cloudflare") == true || e.message?.contains("DiamWall") == true) LibraryError.CloudflareBlocked
-                            else if (e.message?.contains("Z-Library 当前节点不可用") == true) LibraryError.SourceUnavailable
-                            else LibraryError.NetworkUnavailable
+                            val msg = e.message ?: ""
+                            com.example.source.SourceLog.log(source.name, "搜索「$keyword」失败: $msg")
+                            when {
+                                msg.contains("Cloudflare") || msg.contains("DiamWall") -> LibraryError.CloudflareBlocked
+                                msg.contains("Z-Library 当前节点不可用") -> LibraryError.SourceUnavailable
+                                msg.isNotBlank() -> LibraryError.NetworkDetail(msg)
+                                else -> LibraryError.NetworkUnavailable
+                            }
                         }
                         is SourceException.LoginRequired -> LibraryError.AuthenticationRequired
                         is SourceException.ParseError -> LibraryError.ParseFailed(e.message ?: "解析失败")

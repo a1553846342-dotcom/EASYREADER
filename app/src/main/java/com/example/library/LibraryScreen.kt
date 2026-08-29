@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -95,6 +97,7 @@ import android.widget.Toast
 import com.example.download.DownloadState
 import com.example.source.SearchBook
 import com.example.source.BookSource
+import com.example.source.isNovelSource
 import com.example.source.ComicSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
@@ -133,6 +136,7 @@ fun LibraryScreen(
 ) {
     val currentSource by viewModel.currentSource.collectAsState()
     val aggregateMode by viewModel.aggregateMode.collectAsState()
+    val aggregateKind by viewModel.aggregateKind.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val availableSources by viewModel.availableSources.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -436,7 +440,8 @@ fun LibraryScreen(
                                 onClick = { showSourceSheet = true },
                                 label = {
                                     Text(
-                                        if (aggregateMode) "聚合漫画（全部）"
+                                        if (aggregateMode)
+                                            if (aggregateKind == "novel") "聚合小说（全部）" else "聚合漫画（全部）"
                                         else currentSource?.name ?: "无可用书源"
                                     )
                                 },
@@ -594,6 +599,9 @@ fun LibraryScreen(
 
                 if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
                     val agg = uiState as LibraryUiState.AggregateResults
+                    // 各源分组折叠状态：默认展开，点击组头切换
+                    val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
+                    LaunchedEffect(searchQuery) { collapsedGroups.clear() }
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(2),
                         state = staggeredGridState,
@@ -617,35 +625,45 @@ fun LibraryScreen(
                                 AggregateSourceHeader(
                                     name = group.sourceName,
                                     loading = group.loading,
-                                    resultCount = group.books.size
+                                    resultCount = group.books.size,
+                                    collapsed = collapsedGroups[group.sourceId] == true,
+                                    onToggle = {
+                                        collapsedGroups[group.sourceId] =
+                                            !(collapsedGroups[group.sourceId] == true)
+                                    }
                                 )
                             }
-                            if (group.loading) {
-                                items(4, key = { "agg_loading_${group.sourceId}_$it" }) { index ->
-                                    ShimmerBox(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .aspectRatio(STAGGER_RATIO_PALETTE[index % STAGGER_RATIO_PALETTE.size])
-                                    )
+                            if (collapsedGroups[group.sourceId] != true) when {
+                                group.loading -> {
+                                    items(4, key = { "agg_loading_${group.sourceId}_$it" }) { index ->
+                                        ShimmerBox(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(STAGGER_RATIO_PALETTE[index % STAGGER_RATIO_PALETTE.size])
+                                        )
+                                    }
                                 }
-                            } else if (group.books.isNotEmpty()) {
-                                items(group.books, key = { "${group.sourceId}_${it.id}" }) { book ->
-                                    StaggeredComicCard(
-                                        book = book,
-                                        imageLoader = imageLoader,
-                                        coverHeaders = rememberCoverHeaders(book, availableSources),
-                                        sourceName = group.sourceName,
-                                        onClick = { onOpenComic(book) }
-                                    )
+                                group.books.isNotEmpty() -> {
+                                    items(group.books, key = { "${group.sourceId}_${it.id}" }) { book ->
+                                        StaggeredComicCard(
+                                            book = book,
+                                            imageLoader = imageLoader,
+                                            coverHeaders = rememberCoverHeaders(book, availableSources),
+                                            sourceName = group.sourceName,
+                                            novel = availableSources.firstOrNull { it.id == book.sourceId }?.isNovelSource == true,
+                                            onClick = { onOpenComic(book) }
+                                        )
+                                    }
                                 }
-                            } else {
-                                item(
-                                    key = "agg_group_error_${group.sourceId}",
-                                    span = StaggeredGridItemSpan.FullLine
-                                ) {
-                                    AggregateSourceError(
-                                        error = group.error
-                                    )
+                                else -> {
+                                    item(
+                                        key = "agg_group_error_${group.sourceId}",
+                                        span = StaggeredGridItemSpan.FullLine
+                                    ) {
+                                        AggregateSourceError(
+                                            error = group.error
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -657,7 +675,7 @@ fun LibraryScreen(
                                 com.example.ui.components.MascotEmptyState(
                                     mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
                                     title = "未找到结果",
-                                    description = "所有漫画源都没有匹配“$searchQuery”的内容",
+                                    description = "所有${if (aggregateKind == "novel") "小说源" else "漫画源"}都没有匹配“$searchQuery”的内容",
                                     actionLabel = "管理与导入书源",
                                     onActionClick = onOpenSourceManagement,
                                     testTagPrefix = "aggregate_empty_state"
@@ -681,6 +699,11 @@ fun LibraryScreen(
                     val error = (uiState as LibraryUiState.Error).error
                     val (title, desc, action) = when (error) {
                         is LibraryError.NetworkUnavailable -> Triple("无网络连接", "请检查网络设置后重试", "重试")
+                        is LibraryError.NetworkDetail -> Triple(
+                            "请求失败（真实原因）",
+                            "${error.message}\n可到 书源管理 → 调试日志 查看完整请求记录",
+                            "重试"
+                        )
                         is LibraryError.SourceUnavailable -> Triple("服务无响应", "当前书源站点暂无响应，请稍后重试或切换书源", "重试")
                         is LibraryError.AuthenticationRequired -> Triple("需要登录", "当前书源需要账号身份验证", "去登录")
                         is LibraryError.CloudflareBlocked -> Triple("安全验证拦截", "目标站点已启用安全防护，请稍后重试", "重试")
@@ -748,9 +771,11 @@ fun LibraryScreen(
                                 downloadState = st,
                                 imageLoader = imageLoader,
                                 coverHeaders = rememberCoverHeaders(book, availableSources),
-                                comicMode = currentSource?.capabilities?.supportComic == true,
+                                comicMode = currentSource?.capabilities?.supportComic == true ||
+                                        currentSource?.capabilities?.supportOnlineText == true,
                                 onStartDownload = {
-                                    if (currentSource?.capabilities?.supportComic == true) {
+                                    if (currentSource?.capabilities?.supportComic == true ||
+                                        currentSource?.capabilities?.supportOnlineText == true) {
                                         onOpenComic(book)
                                     } else if (currentSource?.capabilities?.downloadRequiresLogin == true && !isCurrentSourceLoggedIn) {
                                         loginDialogSource = currentSource
@@ -884,12 +909,21 @@ fun LibraryScreen(
 
         // 书源选择 Liquid Glass 底部弹层
         if (showSourceSheet) {
+            val comicSources = remember(visibleSources) {
+                visibleSources.filter { !it.isNovelSource }
+            }
+            val novelSources = remember(visibleSources) {
+                visibleSources.filter { it.isNovelSource }
+            }
             SourcePickerSheet(
                 aggregateMode = aggregateMode,
+                aggregateKind = aggregateKind,
                 currentSource = currentSource,
-                visibleSources = visibleSources,
-                onSelectAggregate = {
+                comicSources = comicSources,
+                novelSources = novelSources,
+                onSelectAggregate = { kind ->
                     viewModel.setAggregateMode(true)
+                    viewModel.setAggregateKind(kind)
                     showSourceSheet = false
                 },
                 onSelectSource = { id ->
@@ -911,9 +945,11 @@ fun LibraryScreen(
 @Composable
 private fun SourcePickerSheet(
     aggregateMode: Boolean,
+    aggregateKind: String,
     currentSource: BookSource?,
-    visibleSources: List<BookSource>,
-    onSelectAggregate: () -> Unit,
+    comicSources: List<BookSource>,
+    novelSources: List<BookSource>,
+    onSelectAggregate: (String) -> Unit,
     onSelectSource: (String) -> Unit,
     onManageSources: () -> Unit,
     onDismiss: () -> Unit
@@ -1113,64 +1149,11 @@ private fun SourcePickerSheet(
                             )
                         }
                         item {
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val pressScale by animateFloatAsState(
-                                targetValue = if (pressed) 0.97f else 1f,
-                                label = "press"
-                            )
-                            val checkScale by animateFloatAsState(
-                                targetValue = if (aggregateMode) 1f else 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                ),
-                                label = "check"
-                            )
-                            ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = "聚合漫画（全部）",
-                                        fontWeight = if (aggregateMode) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                supportingContent = { Text("同时搜索所有已启用的漫画源") },
-                                leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Default.MenuBook,
-                                        contentDescription = null,
-                                        tint = if (aggregateMode) MaterialTheme.colorScheme.secondary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                trailingContent = {
-                                    if (aggregateMode) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "当前选择",
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier
-                                                .size(22.dp)
-                                                .graphicsLayer {
-                                                    scaleX = checkScale
-                                                    scaleY = checkScale
-                                                }
-                                        )
-                                    }
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale
-                                        scaleY = pressScale
-                                    }
-                                    .clickable(
-                                        interactionSource = interaction,
-                                        indication = null,
-                                        onClick = onSelectAggregate
-                                    )
+                            AggregateOptionItem(
+                                title = "聚合漫画（全部）",
+                                subtitle = "同时搜索所有已启用的漫画源",
+                                selected = aggregateMode && aggregateKind == "comic",
+                                onClick = { onSelectAggregate("comic") }
                             )
                         }
                         item {
@@ -1180,73 +1163,40 @@ private fun SourcePickerSheet(
                                 modifier = Modifier.padding(start = 72.dp, end = 20.dp)
                             )
                         }
-                        items(visibleSources, key = { it.id }) { source ->
-                            val selected = !aggregateMode && currentSource?.id == source.id
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val pressScale by animateFloatAsState(
-                                targetValue = if (pressed) 0.97f else 1f,
-                                label = "press"
+                        if (comicSources.isNotEmpty()) {
+                            item { SourceSectionLabel("漫画源") }
+                            items(comicSources, key = { it.id }) { source ->
+                                SourceOptionItem(
+                                    source = source,
+                                    selected = !aggregateMode && currentSource?.id == source.id,
+                                    onClick = { onSelectSource(source.id) }
+                                )
+                            }
+                        }
+                        item {
+                            AggregateOptionItem(
+                                title = "聚合小说（全部）",
+                                subtitle = "同时搜索所有已启用的小说源（网文/电子书）",
+                                selected = aggregateMode && aggregateKind == "novel",
+                                onClick = { onSelectAggregate("novel") }
                             )
-                            val checkScale by animateFloatAsState(
-                                targetValue = if (selected) 1f else 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                ),
-                                label = "check"
+                        }
+                        item {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = Color.White.copy(alpha = 0.12f),
+                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
                             )
-                            ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = source.name,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                supportingContent = {
-                                    Text(
-                                        text = source.id,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                },
-                                leadingContent = {
-                                    SourceAvatar(
-                                        sourceId = source.id,
-                                        sourceName = source.name,
-                                        size = 32.dp
-                                    )
-                                },
-                                trailingContent = {
-                                    if (selected) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "当前使用",
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier
-                                                .size(22.dp)
-                                                .graphicsLayer {
-                                                    scaleX = checkScale
-                                                    scaleY = checkScale
-                                                }
-                                        )
-                                    }
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale
-                                        scaleY = pressScale
-                                    }
-                                    .clickable(
-                                        interactionSource = interaction,
-                                        indication = null
-                                    ) {
-                                        onSelectSource(source.id)
-                                    }
-                            )
+                        }
+                        if (novelSources.isNotEmpty()) {
+                            item { SourceSectionLabel("小说源") }
+                            items(novelSources, key = { it.id }) { source ->
+                                SourceOptionItem(
+                                    source = source,
+                                    selected = !aggregateMode && currentSource?.id == source.id,
+                                    onClick = { onSelectSource(source.id) }
+                                )
+                            }
                         }
                         item {
                             HorizontalDivider(
@@ -1260,6 +1210,157 @@ private fun SourcePickerSheet(
             }
         }
     }
+}
+
+@Composable
+private fun AggregateOptionItem(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        label = "press"
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "check"
+    )
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Default.MenuBook,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "当前选择",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                        }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = Color.White.copy(alpha = 0.06f)
+        ),
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+    )
+}
+
+@Composable
+private fun SourceSectionLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun SourceOptionItem(
+    source: BookSource,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        label = "press"
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "check"
+    )
+    ListItem(
+        headlineContent = {
+            Text(
+                text = source.name,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        },
+        supportingContent = {
+            Text(
+                text = source.id,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        leadingContent = {
+            SourceAvatar(
+                sourceId = source.id,
+                sourceName = source.name,
+                size = 32.dp
+            )
+        },
+        trailingContent = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "当前使用",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                        }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = Color.White.copy(alpha = 0.06f)
+        ),
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+    )
 }
 
 @Composable
@@ -1926,6 +2027,7 @@ private fun StaggeredComicCard(
     imageLoader: ImageLoader,
     coverHeaders: Map<String, String>,
     sourceName: String,
+    novel: Boolean = false,
     onClick: () -> Unit
 ) {
     // 固定比例：不再依赖图片解码结果，卡片测量高度全程不变
@@ -1957,11 +2059,11 @@ private fun StaggeredComicCard(
         label = "cardEnterSlide"
     )
     val cardShape = RoundedCornerShape(14.dp)
-    val formatBadge = remember(book) {
+    val formatBadge = remember(book, novel) {
         listOfNotNull(
             book.comicId?.takeIf { it.isNotBlank() }?.let { "#$it" },
             book.format?.takeIf { it.isNotBlank() && !it.equals("epub", true) }?.uppercase()
-        ).firstOrNull() ?: "漫画"
+        ).firstOrNull() ?: if (novel) "小说" else "漫画"
     }
     Column(
         modifier = Modifier
@@ -2090,6 +2192,8 @@ private fun AggregateSourceHeader(
     name: String,
     loading: Boolean,
     resultCount: Int,
+    collapsed: Boolean = false,
+    onToggle: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -2097,6 +2201,7 @@ private fun AggregateSourceHeader(
             .fillMaxWidth()
             .height(40.dp)
             .clip(RoundedCornerShape(20.dp))
+            .then(if (onToggle != null) Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggle) else Modifier)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
@@ -2144,6 +2249,17 @@ private fun AggregateSourceHeader(
                     )
                 }
             }
+            if (onToggle != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = if (collapsed) Icons.Default.KeyboardArrowDown
+                    else Icons.Default.KeyboardArrowUp,
+                    contentDescription = if (collapsed) "展开" else "收起",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
         }
     }
 }

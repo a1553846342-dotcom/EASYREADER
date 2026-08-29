@@ -716,6 +716,7 @@ class MainActivity : ComponentActivity() {
                             val comicDownloadProgress by libraryViewModel.comicDownloadProgress.collectAsState()
                             val comicPaused by libraryViewModel.comicPaused.collectAsState()
                             val comicMessage by libraryViewModel.comicMessage.collectAsState()
+                            val comicIsTextMode by libraryViewModel.comicIsTextMode.collectAsState()
                             val comicContext = androidx.compose.ui.platform.LocalContext.current
 
                             LaunchedEffect(comicMessage) {
@@ -733,11 +734,17 @@ class MainActivity : ComponentActivity() {
                                 downloadingChapters = comicDownloading,
                                 downloadProgress = comicDownloadProgress,
                                 pausedChapters = comicPaused,
+                                textMode = comicIsTextMode,
                                 onBack = { navController.popBackStack() },
                                 onRetry = { comicBook?.let { libraryViewModel.openComic(it) } },
                                 onChapterClick = { chapter ->
-                                    libraryViewModel.loadChapterImages(chapter)
-                                    navController.navigate("comic_reader_online")
+                                    if (comicIsTextMode) {
+                                        libraryViewModel.loadChapterText(chapter)
+                                        navController.navigate("novel_reader_online")
+                                    } else {
+                                        libraryViewModel.loadChapterImages(chapter)
+                                        navController.navigate("comic_reader_online")
+                                    }
                                 },
                                 onDownloadChapter = { chapter ->
                                     comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
@@ -796,6 +803,44 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onBack = { navController.popBackStack() },
                                 onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
+                            )
+                        } }
+
+                        composable(
+                            "novel_reader_online",
+                            enterTransition = {
+                                fadeIn(tween(300)) + slideInHorizontally { it / 4 }
+                            },
+                            exitTransition = { fadeOut(tween(200)) }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                            val comicBook by libraryViewModel.comicBook.collectAsState()
+                            val novelChapter by libraryViewModel.activeNovelChapter.collectAsState()
+                            val novelText by libraryViewModel.novelChapterText.collectAsState()
+                            val novelLoading by libraryViewModel.novelChapterLoading.collectAsState()
+                            val novelError by libraryViewModel.novelChapterError.collectAsState()
+                            val chapters by libraryViewModel.comicChapters.collectAsState()
+                            val idx = chapters.indexOfFirst { it.id == novelChapter?.id }
+
+                            com.example.ui.NovelReaderScreen(
+                                bookTitle = comicBook?.title,
+                                chapter = novelChapter,
+                                text = novelText,
+                                loading = novelLoading,
+                                error = novelError,
+                                hasPrevChapter = idx > 0,
+                                hasNextChapter = idx >= 0 && idx < chapters.size - 1,
+                                onBack = { navController.popBackStack() },
+                                onRetry = { novelChapter?.let { libraryViewModel.loadChapterText(it) } },
+                                onLoadPrev = {
+                                    if (idx > 0) {
+                                        libraryViewModel.loadChapterText(chapters[idx - 1])
+                                    }
+                                },
+                                onLoadNext = {
+                                    if (idx >= 0 && idx < chapters.size - 1) {
+                                        libraryViewModel.loadChapterText(chapters[idx + 1])
+                                    }
+                                }
                             )
                         } }
 

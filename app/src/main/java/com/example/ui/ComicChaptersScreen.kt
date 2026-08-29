@@ -66,7 +66,9 @@ fun ComicChaptersScreen(
     onDownloadAll: () -> Unit,
     onPauseDownload: (ComicChapter) -> Unit,
     onResumeDownload: (ComicChapter) -> Unit,
-    onCancelDownload: (ComicChapter) -> Unit
+    onCancelDownload: (ComicChapter) -> Unit,
+    /** 文本小说模式：隐藏图片下载/多选 UI，章节点击直接阅读正文 */
+    textMode: Boolean = false
 ) {
     val context = LocalContext.current
     var selectionMode by remember { mutableStateOf(false) }
@@ -154,10 +156,11 @@ fun ComicChaptersScreen(
                             onReadFirst = {
                                 chapters.firstOrNull()?.let(onChapterClick)
                             },
-                            selectionMode = selectionMode,
+                            selectionMode = selectionMode && !textMode,
                             selectedCount = selectedChapterIds.size,
-                            onEnterSelection = { selectionMode = true },
+                            onEnterSelection = { if (!textMode) selectionMode = true },
                             onDownloadSelected = {
+                                if (textMode) return@ComicHeader
                                 chapters
                                     .filter { it.id in selectedChapterIds }
                                     .forEach(onDownloadChapter)
@@ -201,7 +204,8 @@ fun ComicChaptersScreen(
                             },
                             onPause = { onPauseDownload(chapter) },
                             onResume = { onResumeDownload(chapter) },
-                            onCancel = { onCancelDownload(chapter) }
+                            onCancel = { onCancelDownload(chapter) },
+                            showDownload = !textMode
                         )
                     }
                 }
@@ -314,16 +318,17 @@ private fun ComicHeader(
     selectedCount: Int,
     onEnterSelection: () -> Unit,
     onDownloadSelected: () -> Unit,
-    onCancelSelection: () -> Unit
+    onCancelSelection: () -> Unit,
+    textMode: Boolean = false
 ) {
     if (book == null) return
     var descriptionExpanded by remember { mutableStateOf(false) }
     val desc = book.description?.takeIf { it.isNotBlank() }
-    val formatBadge = remember(book) {
+    val formatBadge = remember(book, textMode) {
         listOfNotNull(
             book.comicId?.takeIf { it.isNotBlank() }?.let { "#$it" },
             book.format?.takeIf { it.isNotBlank() && !it.equals("epub", true) }?.uppercase()
-        ).firstOrNull() ?: "漫画"
+        ).firstOrNull() ?: if (textMode) "小说" else "漫画"
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         // 顶部视觉：封面模糊铺满做背景 + 清晰封面浮在上层（Apple Music 专辑页结构）
@@ -511,14 +516,16 @@ private fun ComicHeader(
                     onClick = onReadFirst,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
-                                AppActionButton(
-                    text = "批量下载",
-                    onClick = onEnterSelection,
-                    variant = AppButtonVariant.Secondary,
-                    buttonSize = AppButtonSize.Small,
-                    icon = Icons.Filled.Download
-                )
+                if (!textMode) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    AppActionButton(
+                        text = "批量下载",
+                        onClick = onEnterSelection,
+                        variant = AppButtonVariant.Secondary,
+                        buttonSize = AppButtonSize.Small,
+                        icon = Icons.Filled.Download
+                    )
+                }
             }
         }
     }
@@ -537,7 +544,8 @@ private fun ChapterItem(
     onDownload: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    showDownload: Boolean = true
 ) {
     Card(
         modifier = Modifier
@@ -604,7 +612,7 @@ private fun ChapterItem(
                         )
                     }
                 }
-                !chapter.external -> {
+                showDownload && !chapter.external -> {
                     AppIconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Filled.Download,

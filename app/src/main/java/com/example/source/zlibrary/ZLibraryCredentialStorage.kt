@@ -55,7 +55,7 @@ class ZLibraryCredentialStorage(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_DOMAIN = "z-library.sk"
+        const val DEFAULT_DOMAIN = "zh.101k.by" // 2026-08-28 实测真实镜像；zh.101z.by 为入口跳转域
         private const val KEY_USER_ID = "userId"
         private const val KEY_USER_KEY = "userKey"
         private const val KEY_DOMAIN = "domain"

@@ -46,14 +46,19 @@ data class HtmlSearchRule(
     val coverSelector: String = "",
     val detailUrlSelector: String = "", // 详情链接，默认 "a@href"
     val introSelector: String = "",     // 简介（Legado ruleSearch.intro）
-    val charset: String? = null         // 页面编码（gbk / gb2312 / utf-8），默认自动
+    val charset: String? = null,        // 页面编码（gbk / gb2312 / utf-8），默认自动
+    val method: String = "GET",         // 请求方式（Legado 搜索支持 POST）
+    val body: String? = null            // POST 请求体模板，支持 {keyword}
 )
 
 data class HtmlChapterRule(
     val url: String,                    // 目录页地址，支持 {id}
     val listSelector: String,           // 章节列表项 CSS
     val nameSelector: String = "text",
-    val hrefSelector: String = "href"
+    val hrefSelector: String = "href",
+    /** 目录页跳转规则（Legado ruleBookInfo.tocUrl）：目录不在详情页时，
+     *  先取 {id} 页，用此规则解析出目录页 URL；空则直接用 {id} 页作目录页 */
+    val tocUrlSelector: String? = null
 )
 
 data class HtmlContentRule(

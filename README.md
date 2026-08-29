@@ -30,7 +30,7 @@ TXT / EPUB / 漫画阅读
 
 
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
-![Release](https://img.shields.io/badge/Release-v1.0.0-orange)
+![Release](https://img.shields.io/badge/Release-v1.0.1-orange)
 ![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)
@@ -57,7 +57,7 @@ TXT / EPUB / 漫画阅读
 | 一句话简介 | 支持本地 TXT/EPUB/MOBI/AZW3/漫画导入、自定义书源、在线书库聚合搜索与多格式下载的安卓阅读器兼资源下载器 |
 | 技术栈 | Kotlin 2.0 + Jetpack Compose（Material 3）+ MVVM + Room + WorkManager |
 | 最低支持系统 | Android 7.0（API 24）+ |
-| 当前版本 | 1.0.0 |
+| 当前版本 | 1.0.1 |
 | 开发状态 | 个人项目 · 活跃开发中 |
 
 ---
@@ -361,6 +361,32 @@ app/src/main/java/com/example/
 ## 13. 🕹️ 更新日志
 
 > 逐项变更的完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+### v1.0.1（2026-08-29）
+
+**在线小说阅读**
+
+- 全新在线文字阅读器：搜索小说 → 点开章节即可直接阅读，支持字号调节（A−/A+）、上一章/下一章切换、点击正文呼出工具栏、切章自动回顶；加载/错误/空内容三态明确。
+
+**漫画 / 小说彻底分类**
+
+- 书源选择弹窗新增「聚合小说（全部）」：Z-Library 与 Legado 文字书源（如就爱文学）与「聚合漫画」并列分区展示，聚合搜索按类别互斥过滤，不再漫画小说混在一起。
+- 书籍卡片与详情页按源类型显示「小说」/「漫画」标签；书源管理页小说源带「小说」徽章。
+
+**聚合搜索体验**
+
+- 聚合结果每个书源分组标题栏新增折叠键，可单独收起/展开该源结果，长结果列表不再翻不到底；换关键词搜索时折叠状态自动重置。
+
+**Legado 书源兼容性大幅增强**
+
+- 支持 POST 搜索书源（`postUrl` 请求体模板透传，自动识别 JSON/form 编码）。
+- 支持目录独立页两步解析（`ruleBookInfo.tocUrl`）：详情页 → 目录页 → 章节列表，修复「就爱文学」等源点进书后显示「暂无可用章节」的问题。
+- 兼容 CSS 混合 Legado 索引写法（如 `.newrap a.0`），选择失败自动剥离 `.N` 索引重试。
+- 全链路调试日志：书源管理新增「调试日志」卡片，搜索/详情/目录/正文抓取过程可查看可复制，网络错误透传真实 HTTP 状态而非笼统的「无法连接网络」。
+
+**Z-Library 节点修复**
+
+- 内置节点与默认域名切换为国内可直连镜像（zh.101k.by / zh.101z.by），旧域名保留垫底；PoW 自动求解器覆盖 DiamWall 503 防护。
 
 ### v1.0.0（2026-08-28）
 
