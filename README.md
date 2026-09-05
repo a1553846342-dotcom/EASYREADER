@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" width="110"/>
+<img src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.webp" width="110"/>
 
 # Ciallo阅读（EASYREADER）
 
