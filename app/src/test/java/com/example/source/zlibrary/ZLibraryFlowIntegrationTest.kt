@@ -32,6 +32,7 @@ class ZLibraryFlowIntegrationTest {
 
     @Test
     fun testUnauthenticatedSearchDoesNotRequireLogin() = runTest {
+
         val result = zLibrarySource.search("Kotlin")
         if (result is SourceResult.Error) {
             assertNotEquals(SourceException.LoginRequired, result.exception)

@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit
  *
  * Legado 规则转换说明：
  * - {{key}} -> {keyword}，{{page}} -> {page}，支持 {{java.base64Encode(key)}} 与简单
- *   {{(page-1)*20}} 页面运算
+ *   {{(page-1)*20}} 页面运算；POST 搜索源（,{ "method":"POST","body":... }）会透传 method/body
  * - ruleSearch.bookList 以 $ 或 @json: 开头时按 JSONPath 解析，否则按 HTML 规则解析
  * - 需要 @js: / webView / 嗅探 sourceRegex 的书源暂不支持，会明确跳过
  */
@@ -290,7 +290,9 @@ object SourceImporter {
                     coverSelector = h.optString("cover", ""),
                     detailUrlSelector = h.optString("detailUrl", ""),
                     introSelector = h.optString("intro", ""),
-                    charset = h.optString("charset", "").ifBlank { null }
+                    charset = h.optString("charset", "").ifBlank { null },
+                    method = h.optString("method", "GET").ifBlank { "GET" }.uppercase(),
+                    body = h.optString("body", "").ifBlank { null }
                 )
             }?.takeIf { it.url.isNotBlank() && it.listSelector.isNotBlank() }
 
@@ -323,7 +325,9 @@ object SourceImporter {
                 enabled = true,
                 isCustom = true,
                 insecureTls = obj.optBoolean("insecureTls", false),
-                type = obj.optString("type", null).ifBlank { null }
+                // 第三轮记录的遗留 NPE 修复：type 键缺失时 optString 返回 null，
+                // 直接 .ifBlank 会抛空安全异常——任何不带 type 字段的书源导入必失败
+                type = obj.optString("type", null)?.ifBlank { null }
             )
 
             return SourceResult.Success(JsonBookSource(config))
@@ -397,16 +401,20 @@ object SourceImporter {
             coverSelector = ruleSearch.optString("coverUrl", ""),
             detailUrlSelector = ruleSearch.optString("bookUrl", ""),
             introSelector = ruleSearch.optString("intro", ""),
-            charset = charset
+            charset = charset,
+            method = converted.method,
+            body = converted.body
         )
 
+        val ruleBookInfo = parseRuleObject(obj, "ruleBookInfo") ?: JSONObject()
         val chapterName = ruleToc.optString("chapterName", "text").ifBlank { "text" }
         val chapterUrl = ruleToc.optString("chapterUrl", "href").ifBlank { "href" }
         val htmlChapters = HtmlChapterRule(
             url = "{id}",
             listSelector = chapterList,
             nameSelector = chapterName,
-            hrefSelector = chapterUrl
+            hrefSelector = chapterUrl,
+            tocUrlSelector = ruleBookInfo.optString("tocUrl", "").trim().ifBlank { null }
         )
         val htmlContent = HtmlContentRule(
             url = "{chapterUrl}",
@@ -449,7 +457,7 @@ object SourceImporter {
         }
     }
 
-    /** 转换 Legado URL：去掉 ,{...} 选项后缀，{{key}} -> {keyword}，{{page}} -> {page}，支持简单运算。 */
+    /** 转换 Legado URL：去掉 ,{...} 选项后缀，{{key}} -> {keyword}，{{page}} -> {page}，支持简单运算。POST 源透传 method/body。 */
     private fun convertLegadoUrl(raw: String): LegadoUrl? {
         var url = raw.trim()
         var charset: String? = null
@@ -466,10 +474,10 @@ object SourceImporter {
                 if (opt != null) {
                     url = url.substring(0, commaIdx).trim()
                     charset = opt.optString("charset", "").ifBlank { null }
-                    val method = opt.optString("method", "GET")
-                    if (method.equals("POST", ignoreCase = true)) {
-                        // POST 请求目前仅保留 GET 可用源；body 无法直接映射到 htmlSearch
-                        return null
+                    val optMethod = opt.optString("method", "GET").ifBlank { "GET" }
+                    if (optMethod.equals("POST", ignoreCase = true)) {
+                        // POST 搜索源：透传 method/body，不再跳过
+                        return postUrl(url, opt)
                     }
                 }
             }
@@ -492,7 +500,31 @@ object SourceImporter {
             ?.let { LegadoUrl(it, charset) }
     }
 
-    private data class LegadoUrl(val url: String, val charset: String?)
+    private data class LegadoUrl(
+        val url: String,
+        val charset: String?,
+        val method: String = "GET",
+        val body: String? = null
+    )
+
+    /** POST 搜索源：处理 URL 与 body 模板中的 {{key}}/{{page}} 占位符，不再直接跳过。 */
+    private fun postUrl(url: String, opt: JSONObject): LegadoUrl? {
+        var u = url
+        if (u.contains("@js:") || u.contains("webView")) return null
+        u = u
+            .replace("{{key}}", "{keyword}")
+            .replace("{{page}}", "{page}")
+            .replace(Regex("""\{\{java\.base64Encode\(key\)\}\}""")) {
+                "{keyword_b64}"
+            }
+        var body = opt.optString("body", "").ifBlank { null }
+        body = body
+            ?.replace("{{key}}", "{keyword}")
+            ?.replace("{{page}}", "{page}")
+        val charset = opt.optString("charset", "").ifBlank { null }
+        return u.takeIf { !it.contains("{{") }
+            ?.let { LegadoUrl(it, charset, "POST", body) }
+    }
 
     private fun evalPageExpression(expr: String): String? {
         val normalized = expr.replace(" ", "")

@@ -37,8 +37,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
+// 阅读器无法打开的格式（与 BookRepository.unsupportedBinaryExtensions 对齐）：
+// PDF 不拦——下载后由 ComicParser 逐页位图渲染，以翻页模式打开；
+// KFX/DJVU/DOC/RTF/CHM 无任何阅读管线，下载前拦截。
+internal val READER_UNSUPPORTED_FORMATS = setOf("kfx", "djvu", "doc", "rtf", "chm")
+
+/** 过滤掉阅读器不支持的下载格式（PDF / KFX / DJVU / DOC / RTF / CHM）。 */
+internal fun filterReadableFormats(formats: List<BookFormat>): List<BookFormat> =
+    formats.filter { it.format.trim().lowercase() !in READER_UNSUPPORTED_FORMATS }
+
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     val sourceManager = SourceManager(SharedPreferencesSourceStorage(application))
     val downloadManager = DownloadManager(application)
     private val database = AppDatabase.getDatabase(application)
@@ -118,18 +127,30 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun fetchRecordBook(title: String): SearchBook? = withContext(Dispatchers.IO) {
         if (title.isBlank()) return@withContext null
+        // 阅读统计修复（封面串书）：按书名反查时必须校验标题相关性——
+        // 旧实现取第一个源的第一条有封面结果，垃圾源/热门书充数时会出现
+        // "记录是 A 书、封面和点进去是 B 书"的串书。归一化（小写/去标点/繁简折叠）
+        // 后要求完全相等或一方包含另一方（不同源书名常有副标题前后缀差异）；
+        // 无命中宁可不补封面，也不拿无关书充数。
+        fun norm(s: String): String = com.example.source.anilist.TitleNormalizer.normalize(
+            s.lowercase().replace(Regex("""[\s\p{Punct}]+"""), "")
+        )
+        val want = norm(title)
+        if (want.isBlank()) return@withContext null
         val sources = sourceManager.allSources.value.filterIsInstance<ComicSource>()
         for (source in sources) {
             val result = withTimeoutOrNull(8000) { source.search(title) }
-            val book = (result as? SourceResult.Success)
-                ?.data
-                ?.firstOrNull { !it.cover.isNullOrBlank() || !it.comicId.isNullOrBlank() }
-            if (book != null) {
+            val books = (result as? SourceResult.Success)?.data ?: continue
+            val match = books.firstOrNull { b ->
+                val n = norm(b.title)
+                n.isNotEmpty() && (n == want || n.contains(want) || want.contains(n))
+            }
+            if (match != null) {
                 return@withContext SearchBook(
-                    id = book.comicId?.takeIf { it.isNotBlank() } ?: book.id,
-                    sourceId = book.sourceId,
-                    title = book.title,
-                    cover = book.cover,
+                    id = match.comicId?.takeIf { c -> c.isNotBlank() } ?: match.id,
+                    sourceId = match.sourceId,
+                    title = match.title,
+                    cover = match.cover,
                     author = ""
                 )
             }
@@ -142,6 +163,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val _comicBook = MutableStateFlow<SearchBook?>(null)
     val comicBook: StateFlow<SearchBook?> = _comicBook.asStateFlow()
+
+    /** 章节页是否为文本小说模式（Legado 网文源：点击章节进入文字阅读而非图片阅读） */
+    private val _comicIsTextMode = MutableStateFlow(false)
+    val comicIsTextMode: StateFlow<Boolean> = _comicIsTextMode.asStateFlow()
+
+    private val _novelChapterText = MutableStateFlow("")
+    val novelChapterText: StateFlow<String> = _novelChapterText.asStateFlow()
+
+    private val _novelChapterLoading = MutableStateFlow(false)
+    val novelChapterLoading: StateFlow<Boolean> = _novelChapterLoading.asStateFlow()
+
+    private val _novelChapterError = MutableStateFlow<String?>(null)
+    val novelChapterError: StateFlow<String?> = _novelChapterError.asStateFlow()
+
+    private val _activeNovelChapter = MutableStateFlow<ComicChapter?>(null)
+    val activeNovelChapter: StateFlow<ComicChapter?> = _activeNovelChapter.asStateFlow()
 
     private val _comicChapters = MutableStateFlow<List<ComicChapter>>(emptyList())
     val comicChapters: StateFlow<List<ComicChapter>> = _comicChapters.asStateFlow()
@@ -201,6 +238,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // 第十轮：内置 AniList 多语言标题库导入（幂等，首启一次性；
+            // 数据随 APK 分发，用户零拉取、离线可用）
+            com.example.data.AppDatabase.ensureBundledTitlesImported(application)
             sourceManager.initialize()
             sourceManager.registerSource(ZLibrarySource(application))
             sourceManager.registerSource(MangaDexSource())
@@ -234,25 +274,113 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun openComic(book: SearchBook) {
         _comicBook.value = book
+        _comicIsTextMode.value = sourceManager.availableSources.value
+            .firstOrNull { it.id == book.sourceId }?.capabilities?.supportOnlineText == true
         _comicChapters.value = emptyList()
         _comicChaptersError.value = null
         _comicChapterImages.value = emptyList()
         _comicChapterHeaders.value = emptyMap()
         _comicChapterError.value = null
+        _novelChapterText.value = ""
+        _novelChapterError.value = null
+        _activeNovelChapter.value = null
         loadChapters(book)
+    }
+
+    /** 文本小说源：加载章节正文 */
+    fun loadChapterText(chapter: ComicChapter) {
+        val source = sourceManager.availableSources.value
+            .firstOrNull { it.id == _comicBook.value?.sourceId } as? ComicSource
+        if (source == null) {
+            _novelChapterError.value = "当前书源不可用"
+            return
+        }
+        viewModelScope.launch {
+            _activeNovelChapter.value = chapter
+            _novelChapterLoading.value = true
+            _novelChapterError.value = null
+            _novelChapterText.value = ""
+            when (val result = source.getChapterText(chapter.id)) {
+                is SourceResult.Success -> _novelChapterText.value = result.data
+                is SourceResult.Error -> _novelChapterError.value = result.exception.message ?: "章节加载失败"
+            }
+            _novelChapterLoading.value = false
+        }
     }
 
     private val _aggregateMode = MutableStateFlow(true)
     val aggregateMode: StateFlow<Boolean> = _aggregateMode.asStateFlow()
 
+    /** 聚合搜索类别："comic" 漫画源 / "novel" 小说源 */
+    private val _aggregateKind = MutableStateFlow("comic")
+    val aggregateKind: StateFlow<String> = _aggregateKind.asStateFlow()
+
     fun setAggregateMode(enabled: Boolean) {
         _aggregateMode.value = enabled
     }
 
+    fun setAggregateKind(kind: String) {
+        _aggregateKind.value = kind
+    }
+
+    /* ── 多语言搜索开关（第十一轮第 6 条）：UI 可见可控，驱动 expandVariants ── */
+    private val _multiLanguageSearch = MutableStateFlow(prefs.multiLanguageSearch)
+    val multiLanguageSearch: StateFlow<Boolean> = _multiLanguageSearch.asStateFlow()
+
+    fun setMultiLanguageSearch(enabled: Boolean) {
+        prefs.multiLanguageSearch = enabled
+        _multiLanguageSearch.value = enabled
+    }
+
     private var aggregateSearchSeq = 0L
 
+    /* ── 多语言标题变体扩展（第七轮第 7 条；第十一轮第 6 条修复）──
+     * 用户输入 → 归一化（含繁→简折叠）→ 查本地 AniList 标题库 → 命中作品的其它
+     * 语言标题 → 作为额外关键词一起发给各书源。AniList 只是"标题扩展器"：
+     * 离线 / 无数据 / 查询失败 / 用户关闭开关时安全退化为 [原始关键词] 单变体，
+     * 搜索链路永不报错。
+     *
+     * 第十一轮第 6 条根因修复：旧版只做归一化列的"精确等值"匹配，而用户输入常为
+     * 短名（"无职转生"）、库内存的是完整标题（"無職転生 ～異世界行ったら本気だす～"），
+     * 等值永远落空 → 多语言扩展从未真正生效。现改为：精确 → 前缀/子串包含匹配；
+     * 并叠加繁简折叠（"無職転生" ↔ "无职转生" 同一作品两种书写互匹配）。 */
+    private suspend fun expandVariants(keyword: String): List<String> {
+        val fallback = listOf(keyword)
+        if (keyword.isBlank()) return fallback
+        // 第十一轮第 6 条：多语言搜索开关（UI 可控；关闭后只用原始关键词）
+        if (!prefs.multiLanguageSearch) return fallback
+        return runCatching {
+            val normalized = com.example.source.anilist.TitleNormalizer.normalize(keyword)
+            val compact = com.example.source.anilist.TitleNormalizer.compact(keyword)
+            if (normalized.isEmpty()) return fallback
+            val dao = com.example.data.AppDatabase.getDatabase(getApplication()).anilistDao()
+            // 1) 精确等值（归一化/紧凑态任一命中）
+            var mediaIds = dao.findMediaIds(normalized, compact)
+            // 2) 子串包含兜底：短名（"无职转生"）命中完整标题（"無職転生 ～…～"）。
+            //    归一化后 ≥2 字符才走包含匹配，避免单字噪音命中上百部作品
+            if (mediaIds.isEmpty() && normalized.replace(" ", "").length >= 2) {
+                val escNorm = escapeLike(normalized)
+                val escComp = escapeLike(compact)
+                if (escNorm.isNotEmpty() && escComp.isNotEmpty()) {
+                    mediaIds = dao.findMediaIdsContaining(escNorm, escComp, 8)
+                }
+            }
+            if (mediaIds.isEmpty()) return fallback
+            val rawTitles = dao.getRawTitlesFor(mediaIds)
+            com.example.source.anilist.SearchVariantBuilder.build(keyword, rawTitles)
+        }.getOrDefault(fallback)
+    }
+
+    /** SQLite LIKE 通配符转义（配套 DAO 里的 ESCAPE '\'） */
+    private fun escapeLike(s: String): String =
+        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     fun aggregateSearch(keyword: String) {
-        val sources = sourceManager.availableSources.value.filter { it.capabilities.supportComic }
+        // 聚合类别互斥过滤：novel=小说源（Z-Library/Legado 文字源）；comic=漫画源（且排除文字源）
+        val novel = _aggregateKind.value == "novel"
+        val sources = sourceManager.availableSources.value.filter {
+            if (novel) it.isNovelSource else it.capabilities.supportComic && !it.isNovelSource
+        }
         Log.i("Aggregate", "aggregateSearch '$keyword' sources=${sources.map { it.name }}")
         if (sources.isEmpty()) {
             _uiState.value = LibraryUiState.Error(LibraryError.SourceUnavailable)
@@ -272,41 +400,70 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             _uiState.value = LibraryUiState.AggregateResults(initialGroups, running = true)
+            // 第七轮第 7 条：多语言变体（本地 AniList 标题库扩展；离线安全退化）
+            val variants = expandVariants(keyword)
+            Log.i("Aggregate", "search variants: $variants")
             sources.forEach { source ->
                 launch {
-                    val result = withTimeoutOrNull(20000) { source.search(keyword) }
+                    // 每个源依次用全部变体搜索：不同语言、不同书源的结果全部保留
+                    // （跨源永不去重）；同一书源内同一资源 id 去重（多别名重复命中）
+                    val collected = ArrayList<SearchBook>(32)
+                    var lastError: String? = null
+                    var anySuccess = false
+                    variants.forEach { variant ->
+                        // Z-Library（1lib.sk）首次搜索要过 DiamWall 挑战：
+                        // OkHttp 503 PoW 解不了时 WebView 兜底全程约 30-40s，
+                        // 20s 超时会中途砍掉 WebView 导致"搜索超时"假错误；
+                        // 过挑战后验证 Cookie 同步进 OkHttp，后续搜索恢复秒级。
+                        val perSourceTimeoutMs = if (source.id == "zlibrary") 55000L else 20000L
+                        val result = withTimeoutOrNull(perSourceTimeoutMs) { source.search(variant) }
+                        if (seq != aggregateSearchSeq) return@launch
+                        when (result) {
+                            is SourceResult.Success -> {
+                                anySuccess = true
+                                collected.addAll(result.data)
+                                // 变体粒度流式更新：先到的语言结果先展示
+                                _uiState.update { current ->
+                                    if (current !is LibraryUiState.AggregateResults) current
+                                    else {
+                                        val merged = collected.distinctBy { it.id }
+                                        LibraryUiState.AggregateResults(
+                                            groups = current.groups.map {
+                                                if (it.sourceId == source.id)
+                                                    it.copy(books = merged, loading = true)
+                                                else it
+                                            },
+                                            running = true
+                                        )
+                                    }
+                                }
+                            }
+                            is SourceResult.Error -> {
+                                lastError = result.exception.message
+                            }
+                            null -> lastError = "搜索超时"
+                        }
+                    }
                     if (seq != aggregateSearchSeq) return@launch
-                    val group = when (result) {
-                        is SourceResult.Success -> {
-                            Log.i("Aggregate", "${source.name}: ${result.data.size} books")
-                            LibraryUiState.AggregateGroup(
-                                sourceId = source.id,
-                                sourceName = source.name,
-                                books = result.data,
-                                error = null,
-                                loading = false
-                            )
-                        }
-                        is SourceResult.Error -> {
-                            Log.i("Aggregate", "${source.name}: ERROR ${result.exception.message}")
-                            LibraryUiState.AggregateGroup(
-                                sourceId = source.id,
-                                sourceName = source.name,
-                                books = emptyList(),
-                                error = result.exception.message,
-                                loading = false
-                            )
-                        }
-                        null -> {
-                            Log.i("Aggregate", "${source.name}: TIMEOUT")
-                            LibraryUiState.AggregateGroup(
-                                sourceId = source.id,
-                                sourceName = source.name,
-                                books = emptyList(),
-                                error = "搜索超时",
-                                loading = false
-                            )
-                        }
+                    val group = if (anySuccess || collected.isNotEmpty()) {
+                        LibraryUiState.AggregateGroup(
+                            sourceId = source.id,
+                            sourceName = source.name,
+                            // 源内去重：仅去掉同一资源（同 id）的重复项；
+                            // 不同书源/不同语言标题的结果即使同作品也全部保留
+                            books = collected.distinctBy { it.id },
+                            error = null,
+                            loading = false
+                        )
+                    } else {
+                        Log.i("Aggregate", "${source.name}: ERROR $lastError")
+                        LibraryUiState.AggregateGroup(
+                            sourceId = source.id,
+                            sourceName = source.name,
+                            books = emptyList(),
+                            error = lastError,
+                            loading = false
+                        )
                     }
                     _uiState.update { current ->
                         if (current !is LibraryUiState.AggregateResults) return@update current
@@ -702,27 +859,43 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.value = LibraryUiState.Searching
             errorMessage.value = null
-            when (val result = source.search(keyword)) {
-                is SourceResult.Success -> {
-                    _uiState.value = LibraryUiState.SearchResults(result.data)
-                    if (source.id == "mangadex" && result.data.isNotEmpty()) {
-                        enrichMangaDexAuthors(result.data, source)
-                    }
+            // 第七轮第 7 条：单源搜索同样走多语言变体（本地 AniList 标题库扩展）；
+            // 源内按资源 id 去重（多别名命中同一资源只显示一次）
+            val variants = expandVariants(keyword)
+            val collected = ArrayList<SearchBook>(32)
+            var firstError: SourceException? = null
+            variants.forEach { variant ->
+                when (val result = source.search(variant)) {
+                    is SourceResult.Success -> collected.addAll(result.data)
+                    is SourceResult.Error -> if (firstError == null) firstError = result.exception
                 }
-                is SourceResult.Error -> {
-                    val error = when (val e = result.exception) {
-                        is SourceException.NetworkError -> {
-                            if (e.message?.contains("Cloudflare") == true || e.message?.contains("DiamWall") == true) LibraryError.CloudflareBlocked
-                            else if (e.message?.contains("Z-Library 当前节点不可用") == true) LibraryError.SourceUnavailable
-                            else LibraryError.NetworkUnavailable
+            }
+            if (collected.isNotEmpty()) {
+                val merged = collected.distinctBy { it.id }
+                _uiState.value = LibraryUiState.SearchResults(merged)
+                if (source.id == "mangadex" && merged.isNotEmpty()) {
+                    enrichMangaDexAuthors(merged, source)
+                }
+            } else {
+                val e = firstError
+                val error = when (e) {
+                    null -> LibraryError.Unknown("没有找到相关结果")
+                    is SourceException.NetworkError -> {
+                        val msg = e.message ?: ""
+                        com.example.source.SourceLog.log(source.name, "搜索「$keyword」失败: $msg")
+                        when {
+                            msg.contains("Cloudflare") || msg.contains("DiamWall") -> LibraryError.CloudflareBlocked
+                            msg.contains("Z-Library 当前节点不可用") -> LibraryError.SourceUnavailable
+                            msg.isNotBlank() -> LibraryError.NetworkDetail(msg)
+                            else -> LibraryError.NetworkUnavailable
                         }
-                        is SourceException.LoginRequired -> LibraryError.AuthenticationRequired
-                        is SourceException.ParseError -> LibraryError.ParseFailed(e.message ?: "解析失败")
-                        else -> LibraryError.Unknown(e.message ?: "未知错误", e)
                     }
-                    _uiState.value = LibraryUiState.Error(error)
-                    errorMessage.value = error.message ?: "发生错误"
+                    is SourceException.LoginRequired -> LibraryError.AuthenticationRequired
+                    is SourceException.ParseError -> LibraryError.ParseFailed(e.message ?: "解析失败")
+                    else -> LibraryError.Unknown(e.message ?: "未知错误", e)
                 }
+                _uiState.value = LibraryUiState.Error(error)
+                errorMessage.value = error.message ?: "发生错误"
             }
         }
     }
@@ -766,18 +939,34 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch {
                 _formatPickerBook.value = book
                 _formatLoading.value = true
-                val formats = when (val result = source.getAvailableFormats(book)) {
+                val fetched = when (val result = source.getAvailableFormats(book)) {
                     is SourceResult.Success -> result.data.filter { it.format.isNotBlank() }
                     is SourceResult.Error -> emptyList()
                 }
                 _formatLoading.value = false
-                if (formats.size > 1) {
-                    _pendingFormats.value = formats
-                } else {
-                    // 只有一个格式（或获取失败）：直接按默认格式下载
-                    _formatPickerBook.value = null
-                    _pendingFormats.value = emptyList()
-                    downloadBook(book, source, null)
+                // 过滤阅读器不支持的格式（PDF 等），避免下载后书架出现打不开的书
+                val formats = filterReadableFormats(fetched)
+                when {
+                    formats.size > 1 -> _pendingFormats.value = formats
+                    formats.size == 1 -> {
+                        _formatPickerBook.value = null
+                        _pendingFormats.value = emptyList()
+                        downloadBook(book, source, formats.first().format)
+                    }
+                    fetched.isNotEmpty() -> {
+                        // 全部格式都不支持阅读：不再下载，提示换其他版本
+                        _formatPickerBook.value = null
+                        _pendingFormats.value = emptyList()
+                        errorMessage.value = "该书仅有 " +
+                            fetched.joinToString(" / ") { it.format.uppercase() } +
+                            " 格式，App 内暂不支持阅读，请换其他版本"
+                    }
+                    else -> {
+                        // 格式获取失败：按默认格式下载
+                        _formatPickerBook.value = null
+                        _pendingFormats.value = emptyList()
+                        downloadBook(book, source, null)
+                    }
                 }
             }
         } else {
@@ -806,13 +995,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             when (val result = source.getDownloadInfo(book.id, preferredFormat = format)) {
                 is SourceResult.Success -> {
+                    val finalFormat = result.data.format.ifBlank { book.format }
+                    // 统一兜底：阅读器不支持的格式（PDF 等）不下载，避免书架出现打不开的书
+                    if (finalFormat.lowercase() in READER_UNSUPPORTED_FORMATS) {
+                        errorMessage.value = "该书文件为 ${finalFormat.uppercase()} 格式，App 内暂不支持阅读，请换其他版本"
+                        return@launch
+                    }
                     val request = DownloadRequest(
                         bookId = book.id,
                         title = book.title,
                         author = book.author,
                         sourceId = book.sourceId,
                         downloadUrl = result.data.url,
-                        format = result.data.format.ifBlank { book.format },
+                        format = finalFormat,
                         coverUrl = book.cover
                     )
                     downloadManager.enqueueDownload(request, result.data.referer, result.data.headers)
@@ -830,13 +1025,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
      */
     fun startWebViewDownload(book: SearchBook?, realUrl: String, cookieHeader: String) {
         if (book == null || realUrl.isBlank()) return
+        val format = guessFileFormatFromUrl(realUrl) ?: book.format.ifBlank { "epub" }
+        // 阅读器不支持的格式（如 PDF）不再入下载队列，避免书架出现打不开的书
+        if (format.lowercase() in READER_UNSUPPORTED_FORMATS) {
+            errorMessage.value = "该书文件为 ${format.uppercase()} 格式，App 内暂不支持阅读，请换其他版本"
+            return
+        }
         val request = DownloadRequest(
             bookId = book.id,
             title = book.title,
             author = book.author,
             sourceId = book.sourceId,
             downloadUrl = realUrl,
-            format = guessFileFormatFromUrl(realUrl) ?: book.format.ifBlank { "epub" },
+            format = format,
             coverUrl = book.cover
         )
         downloadManager.enqueueDownload(

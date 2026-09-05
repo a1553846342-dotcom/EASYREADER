@@ -1,9 +1,7 @@
 package com.example.data
 
 import android.content.Context
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import kotlinx.coroutines.flow.first
+import org.json.JSONObject
 import java.io.File
 
 data class BackupPayload(
@@ -12,8 +10,13 @@ data class BackupPayload(
     val preferences: Map<String, String>
 )
 
+/**
+ * 本地备份（占位实现；WebDAV/JSON 在 Roadmap）。
+ * 第十一轮瘦身：JSON 序列化从 Moshi + KotlinJsonAdapterFactory（连带 kotlin-reflect，
+ * ~MB 级 dex 占用）改为 org.json 手写——负载只有 3 个字段，手写无损耗，
+ * 且导出的 JSON 键名/结构与旧版完全一致（备份文件互读兼容）。
+ */
 class BackupManager(private val context: Context, private val prefs: PreferencesManager) {
-    private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
     fun exportBackupJson(): String {
         val payload = BackupPayload(
@@ -28,8 +31,11 @@ class BackupManager(private val context: Context, private val prefs: Preferences
                 "restReminderMinutes" to prefs.restReminderMinutes.toString()
             )
         )
-        val adapter = moshi.adapter(BackupPayload::class.java)
-        val json = adapter.toJson(payload)
+        val json = JSONObject()
+            .put("exportTime", payload.exportTime)
+            .put("booksCount", payload.booksCount)
+            .put("preferences", JSONObject(payload.preferences))
+            .toString()
 
         val file = File(context.filesDir, "novel_reader_backup.json")
         file.writeText(json)
@@ -38,16 +44,16 @@ class BackupManager(private val context: Context, private val prefs: Preferences
 
     fun restoreBackupJson(jsonString: String): Boolean {
         return try {
-            val adapter = moshi.adapter(BackupPayload::class.java)
-            val payload = adapter.fromJson(jsonString) ?: return false
+            val payload = JSONObject(jsonString)
+            val preferences = payload.optJSONObject("preferences") ?: return false
 
-            payload.preferences["fontSize"]?.toFloatOrNull()?.let { prefs.fontSize = it }
-            payload.preferences["lineHeight"]?.toFloatOrNull()?.let { prefs.lineHeight = it }
-            payload.preferences["readerTheme"]?.toIntOrNull()?.let { prefs.readerTheme = it }
-            payload.preferences["pageTurnMode"]?.toIntOrNull()?.let { prefs.pageTurnMode = it }
-            payload.preferences["splashPureMode"]?.toBooleanStrictOrNull()?.let { prefs.splashPureMode = it }
-            payload.preferences["screenOrientationLock"]?.toIntOrNull()?.let { prefs.screenOrientationLock = it }
-            payload.preferences["restReminderMinutes"]?.toIntOrNull()?.let { prefs.restReminderMinutes = it }
+            preferences.optString("fontSize").toFloatOrNull()?.let { prefs.fontSize = it }
+            preferences.optString("lineHeight").toFloatOrNull()?.let { prefs.lineHeight = it }
+            preferences.optString("readerTheme").toIntOrNull()?.let { prefs.readerTheme = it }
+            preferences.optString("pageTurnMode").toIntOrNull()?.let { prefs.pageTurnMode = it }
+            preferences.optString("splashPureMode").toBooleanStrictOrNull()?.let { prefs.splashPureMode = it }
+            preferences.optString("screenOrientationLock").toIntOrNull()?.let { prefs.screenOrientationLock = it }
+            preferences.optString("restReminderMinutes").toIntOrNull()?.let { prefs.restReminderMinutes = it }
             true
         } catch (e: Exception) {
             e.printStackTrace()

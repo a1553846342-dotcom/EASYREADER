@@ -35,14 +35,22 @@ android {
     applicationId = "com.aistudio.novelreader.kxmpzq"
     minSdk = 24
     targetSdk = 35
-    versionCode = 193
-    versionName = "1.0.0"
+    versionCode = 195
+    versionName = "1.0.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     // 极致瘦身：当前目标设备均为 arm64（华为/主流手机）；保留其它 ABI 会多出约 16MB 原生库
     ndk {
-      abiFilters += listOf("arm64-v8a")
+      // release 仅 arm64（瘦身）；debug 额外带 x86_64——模拟器原生执行 ONNX，
+      // 走 ARM 翻译层跑 onnxruntime 会 SIGSEGV（第十五轮实测）
+      abiFilters += if (gradle.startParameter.taskNames.any { it.contains("Release") } &&
+        !project.hasProperty("includeX86")
+      ) {
+        listOf("arm64-v8a")
+      } else {
+        listOf("arm64-v8a", "x86_64")
+      }
     }
 
     // 仅保留中英文资源，去掉无用的 locale 资源
@@ -133,7 +141,7 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation(project(":backdrop"))
-    implementation("com.github.skydoves:flexible-bottomsheet-material3:0.1.5")
+  // 第十一轮瘦身：flexible-bottomsheet-material3 引入后从未使用（全项目零 import），移除
   implementation("org.brotli:dec:0.1.2")
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
@@ -141,8 +149,12 @@ dependencies {
   implementation(libs.jsoup)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.moshi.kotlin)
+  // 第十一轮瘦身：moshi-kotlin（连带 kotlin-reflect）已移除——仅有的两个序列化点
+  //（BackupManager / RemoteEndpointProvider）改为 org.json 手写，JSON 兼容不变
   implementation(libs.okhttp)
+  // 漫画翻译（第十五轮）：ONNX Runtime 跑 PP-OCR 检测/识别（纯 CPU，arm64）
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.28.0")
+  // 第十七轮：ML Kit 移除（国内设备普遍无谷歌服务）——在线兜底改腾讯交互翻译（国内直连免费）
   implementation(libs.quickjs.kt)
   implementation(libs.cronet.api)
   implementation(libs.cronet.embedded)

@@ -36,6 +36,7 @@ import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.iridescentBorder
 import com.example.ui.components.rememberIridescentColors
 import dev.chrisbanes.haze.HazeState
+import com.example.ui.adaptive.AdaptiveSpec
 
 /**
  * 下载格式选择弹窗（亚克力立牌玻璃，与全局弹窗统一风格）。
@@ -79,10 +80,13 @@ fun FormatPickerDialog(
                 label = "formatPanelAlpha"
             )
 
+            // 平板/横屏钳宽居中（手机全宽观感不变）
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 28.dp)
+                    .widthIn(max = AdaptiveSpec.dialogMaxWidth)
                     .graphicsLayer {
                         scaleX = panelScale
                         scaleY = panelScale
@@ -166,6 +170,7 @@ fun FormatPickerDialog(
                         }
                     }
                 }
+            }
             }
         }
     }

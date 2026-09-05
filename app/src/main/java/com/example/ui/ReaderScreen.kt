@@ -182,7 +182,7 @@ import com.example.ui.mascot.MascotAnimationController
 import com.example.ui.mascot.MascotEvent
 import com.example.ui.mascot.MascotSpriteSheet
 
-import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
+import com.example.ui.components.AppSwitch
 
 import com.example.ui.theme.MintPrimary
 
@@ -217,6 +217,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 import kotlin.math.abs
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 
 
@@ -1574,7 +1576,7 @@ fun ReaderScreen(
 
                     Text(
 
-                        text = "该文件格式暂不支持阅读（PDF / MOBI / DOCX 等）\n请导入 EPUB、TXT 或漫画格式",
+                        text = "该文件格式暂不支持阅读（KFX / DJVU / DOC / RTF / CHM 等）\n请导入 EPUB、PDF、TXT 或漫画格式",
 
                         color = textColor.copy(alpha = 0.75f),
 
@@ -3194,7 +3196,8 @@ fun ReaderScreen(
 
         ) {
 
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
 
                 Text("目录 (${chapters.size}章)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
@@ -3273,6 +3276,7 @@ fun ReaderScreen(
                 }
 
             }
+            }
 
         }
 
@@ -3290,7 +3294,8 @@ fun ReaderScreen(
 
         ) {
 
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
 
                 /* ── 头部 ── */
                 Row(
@@ -3370,8 +3375,7 @@ fun ReaderScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                                 )
                             }
-                            SquishyToggleSwitch(
-                                color = MintPrimary,
+                            AppSwitch(
                                 checked = firstLineIndent,
                                 onCheckedChange = { firstLineIndent = it; prefs.firstLineIndent = it }
                             )
@@ -3638,6 +3642,7 @@ fun ReaderScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
             }
+            }
 
         }
 
@@ -3769,7 +3774,8 @@ fun ReaderScreen(
 
         ) {
 
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
 
                 Text("书签记录 (${bookmarks.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
@@ -3837,6 +3843,7 @@ fun ReaderScreen(
 
                 }
 
+            }
             }
 
         }

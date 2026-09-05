@@ -13,20 +13,23 @@ class DiamWallInterceptor(private val cookieJar: okhttp3.CookieJar) : Intercepto
         var request = chain.request()
         var response = chain.proceed(request)
         var followUpCount = 0
-        val seenUrls = mutableSetOf<String>()
-        
+        val urlCounts = mutableMapOf<String, Int>()
+
         while (followUpCount < 8) {
             val code = response.code
             Log.d("DiamWall", "Response code: $code for ${request.url}\n" + response.peekBody(1024).string())
 
-            // Loop guard: DiamWall can redirect back to the same URL (307 + cookie dance).
-            // Without this, the request loop hits OkHttp's follow-up limit and throws
-            // "Too many follow-up requests" instead of returning a useful response.
-            if (!seenUrls.add(request.url.toString())) {
+            // Loop guard: DiamWall's 307→503 challenge dance legitimately revisits the
+            // same URL (first visit 307, second visit the challenge page, third visit
+            // after PoW solve). Only abort when the same URL has been hit 4+ times
+            // without progress — the old set-based guard broke out on the second
+            // hit, skipping the 503 PoW solving entirely (2026-09-04 1lib.sk fix).
+            val hits = urlCounts.merge(request.url.toString(), 1, Int::plus) ?: 1
+            if (hits > 3) {
                 Log.w("DiamWall", "Redirect/challenge loop detected for ${request.url}; stopping")
                 break
             }
-            
+
             // 1. Handle DiamWall 517 / 403 / 503 / 513 PoW Verification
             //    兜底：个别节点把挑战页以 HTTP 200 + text/html 返回，
             //    按 body 特征（DiamWall / Checking your browser / TOKEN）同样识别并求解，

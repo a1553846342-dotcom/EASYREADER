@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -109,11 +110,18 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onNavigateToShelf: () -> Unit,
     onNavigateToStats: () -> Unit,
-    totalReadTimeSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
+    /** 今日已阅读秒数（daily_read_time_<今天>；第七轮第 4 条：卡片显示"今日"口径） */
+    todayReadSecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
     streakDaysFlow: kotlinx.coroutines.flow.StateFlow<Int>,
     onDeleteBook: (Book) -> Unit,
     onMoveBook: (Book, String) -> Unit,
-    onDeleteCategory: ((com.example.data.CategoryEntity) -> Unit)? = null
+    onDeleteCategory: ((com.example.data.CategoryEntity, (Boolean) -> Unit) -> Unit)? = null,
+    /* ── 隐私模式（第七轮第 6 条）：状态由 MainActivity 从 MainViewModel 注入 ── */
+    privacyModeEnabled: Boolean = false,
+    protectedCategoryNames: Set<String> = emptySet(),
+    unlockedCategoryIds: Set<Int> = emptySet(),
+    onUnlockCategory: ((com.example.data.CategoryEntity, String) -> Boolean)? = null,
+    onToggleCategoryProtected: ((com.example.data.CategoryEntity, Boolean) -> Unit)? = null,
 ) {
     val sharedTransitionScope = com.example.LocalSharedTransitionScope.current
     val animatedVisibilityScope = com.example.LocalNavAnimatedVisibilityScope.current
@@ -137,12 +145,36 @@ fun HomeScreen(
         kotlinx.coroutines.delay(300)
         debouncedQuery = searchQuery
     }
-    var selectedCategory by remember { mutableStateOf("全部") }
+    var selectedCategory by remember { mutableStateOf(com.example.data.DEFAULT_CATEGORY) }
+    // 第七轮第 6.1 条：不再有聚合视图"全部"——所选分类必须是真实存在的分类行；
+    // 分类列表异步到达/删除后失效时回退到"默认"
+    LaunchedEffect(categories) {
+        val names = categories.map { it.name }
+        if (names.isNotEmpty() && selectedCategory !in names) {
+            selectedCategory = if (names.contains(com.example.data.DEFAULT_CATEGORY)) {
+                com.example.data.DEFAULT_CATEGORY
+            } else names.first()
+        }
+    }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToMove by remember { mutableStateOf<Book?>(null) }
     var longPressBook by remember { mutableStateOf<Book?>(null) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryText by remember { mutableStateOf("") }
+    // 隐私交互状态（第七轮第 6.3 条）：长按分类 → 分类操作面板；受保护分类进入 → PIN 验证
+    var categorySheetFor by remember { mutableStateOf<com.example.data.CategoryEntity?>(null) }
+    var pinVerifyFor by remember { mutableStateOf<com.example.data.CategoryEntity?>(null) }
+
+    // 第七轮第 6.3 条验收缺口修复：受保护分类在"锁定"状态（隐私模式开启、标记保护、
+    // 本进程未通过 PIN 解锁）时内容不得可见——包括重启后初始选中恰好是受保护分类的
+    // 场景（旧逻辑只挡"切换进入"的点击，不挡默认选中直达）。
+    val selectedCategoryLocked = remember(
+        selectedCategory, privacyModeEnabled, protectedCategoryNames, unlockedCategoryIds, categories
+    ) {
+        if (!privacyModeEnabled) false
+        else if (selectedCategory !in protectedCategoryNames) false
+        else categories.find { it.name == selectedCategory }?.id !in unlockedCategoryIds
+    }
     // 书架呼吸动画：30fps 自定义驱动（4 秒周期），视觉与 60fps 一致但绘制开销减半；
     // 无书时不启动，避免动画时钟空转。
     val hasBreathingBooks = books.isNotEmpty()
@@ -158,10 +190,13 @@ fun HomeScreen(
     }
 
     // Filter books by category and search query (debounced)
-    val filteredBooks = remember(books, selectedCategory, debouncedQuery) {
-        books.filter { book ->
-            val matchesCategory = (selectedCategory == "全部") || (book.category == selectedCategory)
-            val matchesSearch = book.title.contains(debouncedQuery, ignoreCase = true) || 
+    // 第七轮第 6.1/6.2 条：分类互斥单归属——选中分类只显示归属它的书；
+    // 6.3：锁定状态下的受保护分类不显示内容（PIN 解锁后才可见）
+    val filteredBooks = remember(books, selectedCategory, selectedCategoryLocked, debouncedQuery) {
+        if (selectedCategoryLocked) emptyList()
+        else books.filter { book ->
+            val matchesCategory = book.category == selectedCategory
+            val matchesSearch = book.title.contains(debouncedQuery, ignoreCase = true) ||
                                 book.author.contains(debouncedQuery, ignoreCase = true)
             matchesCategory && matchesSearch
         }
@@ -178,22 +213,43 @@ fun HomeScreen(
         }
     }
 
-    // 分类删除确认对话框
+    // 分类删除确认对话框（第七轮第 6.1 条："默认"分类不可删除；删除时书籍迁回默认）
     if (categoryToDelete != null) {
         val cat = categoryToDelete!!
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val isDefaultCategory = cat.name == com.example.data.DEFAULT_CATEGORY
         AlertDialog(
             onDismissRequest = { categoryToDelete = null },
-            title = { Text("删除分类", fontWeight = FontWeight.Bold) },
-            text = { Text("确定要删除分类「${cat.name}」吗？该分类下的书籍不会被删除。") },
+            title = { Text(if (isDefaultCategory) "无法删除" else "删除分类", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    if (isDefaultCategory) "默认分类不可删除。"
+                    else "确定要删除分类「${cat.name}」吗？其中的书籍会移动到「默认」分类。"
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    onDeleteCategory?.invoke(cat)
-                    if (selectedCategory == cat.name) selectedCategory = "全部"
-                    categoryToDelete = null
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                if (!isDefaultCategory) {
+                    TextButton(onClick = {
+                        onDeleteCategory?.invoke(cat) { deleted ->
+                            if (!deleted) {
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    "默认分类不可删除",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        if (selectedCategory == cat.name) selectedCategory = com.example.data.DEFAULT_CATEGORY
+                        categoryToDelete = null
+                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                } else {
+                    TextButton(onClick = { categoryToDelete = null }) { Text("知道了") }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { categoryToDelete = null }) { Text("取消") }
+                if (!isDefaultCategory) {
+                    TextButton(onClick = { categoryToDelete = null }) { Text("取消") }
+                }
             }
         )
     }
@@ -290,10 +346,17 @@ fun HomeScreen(
                 )
             },
             confirmButton = {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
                 TextButton(
                     onClick = {
                         if (newCategoryText.isNotBlank()) {
                             onAddCategory(newCategoryText.trim())
+                            // 第十一轮第 2 条：与设置页一致的操作反馈（此前静默关闭，
+                            // 用户无法区分"创建成功"与"点击无效"）
+                            android.widget.Toast.makeText(
+                                ctx, "已创建分类「${newCategoryText.trim()}」",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                             newCategoryText = ""
                             showAddCategoryDialog = false
                         }
@@ -334,7 +397,8 @@ fun HomeScreen(
             TabScreenHeader(
                 collapsed = homeHeaderCollapsed,
                 title = "我的书架",
-                subtitle = "欢迎回到私人数字书库",
+                // 与其它三页页头副标题统一英文风格（LIBRARY & SEARCH / STATISTICS & INSIGHTS / SETTINGS & PREFERENCES）
+                subtitle = "BOOKSHELF & READING",
                 titleColor = glassTitleColor(),
                 titleVisible = !isSearchExpanded,
                 trailing = {
@@ -419,7 +483,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     TextButton(
-                        onClick = { onImportClick("全部") },
+                        onClick = { onImportClick(com.example.data.DEFAULT_CATEGORY) },
                         modifier = Modifier.testTag("empty_bookshelf_import_button")
                     ) {
                         Text("或者 导入本地 TXT / EPUB / Comic 文件", color = MintPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -428,16 +492,32 @@ fun HomeScreen(
             } else {
                 // RICH PREMIUM CONTENT STATE
                 val screenWidthDp = LocalConfiguration.current.screenWidthDp
-                val cols = if (screenWidthDp > 600) 4 else 3
+                // 多设备一致：按宽度自适应列数（手机3列 / 折叠展开与小平板4列 / 宽平板最多6列），
+                // 不再只有 3/4 两档——宽屏拉伸大卡片的问题源头
+                val cols = ((screenWidthDp + 24) / 150).coerceIn(3, 6)
 
+                // 第七轮第 6.3 条：Hero"正在阅读"卡片同样是内容泄漏面——
+                // 其书籍所在分类处于锁定态时整卡隐藏（PIN 解锁后恢复）
+                val heroCategoryLocked = remember(
+                    currentlyReading.category, privacyModeEnabled,
+                    protectedCategoryNames, unlockedCategoryIds, categories
+                ) {
+                    if (!privacyModeEnabled) false
+                    else if (currentlyReading.category !in protectedCategoryNames) false
+                    else categories.find { it.name == currentlyReading.category }?.id !in unlockedCategoryIds
+                }
+
+                // 第九轮修复⑤续：曾在此处叠加"内容纱罩"全尺寸渐变矩形（浅色主题下
+                // 呈半透明白色大矩形盖住整个内容区，用户反馈遮挡/点击异常）——已从
+                // 视图层彻底移除，书籍网格直接承载在页面背景之上。
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(cols),
                     state = homeGridState,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "hero_section") {
+                    if (!heroCategoryLocked) item(span = { GridItemSpan(maxLineSpan) }, key = "hero_section") {
                         // 2. HERO: RECENTLY READ BIG BOOK CARD (pre-calculated and remembered at top)
 
                         val heroCoverData = remember(currentlyReading.coverUri, currentlyReading.isCoverValid) {
@@ -643,128 +723,142 @@ fun HomeScreen(
                                     fontFamily = FontFamily.Serif
                                 )
 
+                                // 第七轮第 5.1 条：三个次级操作统一为有质感的玻璃小胶囊
+                                // （图标+文字+轻背景描边），与标题形成明确主次——不过重、不抢内容
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // 排序按钮（用户要求：置于「导入新书」左侧）
-                                    TextButton(
-                                        onClick = { sortBy = (sortBy + 1) % 3 },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                Icons.Filled.Sort,
-                                                contentDescription = null,
-                                                tint = if (sortBy > 0) MintPrimary else adaptiveTitleColor().copy(alpha = 0.55f),
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = when (sortBy) { 0 -> "默认"; 1 -> "A-Z"; else -> "最近" },
-                                                color = if (sortBy > 0) MintPrimary else adaptiveTitleColor().copy(alpha = 0.55f),
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                                    HomeActionChip(
+                                        icon = Icons.Filled.Sort,
+                                        label = when (sortBy) { 0 -> "默认"; 1 -> "A-Z"; else -> "最近" },
+                                        emphasized = sortBy > 0,
+                                    ) { sortBy = (sortBy + 1) % 3 }
 
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
 
-                                    TextButton(
-                                        onClick = { onImportClick(selectedCategory) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Filled.Add, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("导入新书", color = MintPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
+                                    HomeActionChip(
+                                        icon = Icons.Filled.Add,
+                                        label = "导入新书",
+                                        emphasized = true,
+                                    ) { onImportClick(selectedCategory) }
 
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
 
-                                    // 新建分类：图标+文字组合，提升可发现性
-                                    TextButton(
-                                        onClick = { showAddCategoryDialog = true },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Filled.Category, contentDescription = null, tint = MintSecondary, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("新建分类", color = MintSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
+                                    HomeActionChip(
+                                        icon = Icons.Filled.Category,
+                                        label = "新建分类",
+                                        emphasized = false,
+                                    ) { showAddCategoryDialog = true }
                                 }
                             }
 
-                            // Category tabs beautifully integrated inside Starry space
+                            // 第七轮第 5.2/6.1 条：分类 Tab——可横向滚动的真实分类列表
+                            // （"全部"聚合视图已移除，"默认"为不可删除的真实分类）。
+                            // 受保护分类带锁标记，进入需 PIN 验证；长按弹出分类操作面板。
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .horizontalScroll(rememberScrollState())
-                                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                                    .padding(vertical = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val categoryNames = listOf("全部") + categories.map { it.name }
-                                categoryNames.forEach { name ->
-                                    val isSelected = selectedCategory == name
-                                    val bgAlphaState = animateFloatAsState(
-                                        targetValue = if (isSelected) 0.2f else 0.05f,
-                                        label = "category_bg_anim"
-                                    )
-                                    val borderAlphaState = animateFloatAsState(
-                                        targetValue = if (isSelected) 0.5f else 0.15f,
-                                        label = "category_border_anim"
-                                    )
-                                    val textColor = if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    val baseColor = if (isSelected) MintSecondary else MaterialTheme.colorScheme.onSurface
-
-                                    Box(
-                                        modifier = Modifier
-                                            .drawBehind {
-                                                drawRoundRect(
-                                                    color = baseColor.copy(alpha = bgAlphaState.value),
-                                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx())
-                                                )
+                                categories.forEach { cat ->
+                                    val isSelected = selectedCategory == cat.name
+                                    val isProtected = privacyModeEnabled &&
+                                        protectedCategoryNames.contains(cat.name)
+                                    val isUnlocked = unlockedCategoryIds.contains(cat.id)
+                                    val locked = isProtected && !isUnlocked
+                                    HomeCategoryChip(
+                                        name = cat.name,
+                                        selected = isSelected,
+                                        locked = locked,
+                                        onClick = {
+                                            when {
+                                                // 受保护且未解锁 → 先验证 PIN，通过后才进入
+                                                locked -> pinVerifyFor = cat
+                                                // 已解锁或普通分类 → 直接切换
+                                                else -> selectedCategory = cat.name
                                             }
-                                            .border(1.dp, baseColor.copy(alpha = borderAlphaState.value), RoundedCornerShape(16.dp))
-                                            .combinedClickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = { selectedCategory = name },
-                                                onLongClick = {
-                                                    if (name != "全部") {
-                                                        val cat = categories.find { it.name == name }
-                                                        if (cat != null) categoryToDelete = cat
-                                                    }
-                                                }
-                                            )
-                                            .padding(horizontal = 14.dp, vertical = 6.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = name,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = textColor,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
+                                        },
+                                        onLongClick = { categorySheetFor = cat },
+                                    )
                                 }
-                                    Spacer(modifier = Modifier.width(4.dp))
                             }
                         }
                     }
 
 if (sortedBooks.isEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }, key = "empty_state") {
-                            com.example.ui.components.MascotEmptyState(
-                                mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
-                                title = "「分类下没有图书」",
-                                description = "在分类『$selectedCategory』下还没有任何图书哦。您可以点击下方按钮导入新书到该分类！",
-                                actionLabel = "在此分类下导入新书",
-                                onActionClick = { onImportClick(selectedCategory) },
-                                testTagPrefix = "category_empty_state"
-                            )
+                            if (selectedCategoryLocked) {
+                                // 6.3：受保护分类锁定态——不显示内容，引导验证密码
+                                // 第九轮修复⑤：不再整块白色大卡（用户反馈"书架下面盖了
+                                // 一层透明白色矩形"）——改为克制的行内玻璃胶囊，锁定
+                                // 提示+验证按钮一行呈现，与书架玻璃语言一致。
+                                val lockedCat = categories.find { it.name == selectedCategory }
+                                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+                                            .border(
+                                                0.5.dp,
+                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                                                RoundedCornerShape(18.dp)
+                                            )
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Lock,
+                                            contentDescription = null,
+                                            tint = MintPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                text = "分类『$selectedCategory』已锁定",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = adaptiveTitleColor()
+                                            )
+                                            Text(
+                                                text = "验证隐私密码后即可查看其中的书籍",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(MintPrimary.copy(alpha = 0.14f))
+                                                .border(
+                                                    0.5.dp,
+                                                    MintPrimary.copy(alpha = 0.45f),
+                                                    RoundedCornerShape(14.dp)
+                                                )
+                                                .clickableWithFeedback { lockedCat?.let { pinVerifyFor = it } }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                        ) {
+                                            Text(
+                                                "验证密码查看",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MintPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                com.example.ui.components.MascotEmptyState(
+                                    mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
+                                    title = "「分类下没有图书」",
+                                    description = "在分类『$selectedCategory』下还没有任何图书哦。您可以点击下方按钮导入新书到该分类！",
+                                    actionLabel = "在此分类下导入新书",
+                                    onActionClick = { onImportClick(selectedCategory) },
+                                    testTagPrefix = "category_empty_state"
+                                )
+                            }
                         }
                     } else {
                         items(items = sortedBooks, key = { it.id }) { book ->
@@ -867,10 +961,17 @@ if (sortedBooks.isEmpty()) {
                                     }
                                 }
                                 boxModifier = boxModifier
-                                    .shadow(4.dp, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    // 第七轮第 5.4 条：封面卡片质感——更大圆角 + 更柔和的
+                                    // 双层阴影（环境 + 投射），"书架上的书"更立体安静
+                                    .shadow(
+                                        elevation = 8.dp,
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                        ambientColor = Color.Black.copy(alpha = 0.10f),
+                                        spotColor = Color.Black.copy(alpha = 0.16f)
+                                    )
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
                                     .background(androidx.compose.ui.graphics.Brush.verticalGradient(colors = coverGradColors))
-                                    .border(1.dp, Color.Black.copy(alpha = 0.05f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .border(1.dp, Color.Black.copy(alpha = 0.07f), androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
 
                                 Box(
                                     modifier = boxModifier,
@@ -990,13 +1091,13 @@ if (sortedBooks.isEmpty()) {
                                             .padding(top = 4.dp)
                                             .height(3.dp)
                                             .clip(RoundedCornerShape(2.dp)),
-                                        color = MintPrimary.copy(alpha = 0.7f),
-                                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        color = MintPrimary.copy(alpha = 0.85f),
+                                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
                                     )
                                     Text(
                                         text = "${book.currentChapterIndex}/${book.totalChapters} 章",
                                         fontSize = 9.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                                     )
@@ -1031,7 +1132,7 @@ if (sortedBooks.isEmpty()) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        TodayReadTimeText(totalReadTimeSecondsFlow)
+                                        TodayReadTimeText(todayReadSecondsFlow)
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = "保持阅读，遇见更好的自己。",
@@ -1091,12 +1192,52 @@ if (sortedBooks.isEmpty()) {
                 }
             )
         }
+
+        /* ── 分类操作面板（长按分类；第七轮第 6.3 条） ── */
+        categorySheetFor?.let { sheetCat ->
+            // 第九轮修复②：面板展示/开关初值必须取实时分类（categories 由 Room Flow
+            // 驱动）——此前直接用长按瞬间的 cat 快照，开关拨动后 DB 已更新而面板仍
+            // 显示旧值（"开关不动、书架却已锁"的根因）。
+            val latestSheetCat = categories.find { it.id == sheetCat.id } ?: sheetCat
+            androidx.activity.compose.BackHandler { categorySheetFor = null }
+            CategoryActionSheet(
+                category = latestSheetCat,
+                privacyModeEnabled = privacyModeEnabled,
+                onToggleProtected = { protected ->
+                    onToggleCategoryProtected?.invoke(latestSheetCat, protected)
+                },
+                onDeleteRequest = {
+                    categorySheetFor = null
+                    categoryToDelete = latestSheetCat
+                },
+                onGoToSettings = onSettingsClick,
+                onDismiss = { categorySheetFor = null },
+            )
+        }
+
+        /* ── 受保护分类的 PIN 验证（进入前；第七轮第 6.3/6.4 条） ── */
+        pinVerifyFor?.let { cat ->
+            val latestVerifyCat by rememberUpdatedState(cat)
+            com.example.ui.privacy.PrivacyPinOverlay(
+                mode = com.example.ui.privacy.PinEntryMode.VERIFY,
+                onPinSet = { },
+                onPinVerified = { pin ->
+                    // 解锁成功即刻选中该分类（StateFlow → Compose 的传播晚于本同步回调）
+                    val ok = onUnlockCategory?.invoke(latestVerifyCat, pin) ?: false
+                    if (ok) selectedCategory = latestVerifyCat.name
+                    ok
+                },
+                onDismiss = { pinVerifyFor = null },
+            )
+        }
     }
 
 @Composable
-private fun TodayReadTimeText(totalReadTimeFlow: kotlinx.coroutines.flow.StateFlow<Long>) {
-    val totalSeconds by totalReadTimeFlow.collectAsState()
-    val minutes = (totalSeconds / 60).coerceAtLeast(1)
+private fun TodayReadTimeText(todaySecondsFlow: kotlinx.coroutines.flow.StateFlow<Long>) {
+    // 第七轮第 4 条修复：数据源改为"今日"阅读秒数（daily_read_time_<今天>），
+    // 旧版误用全生命周期累计值标"今日"；0 分钟如实显示（不再 coerceAtLeast(1)）
+    val todaySeconds by todaySecondsFlow.collectAsState()
+    val minutes = todayReadMinutes(todaySeconds)
 
     Text(
         text = "今日已阅读 $minutes 分钟",
@@ -1104,6 +1245,282 @@ private fun TodayReadTimeText(totalReadTimeFlow: kotlinx.coroutines.flow.StateFl
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface
     )
+}
+
+/** 今日阅读秒数 → 显示分钟（四舍五入到最近分钟；纯函数可单测）。
+ *  验收口径：精确阅读 5 分钟（≈300s±2s）→ 显示 5，误差远小于 ±10 秒容差。 */
+internal fun todayReadMinutes(todaySeconds: Long): Int =
+    kotlin.math.round(todaySeconds / 60.0).toInt()
+
+/* ══════════════ 第七轮第 5 条：书架操作胶囊 / 分类 Chip ══════════════ */
+
+/**
+ * 书架顶部的次级操作胶囊（排列方式 / 导入新书 / 新建分类）：
+ * 图标 + 文字 + 轻背景描边（与设置面板的毛玻璃语言同源），
+ * 克制的尺寸——次级操作不抢"我的书架"标题和书籍内容的视觉主次。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    emphasized: Boolean,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.95f else 1f,
+        animationSpec = tween(120), label = "homeChipPress"
+    )
+    Row(
+        modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = if (emphasized) 0.14f else 0.08f))
+            .border(
+                0.5.dp,
+                if (emphasized) MintPrimary.copy(alpha = 0.40f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                RoundedCornerShape(18.dp)
+            )
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (emphasized) MintPrimary else adaptiveTitleColor().copy(alpha = 0.60f),
+            modifier = Modifier.size(13.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (emphasized) MintPrimary else adaptiveTitleColor().copy(alpha = 0.72f),
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * 分类 Chip（第七轮第 5.2/6.3 条）：可横向滚动的书架导航。
+ * 选中 = 品牌薄荷半透明填充 + 细边框 + 加粗；未选中弱化。
+ * 受保护且未解锁的分类带锁图标；长按弹出分类操作面板（设密码 / 删除）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeCategoryChip(
+    name: String,
+    selected: Boolean,
+    locked: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val baseColor = if (selected) MintPrimary else MaterialTheme.colorScheme.onSurface
+    val bgAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.16f else 0.06f,
+        animationSpec = tween(160), label = "catChipBg"
+    )
+    val borderAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.50f else 0.13f,
+        animationSpec = tween(160), label = "catChipBorder"
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(17.dp))
+            .background(baseColor.copy(alpha = bgAlpha))
+            .border(0.5.dp, baseColor.copy(alpha = borderAlpha), RoundedCornerShape(17.dp))
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            name,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+        )
+        if (locked) {
+            Spacer(modifier = Modifier.width(5.dp))
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = "已加密",
+                tint = if (selected) MintPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                modifier = Modifier.size(12.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 分类操作面板（长按分类；第七轮第 6.3 条）：
+ * - 密码保护开关（受 6.4 隐私模式总开关约束——未开启时引导去设置开启）；
+ * - 删除分类（"默认"分类给出"不可删除"提示）。
+ */
+@Composable
+private fun CategoryActionSheet(
+    category: com.example.data.CategoryEntity,
+    privacyModeEnabled: Boolean,
+    onToggleProtected: (Boolean) -> Unit,
+    onDeleteRequest: () -> Unit,
+    onGoToSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isDefault = category.name == com.example.data.DEFAULT_CATEGORY
+    Box(
+        Modifier
+            .fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        // 第十一轮第 4 条：长按菜单出现动画——遮罩淡入 + 面板自底部上滑，
+        // 与下载中心底部面板（AcrylicBottomOverlay）同款节奏
+        com.example.ui.components.ScrimEntrance {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0x59000000))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onDismiss() }
+            )
+        }
+        com.example.ui.components.BottomSheetEntrance {
+        GlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                // 任务四修复：悬浮 Tab 栏渲染在 MainActivity 层级（本面板之上），
+                // 原 28dp 底边距使「删除分类」行落在 Tab 栏后面被挡——抬高面板
+                // 至 Tab 栏上方（96dp 为全 App 底部避让惯例，见 LibraryScreen
+                // extraBottomPadding），另加 8dp 视觉间隙
+                .padding(horizontal = 20.dp)
+                .padding(top = 28.dp, bottom = 104.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { },
+            shape = RoundedCornerShape(24.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(18.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (category.isProtected) Icons.Filled.Lock else Icons.Filled.Folder,
+                        contentDescription = null,
+                        tint = if (category.isProtected) MintPrimary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        category.name,
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (privacyModeEnabled) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "密码保护",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "进入此分类需要验证密码 · 无痕阅读",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                            )
+                        }
+                        com.example.ui.components.AppSwitch(
+                            checked = category.isProtected,
+                            onCheckedChange = onToggleProtected
+                        )
+                    }
+                } else {
+                    // 6.4 总开关约束：隐私模式未开启时不能对分类设密码——引导去开启
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                            .clickable {
+                                onDismiss()
+                                onGoToSettings()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            "设置密码保护",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "需先开启隐私模式 ›",
+                            fontSize = 11.sp,
+                            color = MintPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (isDefault) MaterialTheme.colorScheme.surface.copy(alpha = 0.35f)
+                            else MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+                        )
+                        .clickable(enabled = !isDefault) { onDeleteRequest() }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = if (isDefault) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        else MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        if (isDefault) "删除分类（默认分类不可删除）" else "删除分类",
+                        fontSize = 13.sp,
+                        color = if (isDefault) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+        } // BottomSheetEntrance 结束
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

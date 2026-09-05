@@ -110,6 +110,16 @@ class PreferencesManager(context: Context) {
         prefs.edit().putLong("daily_read_time_$dateStr", seconds.coerceAtLeast(0L)).apply()
     }
 
+    /** 第九轮：全局无痕浏览开关（开启后阅读不计入统计；持久化） */
+    var incognitoBrowsingEnabled: Boolean
+        get() = prefs.getBoolean("incognito_browsing_enabled", false)
+        set(value) = prefs.edit().putBoolean("incognito_browsing_enabled", value).apply()
+
+    /** 第十一轮第 6 条：多语言搜索开关（开启后搜索词自动扩展各语言标题变体；默认开启，持久化） */
+    var multiLanguageSearch: Boolean
+        get() = prefs.getBoolean("multi_language_search", true)
+        set(value) = prefs.edit().putBoolean("multi_language_search", value).apply()
+
     fun calculateStreak(): Int {
         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
         val calendar = java.util.Calendar.getInstance()

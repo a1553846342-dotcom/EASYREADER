@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.ui.adaptive.adaptiveDialogWidth
+import com.example.ui.adaptive.adaptiveSheetWidth
 
 /** 亚克力立牌面板：品牌色 tint + 镜面光束 + 顶棱聚光 + 颗粒噪点 + 水晶棱镜描边 + 倒角高光 + 双层阴影。 */
 @Composable
@@ -110,19 +112,22 @@ fun AcrylicDialog(
         DialogLiquidGlass {
             GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .radialGlassScrim()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismissRequest
-                        )
-                )
+                ScrimEntrance {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .radialGlassScrim()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onDismissRequest
+                            )
+                    )
+                }
+                DialogEntrance {
                 Column(
                     modifier = modifier
-                        .fillMaxWidth(0.86f)
+                        .adaptiveDialogWidth(0.86f)
                         .acrylicPanel(shape = shape)
                         .padding(24.dp)
                 ) {
@@ -146,6 +151,7 @@ fun AcrylicDialog(
                         }
                     }
                 }
+                }
             }
         }
     }
@@ -167,24 +173,27 @@ fun AcrylicBottomOverlay(
         DialogLiquidGlass {
             GlassDialogWindowEffect(activity = activity, blurRadiusPx = blurPx)
             Box(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .radialGlassScrim()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismissRequest
-                        )
-                )
+                ScrimEntrance {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .radialGlassScrim()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onDismissRequest
+                            )
+                    )
+                }
+                BottomSheetEntrance(modifier = Modifier.align(Alignment.BottomCenter)) {
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
+                        .adaptiveSheetWidth()
                         .acrylicPanel(shape = shape, surfaceAlpha = 0.40f)
                         .navigationBarsPadding()
                 ) {
                     content()
+                }
                 }
             }
         }

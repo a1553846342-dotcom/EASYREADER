@@ -7,11 +7,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -35,10 +35,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -129,11 +125,17 @@ fun SquishyToggleSwitch(
     Box(
         modifier = Modifier
             .size(containerWidth.dp, containerHeight.dp)
-            // 可访问性：开关角色 + 状态（本 app 审查要求的最小适配）
-            .semantics {
-                role = Role.Switch
-                toggleableState = ToggleableState(isToggled)
-            }
+            // 第十一轮第 3 条修复：点击区域从"仅滑块小圆"(24dp) 扩大到整个开关轨道。
+            // 旧版 clickable 挂在 Canvas（拇指圆）上，点轨道完全不响应——实机表现
+            // "开关点不动"（隐私模式/密码保护拨不动的重要原因）。toggleable 同时
+            // 提供 Role.Switch + 状态的无障碍语义。
+            .toggleable(
+                value = isToggled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Switch,
+                onValueChange = { flip() }
+            )
             .clip(CircleShape)
             .background(trackColor)
 
@@ -151,12 +153,6 @@ fun SquishyToggleSwitch(
                     shadowElevation = with(LocalDensity.current) { 10.dp.toPx() } // Outer shadow
                 )
                 .clip(CircleShape)
-                .clickable(
-                    indication = null, // 🔹 Removes the ripple effect
-                    interactionSource = remember { MutableInteractionSource() } // 🔹 Prevents highlight on touch
-                ) {
-                    flip()
-                }
 
         ) {
             val shadowColor = Color.Black.copy(alpha = 0.4f) // 10% opacity

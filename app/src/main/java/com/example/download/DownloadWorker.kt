@@ -203,8 +203,7 @@ class DownloadWorker(
                     )
                     val importResult = repository.importBookFromUri(
                         Uri.fromFile(completedFile),
-                        "$title.$actualFormat",
-                        forcePdfPlaceholder = actualFormat.equals("pdf", ignoreCase = true)
+                        "$title.$actualFormat"
                     )
                     // TXT 全文已完整落入数据库，原始下载文件是纯冗余，删掉省空间；
                     // EPUB/漫画目前仍可能按需读原文件，不做处理。
@@ -347,8 +346,7 @@ class DownloadWorker(
             val importFileName = "$title.$actualFormat"
             val importResult = repository.importBookFromUri(
                 Uri.fromFile(actualFinalFile),
-                importFileName,
-                forcePdfPlaceholder = actualFormat.equals("pdf", ignoreCase = true)
+                importFileName
             )
 
             // TXT 全文已完整落入数据库，原始下载文件是纯冗余，删掉省空间；
@@ -419,7 +417,7 @@ class DownloadWorker(
         return when {
             sample.contains("daily limit") || sample.contains("downloads_today") ||
                 sample.contains("downloads_limit") || sample.contains("already reached") ->
-                "今日下载次数已达上限（每日额度用尽，等待重置或提升额度）"
+                "今日下载次数已达上限（未登录 IP 限额 5 次/天，登录账号 10 次/天；请登录或等待额度重置）"
             sample.contains("page not found") || sample.contains("not found, try again") ->
                 "页面不存在或下载链接已失效"
             sample.contains("checking your browser") || sample.contains("diamwall") ||

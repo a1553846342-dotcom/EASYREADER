@@ -3,6 +3,7 @@
 package com.example.ui
 
 import android.os.StatFs
+import androidx.compose.foundation.clickable
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -34,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 /** 四类书籍封面目录（漫画/EPUB/FB2/MOBI 解析产物）。 */
 private val COVER_DIRS = listOf("comic_covers", "epub_covers", "fb2_covers", "mobi_covers")
@@ -122,11 +125,15 @@ fun CacheManagementScreen(
     fun targetsFor(key: String): List<File> = when (key) {
         "ehimg" -> listOf(File(context.cacheDir, "ehimg"))
         "image_cache" -> listOf(File(context.cacheDir, "image_cache"))
-        "temp" -> context.cacheDir.listFiles()?.filter { it.name != "ehimg" && it.name != "image_cache" } ?: emptyList()
+        "temp" -> context.cacheDir.listFiles()
+            ?.filter { it.name != "ehimg" && it.name != "image_cache" && it.name != "manga_translate_v1" }
+            ?: emptyList()
         "downloads" -> listOf(File(context.filesDir, "downloads"))
         "comics" -> context.filesDir.listFiles { f -> f.isDirectory && f.name.startsWith("comics_") }?.toList() ?: emptyList()
         "covers" -> COVER_DIRS.map { File(context.filesDir, it) }
         "webview" -> listOf(File(context.dataDir, "app_webview"))
+        "manga_tr_cache" -> listOf(com.example.mangatranslate.TranslationCache.dir(context))
+        "manga_tr_models" -> listOf(com.example.mangatranslate.TranslateModelManager.modelDir(context))
         else -> emptyList()
     }
 
@@ -138,7 +145,7 @@ fun CacheManagementScreen(
         when (key) {
             "temp" -> context.cacheDir.listFiles()?.forEach { f ->
                 when {
-                    f.name == "ehimg" || f.name == "image_cache" -> Unit
+                    f.name == "ehimg" || f.name == "image_cache" || f.name == "manga_translate_v1" -> Unit
                     f.name == "share_temp" && f.isDirectory ->
                         f.listFiles()?.forEach { c -> if (c.lastModified() < now - 15 * 60_000L) runCatching { c.deleteRecursively() } }
                     f.name.startsWith("epub_") && f.isDirectory && newestFileTime(f) > now - 2 * 60_000L -> Unit
@@ -260,6 +267,19 @@ fun CacheManagementScreen(
                 rows += StorageRow("ehimg", "网页图片缓存", "在线书源图片，删除后浏览时自动重新加载", ehimgSize, 0, true)
                 rows += StorageRow("image_cache", "图片加载缓存", "封面与在线图片的通用缓存，自动重建", imageCacheSize, 0, true)
                 rows += StorageRow("temp", "临时文件", "导入解压、分享等临时数据；正在使用中的文件会自动保留", tempSize, 0, true)
+                // 漫画翻译（第十五轮）：译文缓存（可再生=重译即可）与离线模型（可重下）
+                val trCacheSize = runCatching { com.example.mangatranslate.TranslationCache.totalBytes(context) }.getOrDefault(0L)
+                val trModelsSize = runCatching { com.example.mangatranslate.TranslateModelManager.totalBytes(context) }.getOrDefault(0L)
+                val trCacheCount = runCatching {
+                    com.example.mangatranslate.TranslationCache.dir(context).listFiles()?.count { it.isFile } ?: 0
+                }.getOrDefault(0)
+                if (trCacheSize > 0) {
+                    rows += StorageRow("manga_tr_cache", "漫画译文缓存", "已翻译页面的译文，点击可逐页/批量清理", trCacheSize, 0, true,
+                        null, if (trCacheCount > 0) "共 $trCacheCount 页" else null)
+                }
+                if (trModelsSize > 0) {
+                    rows += StorageRow("manga_tr_models", "漫画翻译模型", "离线 OCR 模型（约 31MB），删除后可在阅读设置里重新下载", trModelsSize, 0, true)
+                }
 
                 rows += StorageRow("downloads", "离线书籍", "下载的书籍原文件，属于你的离线内容", downloadsSize, 1, true,
                     "书架中使用这些文件的书将无法打开；若书源失效，将无法重新下载。$activeDownloadTip",
@@ -294,6 +314,17 @@ fun CacheManagementScreen(
     }
 
     val cacheTotal = storageRows.filter { it.zone == 0 }.sumOf { it.size }
+    // 第十八轮：全部类别明细（手机内存管理式：单删/批删/全选/全清 + 弹出动画）
+    var detailRow by remember { mutableStateOf<StorageRow?>(null) }
+    detailRow?.let { row ->
+        StorageDetailDialog(
+            rowKey = row.key,
+            title = "${row.name} · 明细",
+            targets = targetsFor(row.key),
+            onDismiss = { detailRow = null },
+            onChanged = { scanTrigger++ },
+        )
+    }
 
     // 与「书库使用手册」一致的 ModalBottomSheet 结构与观感
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -307,7 +338,8 @@ fun CacheManagementScreen(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize()) {
             // 顶部标题栏（同手册页：64dp + 图标 + 标题 + 关闭）
             Box(
                 modifier = Modifier
@@ -339,8 +371,10 @@ fun CacheManagementScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+LazyColumn(
+                modifier = Modifier
+                .widthIn(max = AdaptiveSpec.pageContentMaxWidth).fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
@@ -459,14 +493,20 @@ fun CacheManagementScreen(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth().then(
+                                    if (row.deletable) Modifier.clickable { detailRow = row }
+                                    else Modifier
+                                )
                             ) {
                                 Row(
                                     Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(row.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        Text(
+                                            if (row.deletable) "${row.name}（点击管理明细）" else row.name,
+                                            fontWeight = FontWeight.SemiBold, fontSize = 15.sp
+                                        )
                                         Text(row.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Text(
@@ -496,6 +536,8 @@ fun CacheManagementScreen(
                     }
                 }
             }
+            }
+        }
         }
     }
 

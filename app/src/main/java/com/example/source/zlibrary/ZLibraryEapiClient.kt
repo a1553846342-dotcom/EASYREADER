@@ -68,11 +68,25 @@ class ZLibraryEapiClient(
         }
     }
 
-    /** eapi 登录：成功会把 remix cookie 写入 cookieJar 并持久化。 */
+    /** eapi 登录：成功会把 remix cookie 写入 cookieJar 并持久化。
+     *  2026-09-04 修复：eapi 协议要求密码做三段 MD5 变换 md5(email:pass:md5(pass))——
+     *  旧实现传明文密码，服务器返回 "Authorization failed"（实测 z-lib.is）。
+     *  注意：MD5 是 zlib 服务端协议既定算法（模拟其 Web 前端混淆），非本项目自选。 */
+    private fun md5Hex(s: String): String =
+        java.security.MessageDigest.getInstance("MD5").digest(s.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     suspend fun login(email: String, password: String, domain: String): Boolean {
+        val md5Pass = md5Hex(password)
+        val transformed = md5Hex("$email:$password:$md5Pass")
         val json = postJson(
             "https://$domain/eapi/user/login",
-            mapOf("email" to email, "password" to password),
+            mapOf(
+                "email" to email,
+                "password" to transformed,
+                "site_mode" to "books",
+                "action" to "login"
+            ),
             referer = "https://$domain/"
         ) ?: return false
         val ok = json.optInt("success", 0) == 1

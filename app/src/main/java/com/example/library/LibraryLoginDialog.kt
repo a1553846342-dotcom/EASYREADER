@@ -41,6 +41,7 @@ import com.example.ui.components.rememberIridescentColors
 import com.example.ui.components.rememberThemedGlassBackdrop
 import com.example.ui.components.AppLiquidButton
 import com.example.ui.components.DialogLiquidGlass
+import com.example.ui.adaptive.AdaptiveSpec
 
 /**
  * 居中毛玻璃登录卡片：复用玻璃拟态半透明卡片 + Spring 弹性入场动画，
@@ -102,6 +103,7 @@ fun LibraryLoginDialog(
                 val iridescent = rememberIridescentColors()
                 val baseModifier = Modifier
                     .fillMaxWidth(0.92f)
+                    .widthIn(max = AdaptiveSpec.dialogMaxWidth)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

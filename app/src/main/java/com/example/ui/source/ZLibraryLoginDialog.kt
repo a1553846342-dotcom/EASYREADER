@@ -52,6 +52,7 @@ import com.example.ui.components.AppIconButton
 import com.example.ui.components.DialogLiquidGlass
 import com.example.ui.components.AppIconButton
 import kotlinx.coroutines.launch
+import com.example.ui.adaptive.AdaptiveSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,6 +114,7 @@ fun ZLibraryLoginDialog(
                 val iridescent = rememberIridescentColors()
                 val baseModifier = Modifier
                     .fillMaxWidth(0.9f)
+                    .widthIn(max = AdaptiveSpec.dialogMaxWidth)
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null,

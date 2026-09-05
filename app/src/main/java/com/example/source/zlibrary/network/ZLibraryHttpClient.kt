@@ -78,7 +78,8 @@ class ZLibraryHttpClient(
     suspend fun get(
         url: String,
         referer: String? = null,
-        extraHeaders: Map<String, String> = emptyMap()
+        extraHeaders: Map<String, String> = emptyMap(),
+        callTimeoutMs: Long? = null
     ): Response = withContext(Dispatchers.IO) {
         val requestBuilder = Request.Builder().url(url).get()
 
@@ -95,7 +96,17 @@ class ZLibraryHttpClient(
         val currentCookies = cookieJar.loadForRequest(request.url).joinToString("; ") { "${it.name}=${it.value}" }
         ZLibraryNetworkLogger.logRequest(url, "GET", headerMap, currentCookies)
 
-        val response = okHttpClient.newCall(request).execute()
+        // callTimeoutMs（会话预热等调用方限时）：必须用 OkHttp callTimeout——
+        // 外层 withTimeoutOrNull 取消不了阻塞中的 socket read，超时形同虚设
+        val call = if (callTimeoutMs != null) {
+            okHttpClient.newBuilder()
+                .callTimeout(callTimeoutMs, TimeUnit.MILLISECONDS)
+                .build()
+                .newCall(request)
+        } else {
+            okHttpClient.newCall(request)
+        }
+        val response = call.execute()
 
         // Log response
         val respHeaderMap = mutableMapOf<String, String>()

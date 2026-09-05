@@ -13,8 +13,9 @@ import java.util.regex.Pattern
 
 class BookRepository(private val context: Context, private val bookDao: BookDao) {
 
+    // 无阅读管线的格式（PDF 不在此列：走 ComicParser 逐页渲染）
     private val unsupportedBinaryExtensions = listOf(
-        ".pdf", ".kfx", ".djvu",
+        ".kfx", ".djvu",
         ".doc", ".rtf", ".chm"
     )
 
@@ -103,8 +104,7 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
 
     suspend fun importBookFromUri(
         uri: Uri,
-        fileName: String,
-        forcePdfPlaceholder: Boolean = false
+        fileName: String
     ): Result<Book> = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("BookImport", "[BookRepository] Starting streaming import: $fileName, uri: $uri")
@@ -116,11 +116,7 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
             if (EpubParser.isEpubFile(fileName)) {
                 return@withContext EpubParser.importEpub(context, uri, fileName, bookDao)
             }
-            // 下载管道里的 PDF 小说按“暂不支持阅读”占位书入库，
-            // 避免被 ComicParser 当漫画逐页渲染（文本 PDF 会显示乱码）
-            if (forcePdfPlaceholder && fileName.lowercase().endsWith(".pdf")) {
-                return@withContext importUnsupportedFormat(uri, fileName)
-            }
+            // PDF 与 CBZ/ZIP 一样走 ComicParser 逐页位图渲染（翻页模式阅读，位图渲染不会乱码）
             if (ComicParser.isComicFile(fileName)) {
                 return@withContext ComicParser.importComic(context, uri, fileName, bookDao)
             }
@@ -289,7 +285,7 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
         }
     }
 
-    /** PDF/MOBI 等暂不支持阅读的格式：只登记书架，不按文本解析（避免大文件被读成超大垃圾章节导致打开卡顿）。 */
+    /** KFX/DJVU 等无阅读管线的格式：只登记书架，不按文本解析（避免大文件被读成超大垃圾章节导致打开卡顿）。 */
     private suspend fun importUnsupportedFormat(uri: Uri, fileName: String): Result<Book> =
         withContext(Dispatchers.IO) {
             try {
@@ -464,11 +460,34 @@ class BookRepository(private val context: Context, private val bookDao: BookDao)
     suspend fun deleteHighlight(id: Int) = bookDao.deleteHighlight(id)
 
     suspend fun addCategory(name: String) {
-        bookDao.insertCategory(CategoryEntity(name = name))
+        // 重名防护：同名分类不再重复插入（旧表 name 无唯一索引）
+        val existing = bookDao.getCategoryByName(name)
+        if (existing == null) bookDao.insertCategory(CategoryEntity(name = name))
     }
 
-    suspend fun deleteCategory(category: com.example.data.CategoryEntity) {
+    /** 幂等种子：确保"默认"分类始终存在（迁移兜底 + 新装库） */
+    suspend fun ensureDefaultCategory() {
+        if (bookDao.getCategoryByName(DEFAULT_CATEGORY) == null) {
+            bookDao.insertCategory(CategoryEntity(name = DEFAULT_CATEGORY))
+        }
+    }
+
+    /**
+     * 第七轮第 6.1/6.2 条：删除分类。
+     * - "默认"分类不可删除（书架必须始终存在至少一个分类）；
+     * - 删除用户分类时，其书籍迁回"默认"（不再产生只在聚合视图可见的孤儿书）。
+     * @return true = 已删除；false = 被拒绝（默认分类）
+     */
+    suspend fun deleteCategory(category: com.example.data.CategoryEntity): Boolean {
+        if (category.name == DEFAULT_CATEGORY) return false
+        bookDao.migrateBooksCategory(category.name, DEFAULT_CATEGORY)
         bookDao.deleteCategory(category)
+        return true
+    }
+
+    /** 第七轮第 6.3 条：设置分类的密码保护标记 */
+    suspend fun setCategoryProtected(categoryId: Int, isProtected: Boolean) {
+        bookDao.setCategoryProtected(categoryId, isProtected)
     }
 
     suspend fun checkAndSeedDefaultBooks() = withContext(Dispatchers.IO) {

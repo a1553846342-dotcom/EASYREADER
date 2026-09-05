@@ -93,12 +93,22 @@ fun ZLibraryNodeManagementScreen(
                     val response = httpClient.get(url, referer = "https://$node/")
                     val code = response.code
                     val html = response.body?.string() ?: ""
+                    // 修复"搜索出40本"假通过：入口跳转域会把 /s/{kw} 302 丢路径跳到
+                    // 主页，主页书卡片被当搜索结果充数。真实搜索 ① 最终 URL 仍在 /s/
+                    // ② 结果与关键词相关（命中书名含"三体"）。
+                    val finalPath = response.request.url.encodedPath
+                    val redirectedOffSearch = !finalPath.startsWith("/s/")
                     response.close()
 
                     // 官网搜索服务故障（2026-08 全站性）：节点本身可达但搜索不可用。
                     // 此时不算"不可用"，也不再走 WebView 兜底（只会浪费 ~36s 后同样失败）。
                     if (html.contains("Search service temporary unavailable", ignoreCase = true)) {
                         return@withContext "站点可达，搜索服务暂不可用（官网故障）"
+                    }
+
+                    // 重定向丢路径：搜索请求根本没到搜索服务，主页书卡不算数
+                    if (redirectedOffSearch) {
+                        return@withContext "不可用（搜索被重定向到主页，非真实镜像）"
                     }
 
                     val httpResult = if (code !in 200..299) {
@@ -117,8 +127,12 @@ fun ZLibraryNodeManagementScreen(
                         } catch (e: Exception) {
                             emptyList()
                         }
+                        // 关键词相关性校验：真实搜索结果必然含命中书名
+                        val relevant = books.isNotEmpty() &&
+                            (html.contains("三体") || books.any { it.title.contains("三体") })
                         when {
-                            books.isNotEmpty() -> "可用（搜索到 ${books.size} 本）"
+                            books.isNotEmpty() && relevant -> "可用（搜索到 ${books.size} 本）"
+                            books.isNotEmpty() -> "不可用（结果与关键词无关，疑似主页充数）"
                             html.contains("/book/") ||
                             html.contains("z-bookcard") ||
                             html.contains("resItemBox") ||
@@ -258,7 +272,7 @@ fun ZLibraryNodeManagementScreen(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                "从 z.wwwnav.com 抓取官网/备用入口，检测后点“使用”切换，立即生效。",
+                                "从 zlib.wwkejishe.top 抓取全部官方入口（优先尝试/备用/中文），检测后点“使用”切换，立即生效。",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -277,13 +291,12 @@ fun ZLibraryNodeManagementScreen(
 
                 items(builtinNodes, key = { it }) { node ->
                     val isDefault = node == defaultNode
-                    val scrapedIndex = scrapedNodes.indexOf(node)
+                    val verifiedLive = node in ZLibraryNodeManager.VERIFIED_LIVE_NODES
                     val label = when {
                         isDefault -> "默认节点"
-                        scrapedIndex == 0 -> "官网入口"
-                        scrapedIndex == 1 -> "备用入口一"
-                        scrapedIndex == 2 -> "备用入口二"
-                        else -> "节点"
+                        verifiedLive -> "已验证可用"
+                        node == "z-lib.sk" -> "硬挑战·留池"
+                        else -> "导航站节点"
                     }
                     NodeCard(
                         node = node,
@@ -372,7 +385,7 @@ fun ZLibraryNodeManagementScreen(
             title = { Text("找到 ${foundNodes.size} 个节点") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("是否替换为以下节点？")
+                    Text("是否合并以下节点？（内置已验证节点会保留）")
                     foundNodes.forEach { node ->
                         Text("•  $node", fontWeight = FontWeight.Medium)
                     }
@@ -381,12 +394,12 @@ fun ZLibraryNodeManagementScreen(
             confirmButton = {
                 DialogLiquidGlass(fillMaxSize = false) {
                     AppActionButton(
-                        text = "替换",
+                        text = "合并",
                         onClick = {
                             ZLibraryNodeManager.saveScrapedNodes(context, foundNodes)
                             scrapedNodes = ZLibraryNodeManager.getScrapedNodes(context)
                             showReplaceDialog = false
-                            Toast.makeText(context, "已替换节点", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "已合并节点", Toast.LENGTH_SHORT).show()
                         },
                         variant = AppButtonVariant.Primary,
                         buttonSize = AppButtonSize.Small

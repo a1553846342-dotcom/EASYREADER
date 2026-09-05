@@ -22,17 +22,43 @@ import kotlin.coroutines.resume
  * DiamWall/Cloudflare 验证兜底：HTTP 客户端解不了的交互式验证，
  * 用真实 WebView（Chrome UA）像浏览器一样加载搜索页，让验证 JS 自动跑，
  * 然后取出渲染后的 HTML 解析搜索结果。
+ *
+ * 2026-09-04 增强（1lib.sk 实测校准）：
+ * - DiamWall 挑战页的"验证复选框"位于主文档的同源 iframe
+ *   （/.well-known/diamwall/...）内，此前只被动等待导致挑战挂死到超时；
+ *   现在轮询时主动代点复选框，PoW 由挑战页 JS 自动算，点击后即可放行；
+ * - 挑战通过/页面成功后，把 WebView CookieManager 里的会话 Cookie
+ *   （dwid / c_token / __diamwall / remix_*）回传给调用方，同步进 OkHttp
+ *   的 CookieJar 后，后续详情页与下载请求全程免挑战。
  */
 data class WebViewSearchResult(
     val books: List<SearchBook> = emptyList(),
     val pageHasZlibMarkers: Boolean = false,
-    val stillChallenged: Boolean = false
+    val stillChallenged: Boolean = false,
+    /** WebView 侧拿到的该域完整 Cookie 串（含 DiamWall 验证 Cookie），可为 null。 */
+    val cookies: String? = null
 )
 
 object ZLibraryWebViewHelper {
 
     private const val CHROME_UA =
         "Mozilla/5.0 (Linux; Android 12; TGR-W10G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    /** DiamWall 复选框代点：挑战 iframe 与主文档同源，可跨 contentDocument 操作。 */
+    private const val DIAMWALL_GATE_CLICK_JS = """
+        (function(){
+            try {
+                var ifr = document.querySelector('iframe');
+                if (!ifr) return 'no-iframe';
+                var doc = ifr.contentDocument;
+                if (!doc || !doc.body) return 'no-doc';
+                var gate = doc.querySelector('#pane-gate, .dw-gate, [class*="dw-gate"]');
+                if (!gate) return 'no-gate';
+                gate.click();
+                return 'clicked';
+            } catch (e) { return 'err'; }
+        })()
+    """
 
     suspend fun searchViaWebView(
         context: Context,
@@ -47,6 +73,7 @@ object ZLibraryWebViewHelper {
             var finished = false
             val maxAttempts = 24 // 约 1.5s/次，最长 ~36s
             var reloadedForCookies = false
+            var lastGateClickAt = 0L
 
             fun finish(result: WebViewSearchResult) {
                 if (finished) return
@@ -55,6 +82,22 @@ object ZLibraryWebViewHelper {
                 runCatching { webView?.stopLoading() }
                 runCatching { webView?.destroy() }
                 if (cont.isActive) cont.resume(result)
+            }
+
+            fun extractCookies(): String? = runCatching {
+                CookieManager.getInstance().getCookie("https://$node")
+            }.getOrNull()
+
+            fun clickDiamWallGate() {
+                val wv = webView ?: return
+                val now = System.currentTimeMillis()
+                if (now - lastGateClickAt < 6000) return
+                wv.evaluateJavascript(DIAMWALL_GATE_CLICK_JS) { result ->
+                    if (result != null && result.contains("clicked")) {
+                        lastGateClickAt = now
+                        Log.d("ZLibWebView", "DiamWall gate auto-clicked on $node")
+                    }
+                }
             }
 
             fun poll() {
@@ -80,6 +123,11 @@ object ZLibraryWebViewHelper {
                         html.contains("resItemBox") ||
                         html.contains("book-item")
 
+                    if (isChallenge) {
+                        // DiamWall 复选框在挑战 iframe 里，被动等永远不会过：主动代点
+                        clickDiamWallGate()
+                    }
+
                     if (!isChallenge) {
                         val pageTitle = runCatching { Jsoup.parse(html).title() }.getOrDefault("")
                         Log.w(
@@ -96,18 +144,18 @@ object ZLibraryWebViewHelper {
                             ZLibraryParserManager.parseSearchPage(html, "https://$node", "zlibrary")
                         }.getOrDefault(emptyList())
                         if (books.isNotEmpty()) {
-                            finish(WebViewSearchResult(books = books, pageHasZlibMarkers = true))
+                            finish(WebViewSearchResult(books = books, pageHasZlibMarkers = true, cookies = extractCookies()))
                             return@evaluateJavascript
                         }
                         if (hasMarkers) {
-                            finish(WebViewSearchResult(pageHasZlibMarkers = true))
+                            finish(WebViewSearchResult(pageHasZlibMarkers = true, cookies = extractCookies()))
                             return@evaluateJavascript
                         }
                     }
 
                     attempts++
                     if (attempts >= maxAttempts) {
-                        finish(WebViewSearchResult(stillChallenged = isChallenge))
+                        finish(WebViewSearchResult(stillChallenged = isChallenge, cookies = extractCookies()))
                     } else {
                         handler.postDelayed({ poll() }, 1500)
                     }

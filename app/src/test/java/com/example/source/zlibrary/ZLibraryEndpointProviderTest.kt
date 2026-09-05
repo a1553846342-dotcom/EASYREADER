@@ -52,6 +52,7 @@ class ZLibraryEndpointProviderTest {
 
     @Test
     fun testZLibrarySourceUnauthenticatedSearchDoesNotRequireLogin() = runTest {
+
         val zlibSource = ZLibrarySource(context, credentialStorage)
         zlibSource.logout()
         // Search should not throw LoginRequired exception

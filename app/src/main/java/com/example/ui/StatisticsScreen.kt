@@ -69,6 +69,8 @@ import com.example.ui.mascot.MascotSpriteSheet
 import java.util.Calendar
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,9 +129,11 @@ fun StatisticsScreen(
             // 性能优化（视觉零变化）：原为普通 Column+verticalScroll，
             // 5 张玻璃卡 + 3 个图表在滚动时全部参与绘制命令录制（低端机卡顿主因）。
             // 改 LazyColumn 后屏幕外的卡片/图表不再组合与绘制，布局顺序间距完全一致。
-            LazyColumn(
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+LazyColumn(
                 state = statisticsListState,
                 modifier = Modifier
+                .widthIn(max = AdaptiveSpec.pageContentMaxWidth)
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 16.dp),
@@ -243,6 +247,7 @@ fun StatisticsScreen(
                         )
                     }
                 }
+            }
             }
         }
     }

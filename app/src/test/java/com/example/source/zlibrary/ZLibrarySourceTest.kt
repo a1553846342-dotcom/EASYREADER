@@ -34,6 +34,7 @@ class ZLibrarySourceTest {
 
     @Test
     fun testUnloggedInSearchDoesNotRequireLogin() = runTest {
+
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val zlibSource = ZLibrarySource(context)
         zlibSource.logout()

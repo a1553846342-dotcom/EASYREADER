@@ -55,8 +55,10 @@ class EncryptedCookieJar(private val credentialStorage: ZLibraryCredentialStorag
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val storageDomain = credentialStorage.getDomain()
+        // 空串 = 尚未恢复用户选择（仅启动空窗/单测），退回账号保存时的域名
         val currentDomain = runCatching { com.example.library.ZLibraryNodeConfig.domain }
             .getOrDefault(storageDomain)
+            .ifBlank { storageDomain }
         val requestHost = url.host
 
         // 标准 Cookie 作用域：按 Cookie 自己的 domain 匹配请求主机，

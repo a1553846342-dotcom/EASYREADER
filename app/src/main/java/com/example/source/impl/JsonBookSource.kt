@@ -95,7 +95,9 @@ class JsonBookSource(
 
     override val capabilities: SourceCapabilities = SourceCapabilities(
         supportImport = true,
-        supportComic = isComicLike
+        supportComic = isComicLike,
+        // 文本源：有章节规则且正文不是图片规则时，支持在线章节阅读
+        supportOnlineText = config.htmlChapters != null && !isComicLike
     )
 
     override suspend fun search(keyword: String): SourceResult<List<SearchBook>> {
@@ -157,7 +159,23 @@ class JsonBookSource(
         }
         return withContext(Dispatchers.IO) {
             try {
-                val url = resolveUrl(rule.url.replace("{id}", bookId))
+                val detailUrl = resolveUrl(rule.url.replace("{id}", bookId))
+                var url = detailUrl
+                // 目录不在详情页：先用 tocUrlSelector 从详情页解析目录页地址
+                val tocRule = rule.tocUrlSelector
+                if (!tocRule.isNullOrBlank()) {
+                    try {
+                        val detailRaw = fetchHtml(detailUrl)
+                        val detailDoc = Jsoup.parse(detailRaw)
+                        val tocUrl = LegadoRule.evalFirst(detailDoc, tocRule)
+                        if (!tocUrl.isNullOrBlank()) {
+                            url = resolveUrl(tocUrl)
+                            SourceLog.log(name, "目录页跳转 ← $tocRule → ${url.take(120)}")
+                        }
+                    } catch (e: Exception) {
+                        SourceLog.log(name, "tocUrl 解析失败，回退详情页: ${e.message}")
+                    }
+                }
                 val raw = fetchHtml(url)
                 val chapters = if (LegadoRule.isJsonRule(rule.listSelector)) {
                     val items = JsonPathResolver.resolveArray(raw, LegadoRule.cleanJsonPath(rule.listSelector))
@@ -176,8 +194,10 @@ class JsonBookSource(
                 }
                 SourceResult.Success(chapters)
             } catch (e: IOException) {
+                SourceLog.log(name, "目录失败 ← $bookId: ${e.message}")
                 SourceResult.Error(SourceException.NetworkError("网络连接错误: ${e.message}", e))
             } catch (e: Exception) {
+                SourceLog.log(name, "目录异常 ← $bookId: ${e.message}")
                 SourceResult.Error(SourceException.Unknown("未知错误: ${e.message}", e))
             }
         }
@@ -206,14 +226,53 @@ class JsonBookSource(
                     images
                 }
                 if (images.isEmpty()) {
-                    SourceResult.Error(SourceException.ParseError("该章节没有可读取的图片"))
+                    SourceLog.log(name, "正文无图片 ← $chapterId（可能是文本源或规则失效）")
+                    SourceResult.Error(SourceException.ParseError("该章节没有可读取的图片（若为文本书源，请前往详情页下载原文件）"))
                 } else {
+                    SourceLog.log(name, "正文图片 ${images.size} 张 ← $chapterId")
                     SourceResult.Success(images)
                 }
             } catch (e: IOException) {
+                SourceLog.log(name, "正文失败 ← $chapterId: ${e.message}")
                 SourceResult.Error(SourceException.NetworkError("网络连接错误: ${e.message}", e))
             } catch (e: Exception) {
+                SourceLog.log(name, "正文异常 ← $chapterId: ${e.message}")
                 SourceResult.Error(SourceException.Unknown("未知错误: ${e.message}", e))
+            }
+        }
+    }
+
+    /** 章节式文本源：抓取章节页并按 Legado 正文规则提取纯文本（段落 \n\n 分隔）。 */
+    override suspend fun getChapterText(chapterId: String): SourceResult<String> {
+        val rule = config.htmlContent
+            ?: return SourceResult.Error(SourceException.ParseError("该书源未配置正文规则"))
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = resolveUrl(rule.url.replace("{chapterUrl}", chapterId))
+                val raw = fetchHtml(url)
+                val paragraphs = if (LegadoRule.isJsonRule(rule.imageSelector)) {
+                    JsonPathResolver.resolveStringArray(raw, LegadoRule.cleanJsonPath(rule.imageSelector))
+                } else {
+                    val doc = Jsoup.parse(raw)
+                    LegadoRule.evalValues(doc, rule.imageSelector)
+                }
+                val text = paragraphs
+                    .map { it.replace("\u00A0", " ").trim() }
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n\n")
+                if (text.isBlank()) {
+                    SourceLog.log(name, "正文无文字 ← $chapterId（规则可能失效）")
+                    SourceResult.Error(SourceException.ParseError("本章内容为空（正文规则可能失效）"))
+                } else {
+                    SourceLog.log(name, "正文 ${text.length} 字 ← $chapterId")
+                    SourceResult.Success(text)
+                }
+            } catch (e: IOException) {
+                SourceLog.log(name, "正文失败 ← $chapterId: ${e.message}")
+                SourceResult.Error(SourceException.NetworkError("网络连接错误: ${e.message}"))
+            } catch (e: Exception) {
+                SourceLog.log(name, "正文异常 ← $chapterId: ${e.message}")
+                SourceResult.Error(SourceException.Unknown("未知错误: ${e.message}"))
             }
         }
     }
@@ -231,9 +290,20 @@ class JsonBookSource(
                 .replace("{keyword_b64}", keywordB64)
                 .replace("{page}", "1")
         )
-        val raw = fetchHtml(url)
+        val body = rule.body
+            ?.replace("{keyword}", encoded)
+            ?.replace("{keyword_b64}", keywordB64)
+            ?.replace("{page}", "1")
+        val raw = try {
+            fetchHtml(url, rule.method, body)
+        } catch (e: Exception) {
+            SourceLog.log(name, "搜索失败「$keyword」: ${e.message}")
+            throw e
+        }
         if (LegadoRule.isJsonRule(rule.listSelector)) {
-            return searchHtmlJson(raw, rule)
+            val r = searchHtmlJson(raw, rule)
+            SourceLog.log(name, "搜索「$keyword」(${rule.method}) → ${if (r is SourceResult.Success) "${r.data.size} 条结果" else "失败: ${(r as SourceResult.Error).exception.message}"}")
+            return r
         }
         val doc = Jsoup.parse(raw)
         val books = mutableListOf<SearchBook>()
@@ -255,6 +325,7 @@ class JsonBookSource(
                 )
             )
         }
+        SourceLog.log(name, "搜索「$keyword」(${rule.method}) → ${books.size} 条结果")
         return SourceResult.Success(books)
     }
 
@@ -322,7 +393,7 @@ class JsonBookSource(
         return LegadoRule.evalFirst(root, r)
     }
 
-    private fun fetchHtml(url: String): String {
+    private fun fetchHtml(url: String, method: String = "GET", body: String? = null): String {
         val builder = Request.Builder().url(url)
         val headers = config.search.headers
         if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
@@ -332,10 +403,23 @@ class JsonBookSource(
             builder.header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         }
         headers.forEach { (k, v) -> builder.header(k, v) }
-        val response = requestClient.newCall(builder.get().build()).execute()
+        if (method.equals("POST", ignoreCase = true)) {
+            val mediaType = if (body?.trimStart()?.startsWith("{") == true) {
+                "application/json; charset=utf-8"
+            } else {
+                "application/x-www-form-urlencoded"
+            }
+            builder.post((body ?: "").toRequestBody(mediaType.toMediaType()))
+        } else {
+            builder.get()
+        }
+        SourceLog.log(name, "请求 $method ${url.take(120)}" + (body?.let { " body=${it.take(80)}" } ?: ""))
+        val response = requestClient.newCall(builder.build()).execute()
         if (!response.isSuccessful) {
+            SourceLog.log(name, "HTTP ${response.code} ← $method ${url.take(120)}")
             throw SourceException.NetworkError("HTTP ${response.code} @ ${url.take(160)}")
         }
+        SourceLog.log(name, "HTTP ${response.code} OK ← $method ${url.take(120)}")
         val charset = config.htmlSearch?.charset?.ifBlank { null }
         return if (charset != null) {
             val bytes = response.body?.bytes() ?: return ""

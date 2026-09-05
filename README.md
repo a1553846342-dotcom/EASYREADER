@@ -1,394 +1,364 @@
-
 <div align="center">
 
-<img src=".\app\src\main\res\mipmap-xxxhdpi\ic_launcher_foreground.png" width="120"/>
+<img src="./app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" width="110"/>
 
-# 📚 Ciallo阅读（EASYREADER）
+# Ciallo阅读（EASYREADER）
 
-### Modern Android Reader × Resource Downloader
+**Android 阅读器 / 在线书库聚合下载器**
 
-一个基于 **Kotlin + Jetpack Compose** 打造的现代 Android 阅读器。
+Kotlin · Jetpack Compose (Material 3) · MVVM · 单 Activity
 
-TXT / EPUB / 漫画阅读  
-在线书库聚合搜索 · 资源下载 · 自定义书源 · LiquidGlass UI
+<img src="./docs/demo-1.gif" width="270"/>
+<img src="./docs/demo-2.gif" width="270"/>
+<img src="./docs/demo-3.gif" width="270"/>
 
+[下载 APK](https://github.com/a1553846342-dotcom/EASYREADER/releases) ·
+[功能特性](#功能特性) ·
+[FAQ](#faq) ·
+[提交 Issue](https://github.com/a1553846342-dotcom/EASYREADER/issues)
 
-<img src="./docs/demo-1.gif" width="260"/>
-<img src="./docs/demo-2.gif" width="260"/>
-<img src="./docs/demo-3.gif" width="260"/>
-
-
-[📲 下载 APK](https://github.com/a1553846342-dotcom/EASYREADER/releases) ·
-[📖 功能介绍](#功能特性) ·
-[🐛 提交 Issue](https://github.com/a1553846342-dotcom/EASYREADER/issues)
-
-
-![GitHub stars](https://img.shields.io/github/stars/a1553846342-dotcom/EASYREADER)
-![GitHub forks](https://img.shields.io/github/forks/a1553846342-dotcom/EASYREADER)
-![Android](https://img.shields.io/badge/Android-API24+-green)
-
-
-
-![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
-![Release](https://img.shields.io/badge/Release-v1.0.0-orange)
-![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B-brightgreen)
+![Android](https://img.shields.io/badge/Android-API%2024%2B-green)
+![Release](https://img.shields.io/badge/Release-v1.0.5-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
-![UI](https://img.shields.io/badge/UI-Compose%20Material%203-8A2BE2)
+![UI](https://img.shields.io/badge/UI-Compose%20M3-8A2BE2)
+![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
 
 </div>
 
----
+***
 
-## 1. 📖 项目简介
+## 概述
 
-市面上阅读器不少，但大多要么丑、要么卡、要么书源常年失效。Ciallo阅读 从立项那天起就只想做一件事：**把“好用”和“好看”同时做到位**，让打开阅读器这件事本身变成享受。
+Android 端小说 / 漫画阅读器，内置多书源在线聚合搜索与下载。本地阅读、在线找书、离线管理一体化。
 
-为什么做这个项目？因为我们受够了老牌阅读器“能用但难用”的体验——翻页像 PPT、设置页像十年前的后台、加个书源还要研究半天规则。于是我们选了 Kotlin + Jetpack Compose 从零重写，把每一帧动画、每一个弹窗、每一条数据流都按“现代应用”的标准做，而不是按“电子书工具”的标准做。
+| 项目                     | 内容                                                            |
+| ---------------------- | ------------------------------------------------------------- |
+| 当前版本                   | 1.0.5                                                         |
+| 最低系统                   | Android 7.0（API 24）                                           |
+| compileSdk / targetSdk | 35                                                            |
+| 语言                     | Kotlin 2.0                                                    |
+| 架构                     | MVVM + StateFlow + Repository，单 Activity + Navigation Compose |
+| 存储                     | Room（8 实体 / version 6）+ SharedPreferences                     |
+| 测试                     | 全量 325+ 项（JVM / Robolectric）                                  |
+| APK 体积                 | 约 23MB（含 ONNX Runtime 与量化气泡模型；不含 OCR 模型，按需下载）                 |
 
-和同类软件有什么不同？**它不只是阅读器，更是一台资源下载器**：Z-Library 深度原生接入（自动过 DiamWall 验证、节点管理、账号登录、真实下载链接解析、EPUB/MOBI/PDF/AZW3/TXT/FB2 多格式下载），搜索到的书不是“只能看看”，而是直接下载到书架离线阅读；漫画支持单章/批量下载，下载中心常驻后台，断点续传、失败重试、真实格式校验一条龙。再加上 **Venera JS 漫画源生态**（拷贝漫画、comick、漫蛙吧、goDa 等开箱即用）、**自定义 JSON 书源**（兼容 Legado 规则）和**一整套液态玻璃设计语言**（悬浮收缩 Tab 栏、毛玻璃弹窗、果冻开关、Juno 滑块、凝胶按钮）。别人只做一个点，我们做了一整套。
+***
 
-目标用户是谁？受够了旧阅读器卡顿的深度书虫、每天追更的漫画党、喜欢折腾自定义书源的极客、需要批量下载离线资源的囤积党，以及单纯想找一个“打开就能安静看书”的普通人。
+## 功能特性
 
-### 📋 项目基本信息
+### 📄 文件格式
 
-| 项目 | 内容 |
-|---|---|
-| 项目名称 | Ciallo阅读（EASYREADER） |
-| 一句话简介 | 支持本地 TXT/EPUB/MOBI/AZW3/漫画导入、自定义书源、在线书库聚合搜索与多格式下载的安卓阅读器兼资源下载器 |
-| 技术栈 | Kotlin 2.0 + Jetpack Compose（Material 3）+ MVVM + Room + WorkManager |
-| 最低支持系统 | Android 7.0（API 24）+ |
-| 当前版本 | 1.0.0 |
-| 开发状态 | 个人项目 · 活跃开发中 |
+| 格式                      | 解析实现     | 说明                                                                                               |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| TXT                     | 内置       | 大文件分段加载（超长章节入库前拆分、阅读时自动合并回逻辑章节），GBK / UTF-8 / UTF-16 编码自适应                                       |
+| EPUB                    | 内置       | OPF / NCX / spine 解析；ZIP 文件名 UTF-8 / GBK / GB18030 三级回退；封面三级提取策略（规范路径 → 文件名 → 首图/最大图）            |
+| MOBI / AZW3 / AZW / PRC | 内置，零依赖自研 | PDB 容器 + KF8 混合段识别；PalmDOC LZ77 与 HUFF/CDIC 哈夫曼字典解压（Kindle 正文压缩算法的纯 Kotlin 移植）；EXTH 元数据；DRM 检测提示 |
+| DOCX                    | 内置       | 解 `word/document.xml`，按 `<w:p>` 段落抽取                                                             |
+| FB2                     | 内置       | `<title-info>` 元数据 + `<section>` 章节切分                                                            |
+| CBZ / ZIP 漫画            | 内置       | 自然排序（`page_2 < page_10`）；GBK 文件名回退                                                               |
+| PDF                     | 按页位图渲染   | `PdfRenderer` 逐页渲染走漫画管线，翻页模式阅读；不做文本层提取                                                           |
 
----
+### 📖 文字阅读器
 
-## 2. ✨ 功能特性
+- 五种翻页模式：仿真 3D 卷页 / 覆盖 / 平移 / 渐变 / 上下滚动
 
-<details open>
-<summary>📚 书籍格式支持</summary>
+- 真实排版分页引擎：基于 Compose `Paragraph` 测量，分页点均为真实行边界；超大章节分块渐进测量 + LRU 分页缓存
 
-| 格式 | 支持情况 | 说明 |
-|---|---|---|
-| TXT | ✅ 完整支持 | 大文件秒开、按体积分段、自动章节识别、GBK/UTF-8 自适应 |
-| EPUB | ✅ 完整支持 | 解析 OPF/NCX，保留目录、封面、元数据 |
-| MOBI / AZW3 / AZW | ✅ 完整支持 | PDB/KF8 双段解析、PalmDOC/HUFF-CDIC 解压、封面提取、DRM 检测占位提示 |
-| CBZ / CBR | ✅ 完整支持 | ZIP/RAR 漫画容器解析，按页阅读 |
-| PDF | ⚠️ 部分支持 | 漫画按页渲染；文本 PDF 暂以“暂不支持阅读”占位入库 |
+- 排版：字号 / 行距 / 页边距 / 首行缩进可调；五套阅读主题；导入 TTF 自定义字体
 
-</details>
+- TTS 朗读（系统语音引擎，语速音量跟随系统）
 
-<details open>
-<summary>📖 阅读体验细节</summary>
+- 自动滚屏（60fps，与 TTS 互斥）
 
-- **翻页动画（五种）**：仿真 3D 卷页（真实折角、阴影、纸背反光）、覆盖翻页、平移翻页、渐变淡出、上下滚动。每种都针对“翻页出戏”这个痛点单独调过手感。
-- **排版自由**：字号、行距、页边距、首行缩进全部可调；阅读主题内置白底/羊皮纸/夜间/护眼/纯黑五套；字体支持默认/衬线/黑体/等宽，并可导入 TTF 字体文件；「阅读排版」面板半透明浮层设计，调参时可实时对照书页效果。
-- **FluidSlider 流体滑条全局统一**：Ramotion FluidSlider 风格——按下时白色气泡从轨道弹出（Overshoot 回弹）、metaball 液态连接、数值显示在气泡内；阅读器字号/行距/页边距/亮度、章节拖动、漫画页码、护眼强度等全部滑条统一为同一套 goo 风格，并经过手势仲裁（松手提交、标签淡出、连续滑动不中断）。
-- **自动滚屏**：解放双手的沉浸阅读模式，60fps 平滑滚动；顶栏一键开启/关闭，底部浮停指示器点击停止；滚过 20% 后出现回顶悬浮按钮，点击平滑回顶；翻页模式切换时自动关闭，与 TTS 听书互斥。
-- **卷页下拉书签**：仿真卷页模式下往下拉页面出现蓄力书签卡片，方向仲裁 + 阻尼回弹的手感调校，松手即收藏当前页；普通模式书签走顶栏，图标区分「加书签/书签列表」。
-- **阅读器亮度与沉浸控制**：阅读排版面板内置亮度调光（实时预览，与系统亮度分离）；顶栏重设计为四个主按钮 + 溢出菜单（搜索/书签列表/自动滚屏/阅读排版），搜索、目录、批注入口常驻。
-- **读完徽章**：一本书读到最后一章最后一页后，书架卡片自动挂上金色「已读完」标记；重开停在末页不会误触发庆祝动画。
-- **目录自动定位**：打开章节目录自动跳转到当前阅读位置，千章大书秒定位。
-- **护眼模式原理**：夜间模式走深色配色 + 降低屏幕亮度的刺眼感；护眼滤镜叠加暖色调色（0–65% 可调），配合流体滑条实时预览强度，长时间夜读不刺眼。
-- **定时休息**：15/30/45/60 分钟预设或自定义任意时长，到点弹窗提醒，强制你离开屏幕歇眼睛。
-- **TTS 朗读**：系统引擎无缝接入，边听边看；支持书签、划线高亮、全文搜索、进度自动保存。
-- **阅读统计**：周/月/年周期总览、日历热力图（月/年视图）、阅读趋势图、高峰时段分布、连续打卡、每日阅读目标（±15 分钟自定义步进器）、阅读报告一键分享。
+- 书签、划线高亮、全文搜索、目录自动定位
 
-</details>
+- 阅读器内亮度调光（与系统独立）、护眼暖色滤镜（0–65%）、定时休息提醒
 
-<details open>
-<summary>🔍 书源管理</summary>
+- 读完徽章、按书按章实时进度保存
 
-- **自定义规则书源**：支持粘贴 JSON / 导入文件，兼容 Legado 规则与 JSON API；网络导入社区书源合集。
-- **书源导入导出**：JSON 格式标准化，社区分享即贴即用。
-- **隐藏彩蛋**：设置页连按六下「主色按钮实时联动效果」，开启「带你登大郎~~~」后自动更新并显示成人漫画源。
-- **搜索聚合逻辑**：逐源搜索、每出一个源立即展示，源与源之间用渐变毛玻璃胶囊分隔，失败显示“超时/无结果”而不是干等。
-- **内置 Z-Library**：自动过 DiamWall 新版 PoW 验证；节点管理（默认节点、官网/备用入口扒取、自定义节点、一键检测）；账号/Cookie 登录后直接下载；支持 EPUB/MOBI/PDF/AZW3/TXT/FB2 多格式选择；每日下载额度用尽时给出明确提示，不再误报“HTML 错误页”。
-- **内置 MangaDex 与 Venera 漫画源**：QuickJS 运行社区 JS 源，聚合搜索一次覆盖主流漫画站。
+### 🎨 漫画阅读器（本地 / 在线统一引擎）
 
-</details>
+- 阅读模式：单页 / 双页 / 条漫 / 无缝滚动 / 磁吸；阅读方向：左→右 / 右→左 / 上→下
 
-<details open>
-<summary>⚡ 资源下载器</summary>
+- 翻页动画：无 / 平移 / 渐变 / 仿真卷页（vendored harism OpenGL 实现，支持双页书脊模式与刚体封面折页）
 
-- **Z-Library 全链路下载**：搜索 → 详情 → 自动过 DiamWall 验证 → 解析真实下载链接 → 断点续传 → 文件校验 → 自动入库书架，全程无需浏览器；默认格式与用户选择的非默认格式（EPUB/MOBI/PDF/AZW3/TXT/FB2）分别走自研链路与 eapi 多格式链路。
-- **漫画批量下载**：章节列表一键勾选，单章/批量任选；下载任务由应用级任务中心托管，**切页面、切 Tab、锁屏都不中断**。
-- **3 路并发 + 暂停/继续/取消**：大章节下载速度明显提升；失败任务不会从列表消失，一键重试。
-- **断点续传**：下载中断后从已下载字节继续，不重复拉取。
-- **真实格式校验**：下载完成后按文件内容（魔数/编码）识别真实格式，不再被书源错误标签误导；HTML 错误页、每日限额页、DiamWall 验证页均能识别并给出明确中文提示；UTF-8/GBK/UTF-16 编码的 TXT 都能正确入库。
-- **毛玻璃下载卡片**：实时显示封面、进度、速度、剩余大小；下载中/暂停/失败均提供暂停、继续、取消按钮；下载中心常驻，随时回来查看。
-- **书架分享原文件**：长按书架书籍可分享 EPUB/漫画/MOBI/PDF/AZW3 原文件（零拷贝或临时缓存用完即焚），不会长期占用双份存储。
-- **封面缓存**：下载入库时同步缓存封面，书架不再出现“无封面”占位。
+- 缩放：双击三档 / 长按临时放大 / 双指缩放平移；超大图 `BitmapRegionDecoder` 局部重解码
 
-</details>
+- 图像管线（纯 Kotlin 像素算法，处理顺序：裁边 → 拆片 → 旋转 → 色调 → 锐化 → 放大）：
 
-<details open>
-<summary>🗄️ 数据管理</summary>
+  - 自动裁边：降采样 + 边缘基准色 + 连续段判定，白边 / 黑边 / 彩边 / 米色纸底统一处理；支持手动四角裁剪
 
-- **阅读进度**：按书按章实时记录，重开即续。
-- **书架管理**：分类、导入、移动、删除一键完成，封面自动抓取缓存；排序三态切换（默认/标题/最近阅读）；书籍卡片显示章节进度条（第 X/Y 章 + 进度指示）；分类支持长按删除（带确认对话框）；长按书籍呼出 Acrylic 半屏操作菜单，小屏上内容完整可达。
-- **本地备份**：数据存于应用私有目录；WebDAV 云同步与 JSON 导出在 Roadmap 中。
-- **存储管理**：可视化查看应用总占用（缓存 / 用户数据 / 书籍数据分区一目了然），一键清理缓存零风险；离线书籍、漫画、封面等用户数据独立分区，删除需二次确认且量化后果，下载进行中自动拦截。
+  - 跨页拆片：列亮度中位数 + 窄带/等值平台结构检测装订缝
 
-</details>
+  - 滤镜：亮度 / 对比度 / 饱和度 / 色相 / Gamma / 阴影 / 黑白，实时预览
 
-<details open>
-<summary>🎨 个性化设置</summary>
+  - 增强：CAS 对比度自适应锐化 / Anime4K CNN 线条重建（固定权重 CPU 卷积网络）/ 2x Lanczos3 超分 / 边缘掩码锐化
 
-- **主题配色**：主色/强调色自由搭配，全软件颜色弹簧过渡，切换不重启。
-- **屏幕方向**：跟随系统 / 锁定竖屏 / 锁定横屏，切换立即生效。
-- **开屏海报**：自定义海报 + 纯净模式（直进软件，无任何开屏）。
-- **软件背景**：默认主题色或自定义背景图，横竖屏自动裁剪铺满。
-- **字体**：系统字体即用，阅读器内可直接导入 TTF 字体文件。
-- **TTS 朗读**：语速、音量跟随系统，阅读器内一键开关。
+- 场景系统：雨夜 / 落雪 / 樱花 / 萤火 / 海边 / 篝火 / 夏夜 —— CC0 真实环境音分层混音（2–4 轨交叉淡化循环）+ 物理粒子引擎，音效与特效独立开关
 
-</details>
+- 阅读背景：纯色 / 纸张纹理 / 沉浸动态（当前页量化直方图取主色）
 
-<details open>
-<summary>🌟 其他亮点</summary>
+- 预设系统：内置日漫 / 条漫 / 老漫画预设，可创建 / 复制 / 收藏 / 设为默认；每本漫画独立配置与页级进度恢复
 
-- **液态玻璃整套 UI**：悬浮收缩 Tab 栏（真实背景模糊 + 虹彩描边 + 自动对比色图标）、亚克力弹窗、果冻开关、凝胶按钮、ChasingDots 加载动画。
-- **MAX 极光特效包**：「极致」渲染档专属——三色极光辉光流边、呼吸光晕、顶部高光跟随、内容层视差、入场弹簧动效；配合「自定义卡片参数」实时调参面板（折射/压痕/倾斜/光效逐项可调、立即生效）。标题文字颜色还会按自定义壁纸的明暗色调自动取对比色。
-- **整卡 3D 视觉与物理反馈**：玻璃卡片像跷跷板一样随按压倾斜、随滚动手势惯性摆动并极软回正；配合固定光源的 AGSL 法线光照压痕（Android 13+，低版本自动降级为渐变模拟），整套 UI 有真实“玻璃厚度”。
-- **吉祥物动画**：蓝发巫师少女 Roxy 五套姿态（待机/欢呼/奔跑/捧书/低落）按场景自动切换，配合呼吸、漂浮、弹跳、抖动等微动效，让 App 有点人情味。
+- 自动阅读（翻页间隔 / 滚动速度可调）、音量键翻页（RTL 方向感知）、整本 / 单页旋转
 
-</details>
+### 🌐 漫画整页翻译（v1.0.5）
 
----
+- **本地 OCR**：PP-OCRv6 检测 + 识别（ONNX，模型约 31MB 按需下载，hf-mirror 优先）；竖排文字旋转识别；长图分块检测（覆盖率较整页检测 +131%）
 
-## 3. 📸 应用截图 / 效果预览
+- **气泡分割**：YOLO-seg int8 量化模型（4MB，随 APK 内置）；译文按气泡轮廓形状渲染覆盖，光栅化最大内接矩形 + 背景色采样去墨 + 二分字号
 
-| 书架主页 | 书库 · 选择书源 |
-|---|---|
+- **译文锚定原文**：排版区 = 气泡安全区 ∩ 原文行包围盒，译文落回原文所在行位置
+
+- **翻译引擎**（选中即用，失败自动降级在线）：
+
+  - 自定义 AI 接口：OpenAI 兼容（DeepSeek / GLM / Kimi / Ollama / LM Studio 等）或 Gemini 格式；整页一次请求；译名表（glossary）跨页一致；严格 id 校验 + 自动重试
+
+  - 在线翻译：腾讯交互翻译（国内直连、免配置、批量请求）；Google gtx 海外兜底
+
+- 源语言：自动识别（假名 / 拉丁 / 汉字启发式）/ 日文 / 英文
+
+- 译文缓存：逐页 JSON 磁盘缓存（LRU 64MB），缓存键含引擎 + 源语言标识，切换后同页自动重译；缓存明细管理（逐条 / 批量 / 全清，条目显示「原文→译文」）
+
+- 内存管理：关闭翻译或退出阅读器即释放全部 ONNX 会话（实测回收 600MB+）；快速开关并发保护
+
+### 🔍 书源体系
+
+所有书源实现统一 `BookSource` / `ComicSource` 接口，可插拔聚合：
+
+- **Z-Library**（深度原生集成）：
+
+  - 六个实测可用节点内置（1lib.sk、z-lib.by、z-library.sk、zh.z-lib.by、zh.z-library.sk、en.z-lib.by）
+
+  - **节点容灾**：4s 健康检查（60s 缓存，校验搜索功能而非仅连通性）；当前节点失效自动从候选池切换（六个导航站动态发现 ∪ 节点管理候选 ∪ 预置），登录态跨节点保持
+
+  - **DiamWall PoW 自动求解**：SHA-1 / SHA-256 两种工作量证明 + Cookie 提取 + 重定向循环守卫；交互式挑战由隐藏 WebView（Chromium TLS 指纹）兜底
+
+  - **抗污染 DNS**：私有/保留网段黑名单 + 四家 DoH 并行（AliDNS / DNSPod / Cloudflare / Google）+ 443 端口 TCP 探测排序 + 三级缓存
+
+  - 桌面 / 移动 / 旧版 / 通用兜底四套布局解析器；eapi JSON 接口；账号 / Cookie 登录；EPUB / MOBI / PDF / AZW3 / TXT / FB2 多格式下载
+
+  - 每日下载额度识别与提示（游客 5 次/天/IP，登录 10 次/天）
+
+- **MangaDex**：官方 REST API 原生实现
+
+- **Venera JS 漫画源**：QuickJS 运行社区 JS 源；内置加密桥（AES-ECB/CBC/CFB/OFB、RSA、HMAC、MD5/SHA 系列）、DOM 操作、图片像素级重排（支持分块乱序图床）；源列表可在线更新
+
+- **Legado JSON 书源**：`@css:` / `@json:` 规则，`||` 回退 / `&&` 合并 / `##正则##` 替换连接符，POST 搜索，tocUrl 两步解析；导入导出
+
+- **ehentai**：Cronet 网络栈（H\@H 浏览器级 TLS 指纹）
+
+- 聚合搜索：多源并发；每源 6 条预览 + 展开全部，展开状态跨页面保持；繁简折叠归一化（854 对映射）+ 变体扩展
+
+- 在线小说阅读：搜索结果为文字源时直接在线读正文（A−/A+、上下章）
+
+- 书源调试日志（300 条环形缓冲，可查看 / 复制 / 清空）
+
+### ⬇️ 下载
+
+- WorkManager 后台任务，锁屏 / 切页不中断；3 路并发；暂停 / 继续 / 取消 / 重试
+
+- 断点续传（HTTP Range，206 / 200 / 416 三态分派）
+
+- 真实格式校验：魔数识别（PDF / FB2 / ZIP 家族 / MOBI / 文本启发式），声明格式与实际不符按实际改名放行；HTML 错误页 / 限额页 / 验证页拦截并给出中文原因
+
+- 进度广播节流（≥300ms 或 ≥1%），流式 MD5，下载完成自动入库 + 封面缓存
+
+- 漫画单章 / 批量下载
+
+### 📚 书架与数据
+
+- 分类管理（新建 / 删除 / PIN 密码锁定）、导入、移动；排序三态（默认 / 标题 / 最近阅读）
+
+- 长按分享原文件（EPUB / 漫画 / MOBI / PDF / AZW3）
+
+- 阅读统计：周 / 月 / 年总览、日历热力图、7 天趋势、周图表、高峰时段、连续打卡、每日目标（15–480 分钟）
+
+- 存储管理：三区安全模型（缓存 / 用户数据 / 书籍数据），占用分区可视化（九个分量）；缓存明细逐文件管理（图片 / 译文 / 临时文件 / 封面 / 网页数据，单删 / 批删 / 全清）；删除用户数据需二次确认，下载进行中拦截
+
+### ✨ 界面
+
+- LiquidGlass 设计语言：真实背景采样毛玻璃、悬浮收缩 Tab 栏、亚克力弹窗、果冻开关、流体滑条（metaball）、玻璃卡片 3D 倾斜；玻璃画质三档（低 / 标准 / 极致）
+
+- 主题：主色 / 强调色自定义即时生效；屏幕方向锁（跟随系统 / 竖屏 / 横屏）
+
+- 开屏海报 + 纯净模式跳过 + 首次启动引导页；应用背景图自定义
+
+- 平板适配：统一断点（compact < 600 / medium / expanded ≥ 840），弹窗 560dp、全屏页内容 720dp 居中，书架网格 3→6 列、搜索瀑布流 2→4 列自适应
+
+- 吉祥物 Roxy（蓝发巫师少女）：待机 / 欢呼 / 奔跑 / 捧书 / 低落五套姿态动画
+
+***
+
+## 截图
+
+| 书架主页                                | 书库 · 书源选择                             |
+| ----------------------------------- | ------------------------------------- |
 | ![书架主页](docs/screenshots/shot1.jpg) | ![书库书源选择](docs/screenshots/shot2.jpg) |
 
-| 书源管理 | 阅读统计 | 设置页 |
-|---|---|---|
+| 书源管理                                | 阅读统计                                | 设置页                                |
+| ----------------------------------- | ----------------------------------- | ---------------------------------- |
 | ![书源管理](docs/screenshots/shot3.jpg) | ![阅读统计](docs/screenshots/shot4.jpg) | ![设置页](docs/screenshots/shot5.jpg) |
 
----
+***
 
-## 4. 📲 安装方式
+## 安装
 
-### ① Release / APK 直装（推荐）
+### Release 直装
 
-1. 前往本仓库 **Releases** 下载 `app-release.apk`（约 8.1MB，arm64-v8a）。
-2. 手机系统设置中允许「安装未知来源应用」。
-3. 打开 APK 按提示安装；华为设备按系统流程确认风险提示即可。
+从 [Releases](https://github.com/a1553846342-dotcom/EASYREADER/releases) 下载 `app-release.apk`，允许「安装未知来源应用」后安装。
 
-### ② 源码自行编译
+### 源码编译
 
-**环境要求**
-
-- JDK 17+
-- Android SDK（compileSdk 35 / minSdk 24 / targetSdk 35）
-- 可访问 Google Maven / Maven Central 的网络
-
-**构建步骤**
+环境：JDK 17+，Android SDK（compileSdk 35 / minSdk 24 / targetSdk 35）。
 
 ```bash
-# 1. 克隆仓库（已内置 Gradle Wrapper，无需预装 Gradle）
 git clone https://github.com/a1553846342-dotcom/EASYREADER.git
 cd EASYREADER
-
-# 2. 配置 SDK 路径（Windows / Linux / macOS 通用）
 echo "sdk.dir=/你的/Android/Sdk/路径" > local.properties
-
-# 3. 一键构建正式版 APK
 ./gradlew :app:assembleRelease
 ```
 
-APK 输出路径：`app/build/outputs/apk/release/app-release.apk`
+输出：`app/build/outputs/apk/release/app-release.apk`。未配置签名环境变量时自动回退 debug 签名；正式分发请配置 `KEYSTORE_PATH / STORE_PASSWORD / KEY_PASSWORD`。
 
-> 提示：`debug.keystore` 不会提交到仓库，首次构建会自动生成本地调试密钥；未配置签名环境变量时自动回退 debug 签名，clone 下来即可构建。正式分发请配置 `KEYSTORE_PATH / STORE_PASSWORD / KEY_PASSWORD`。
+***
 
----
+## 使用说明
 
-## 5. 🧭 使用教程
+| 操作                  | 路径                                  |
+| ------------------- | ----------------------------------- |
+| 切换书源                | 书库 → 顶部书源选择器                        |
+| 更新 Venera 漫画源       | 设置 → 书源管理 → 更新源列表                   |
+| 导入 Legado / JSON 书源 | 书源管理 → 导入（粘贴或选择 JSON 文件）            |
+| 导入本地书               | 书架 → 「+」→ 选择文件                      |
+| 阅读器设置               | 阅读器内点屏幕中央 → 设置面板（七标签页）              |
+| Z-Library 登录        | 书源管理 → Z-Library → 登录（账号或 Cookie）   |
+| 漫画翻译                | 阅读器设置 → 翻译 → 整页自动翻译（首次按提示下载 OCR 模型） |
 
-### 如何添加书源
+***
 
-1. 底部 Tab 进入「书库」。
-2. 顶部书源选择器切换 Z-Library / MangaDex / 聚合漫画（全部）。
-3. 需要更多漫画源：设置 → 书源管理 →「更新 Venera 源」，自动拉取社区源。
-4. 想用自己的规则：书源管理 →「粘贴 JSON」或「导入 JSON 书源文件」，格式兼容 Legado。
-5. 解锁成人源：设置页连按六下「主色按钮实时联动效果」，开启「带你登大郎~~~」后自动更新并显示特殊漫画源。
-
-### 如何导入本地书籍
-
-书架页点「+ 导入新书」→ 选择 TXT / EPUB / CBZ / CBR 文件，自动解析并入库，大文件也不卡。
-
-### 如何配置阅读设置
-
-阅读器内点屏幕中央呼出工具栏 →「阅读排版」：亮度、首行缩进、字号步进（A−/A+）、行距、页边距、五套主题预览卡、五种翻页模式都在同一面板，面板半透明设计可边调边对照书页；支持直接导入 TTF 字体文件。全局护眼强度、夜间模式、屏幕方向、渲染画质在设置页统一管理。
-
-### Z-Library 登录与下载
-
-书源管理 → Z-Library →「去登录」输入账号密码或粘贴 Cookie；登录后搜索 → 点「下载」，断点续传自动接管。
-
----
-
-## 6. 🏗️ 项目架构
-
-### 目录结构
+## 项目结构
 
 ```text
 app/src/main/java/com/example/
-├── MainActivity.kt          # 单 Activity 入口与导航
-├── MainViewModel.kt          # 全局状态（主题/护眼/方向锁/导入）
-├── data/                     # Room、TXT/EPUB/漫画解析、偏好、TTS
-├── download/                 # WorkManager 下载队列、断点续传、文件校验
-├── library/                  # 在线书库 UI、下载中心、漫画导入
-├── source/                   # 书源插件体系、Z-Library 引擎、JSON 书源、Venera JS 引擎
-│   ├── zlibrary/             # DiamWall PoW、节点管理、会话/Cookie、多布局解析
-│   └── js/                   # QuickJS 运行时、JS 消息桥
-├── ui/                       # Compose 界面
-│   ├── components/           # 液态玻璃按钮/开关/Tab 栏、JunoSlider、分段选择器等
-│   ├── pageturn/             # 五种翻页容器
-│   ├── mascot/               # 吉祥物动画
-│   └── source/               # 书源管理、节点管理、登录弹窗
-├── liquidglass-core/         # LiquidGlass 核心（vendored）
-├── liquidglass-compose/      # LiquidGlass Compose 封装（vendored）
-└── backdrop/                 # KMPLiquidGlass backdrop（vendored）
+├── MainActivity.kt              # 单 Activity 入口 + Navigation
+├── MainViewModel.kt             # 全局状态（主题/护眼/方向/导入流程）
+├── data/                        # Room、解析器（Epub/Mobi/Docx/Fb2/Comic/TXT）、TTS、备份
+│   └── ChapterMerger.kt         # 拆分章节 → 逻辑章节三表映射
+├── download/                    # WorkManager 队列、断点续传、魔数校验
+├── library/                     # 书库 UI、下载中心、Z-Library 节点/会话/节点管理
+├── mangatranslate/              # OCR、气泡分割、翻译引擎、译文缓存
+├── source/                      # 书源插件体系
+│   ├── parser/                  # JSONPath 子集 + Legado 规则解释器
+│   ├── zlibrary/                # DiamWall PoW、抗污染 DNS、eapi、四套布局解析
+│   └── js/                      # QuickJS 运行时 + 加密桥 + DOM 桥
+└── ui/
+    ├── comic/                   # 漫画引擎（模式/布局/管线/卷页/场景/设置面板）
+    ├── pageturn/                # 文字翻页容器 + 分页引擎
+    ├── components/              # 液态玻璃组件库（30+ 组件）
+    ├── mascot/                  # Roxy 吉祥物动画
+    └── adaptive/                # 统一宽度断点规范
+
+fi/harism/curl/                  # OpenGL 仿真卷页（vendored，Apache-2.0）
+eu/wewox/pagecurl/               # Compose 卷页（vendored）
+net/engawapg/lib/zoomable/       # 缩放组件（vendored）
+backdrop/                         # KMPLiquidGlass 背景采样（vendored）
+liquidglass-core/ · liquidglass-compose/   # 液态玻璃渲染核心（vendored）
 ```
 
-### 核心模块说明
+### 主要依赖
 
-- **架构**：MVVM + StateFlow + Repository；单一 Activity + Navigation Compose。
-- **存储管理**：应用内可视化存储统计（应用总占用 = 缓存/用户数据/书籍数据/其他精确分段），缓存一键清理零风险，离线数据删除需确认且下载进行中自动拦截。
-- **书源体系**：所有书源统一实现 `BookSource` 接口，网络层由 OkHttp 拦截器链处理 DiamWall/Cloudflare 验证。
-- **下载**：WorkManager 后台任务，任务状态实时广播，页面切换不中断。
-- **渲染**：LiquidGlass + KMPLiquidGlass 提供真实背景采样与毛玻璃；`backdrop`/`liquidglass-*` 均为 vendored 源码，无需外部 Maven 私有仓库。
+| 库                            | 用途               |
+| ---------------------------- | ---------------- |
+| Jetpack Compose / Material 3 | UI               |
+| Room + WorkManager           | 持久化与后台下载         |
+| OkHttp + Jsoup               | 网络与 HTML 解析      |
+| Coil                         | 图片加载与封面缓存        |
+| ONNX Runtime（Java API）       | OCR / 气泡分割推理     |
+| quickjs-kt                   | Venera JS 漫画源运行时 |
+| Cronet                       | ehentai 网络栈      |
 
-### 主要开源库及用途
+***
 
-| 库 | 用途 |
-|---|---|
-| Jetpack Compose / Material 3 | 整套 UI |
-| Room + WorkManager | 持久化与后台下载 |
-| OkHttp + Jsoup + Moshi | 网络、HTML 解析、序列化 |
-| Coil | 图片加载与封面缓存 |
-| QuickJS（quickjs-kt） | Venera JS 漫画源运行时 |
-| Cronet | ehentai H@H 浏览器级网络栈 |
-| Abdullajon1881/LiquidGlass | 液态玻璃渲染引擎 |
-| KMPLiquidGlass | backdrop 捕获与毛玻璃 |
-| FlexibleBottomSheet / compose-animations | 底部弹窗与形态动画 |
+## FAQ
 
----
+**搜索不到结果？**
+确认书源已启用、网络正常；Z-Library 首次搜索需自动过验证（数秒）；可切换节点或换关键词。
 
-## 7. ❓ 常见问题 FAQ
+**Z-Library 提示需验证 / 503 / 513？**
+应用自动解 DiamWall PoW，交互式挑战由 WebView 兜底；仍失败时节点容灾自动切换，也可在节点管理页手动切换。
 
-**Q1：为什么搜索不到结果？**
-先确认书源已启用且网络正常；Z-Library 需要自动过验证（等待数秒）；漫画源建议用「聚合漫画（全部）」一次搜索；也可切换节点或更换关键词。
+**下载失败或文件打不开？**
+下载自动校验真实格式，错误页不入库。失败任务可在下载中心重试；登录态过期需重新登录；未登录 IP 每日限额 5 次。
 
-**Q2：Z-Library 提示“需验证 / HTTP 503”怎么办？**
-应用会自动解 DiamWall 新版 PoW；若遇到交互式验证，稍后重试或切换其他节点。浏览器能打开不代表 App 直连顺畅，请保持代理/VPN 状态一致。
+**漫画翻译需要联网吗？**
+OCR 与气泡分割全本地（模型首次下载约 31MB）；在线翻译需联网；配置自定义 AI 接口后走自己的 API。
 
-**Q3：下载失败或校验失败？**
-下载会自动重试并校验文件（防 HTML 假文件）。失败任务保留在下载中心，点重试即可；登录态过期请重新登录。
+**模拟器上开翻译闪退？**
+Release 包仅含 arm64 ONNX 库，x86\_64 模拟器经 ARM 转译运行 ONNX 会 SIGSEGV，属模拟器限制；Debug 包附带 x86\_64 库可正常使用。
 
-**Q4：如何备份数据？**
-当前数据存于应用私有目录；JSON 导出与 WebDAV 云同步在 Roadmap 中，卸载前请先导出书籍文件。
+**如何备份数据？**
+数据存于应用私有目录，卸载即清除；JSON 导出与 WebDAV 同步在 Roadmap 中。
 
-**Q5：闪退怎么排查？**
-请到 Issues 提供版本号、设备型号、复现步骤；Android 端可用 `adb logcat -b crash` 抓取崩溃栈一并附上。
+***
 
-**Q6：支持 iOS 吗？**
-当前为纯 Android 项目；Compose Multiplatform 化已列入 Roadmap，iOS 包工程量不小但可行。
+## Roadmap
 
-**Q7：自定义 JSON 书源怎么写？**
-书库 → 帮助手册 →「查看 JSON 模板」；规则兼容 Legado 的 `@css:` / `@json:` 语法。
+- [ ] PDF 文本层解析（当前仅按页渲染）
 
-**Q8：APK 为什么只有 arm64？**
-为把体积压到 8.1MB，Release 只打包 arm64-v8a（覆盖近三年主流设备）；模拟器请使用 Debug 包或自行调整 `abiFilters`。
-
----
-
-## 8. 🗺️ Roadmap / 后续计划
-
-- [x] MOBI / AZW3 / AZW 格式支持（已支持：正文解析、封面提取、DRM 检测）
-- [x] 自定义字体包导入（阅读器「阅读排版」内直接导入 TTF）
-- [ ] PDF 文本解析支持（当前 PDF 仅支持漫画按页渲染）
 - [ ] 阅读记录 JSON 导出 / 导入
+
 - [ ] WebDAV 云同步
-- [ ] 音量键翻页、屏幕常亮快捷开关
-- [ ] 电子墨水模式、全局手势自定义
-- [ ] 更多内置漫画源与特殊漫画源连通性优化
+
+- [ ] 更多内置漫画源
+
 - [ ] Compose Multiplatform（iOS 实验版）
 
----
+***
 
-## 9. 🤝 贡献指南
+## 贡献
 
-### 提 Issue
+- Issue：标题 `[模块] 问题描述`，正文附版本号、设备型号、复现步骤、日志（`adb logcat -b crash`）
 
-- 标题格式：`[模块] 问题描述`，如 `[书库] 搜索无结果`。
-- 正文包含：版本号、设备型号、复现步骤、日志或截图。
+- PR：从 `main` 拉分支（`fix/xxx` / `feat/xxx`），提交信息 `type: 描述`，提交前确保 `./gradlew :app:assembleRelease` 构建通过
 
-### 提 PR
+***
 
-1. Fork 本仓库，从 `main` 拉分支，命名 `fix/xxx` 或 `feat/xxx`。
-2. 代码风格：Kotlin + Compose；组件放 `ui/components`；书源实现 `BookSource` 接口。
-3. 提交信息格式：`type: 描述`（如 `fix: zlib 下载 503`）。
-4. 提交前跑通 `./gradlew :app:assembleRelease`。
+## 免责声明与许可
 
----
+本项目仅用于技术学习与交流。所有在线书源（Z-Library、MangaDex、Venera 社区源、ehentai 等）均为第三方服务，内容由对应版权方所有；请勿将本项目用于商业用途或传播侵权内容。
 
-## 10. ⚠️ 免责声明
+本仓库未附带开源许可证（All Rights Reserved），代码仅作学习交流；第三方组件遵循其自身许可证（Apache-2.0 / MIT / GPL-3.0，明细见 `docs/vendor-licenses/`）。漫画翻译管线移植自 [jedzqer/manga-translator-android](https://github.com/jedzqer/manga-translator-android)（MIT）；仿真卷页来自 [harism/android-pagecurl](https://github.com/harism/android-pagecurl)（Apache-2.0）；环境音为 CC0 素材；Venera 漫画源来自 [venera-app/venera-configs](https://github.com/venera-app/venera-configs)。
 
-本项目仅用于技术学习与交流。所有在线书源（含 Venera 社区源、Z-Library、MangaDex 等）均来自第三方，内容版权归原作者/出版社所有；请勿将本项目用于商业用途或传播侵权内容。因使用本软件产生的一切法律问题与作者无关。
+***
 
----
+## 更新日志摘要
 
-## 11. 🙏 鸣谢
+完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-- 液态玻璃引擎：[Abdullajon1881/LiquidGlass](https://github.com/Abdullajon1881/LiquidGlass)、[Kashif-E/KMPLiquidGlass](https://github.com/Kashif-E/KMPLiquidGlass)
-- 底部弹窗：[skydoves/FlexibleBottomSheet](https://github.com/skydoves/FlexibleBottomSheet)
-- 动效参考：[skydoves/compose-animations](https://github.com/skydoves/compose-animations)、[commandiron/ComposeLoading](https://github.com/commandiron/ComposeLoading)
-- 滑块交互：[christianselig/JunoSlider](https://github.com/christianselig/JunoSlider)
-- 缩放组件：[usuiat/Zoomable](https://github.com/usuiat/Zoomable)
-- 翻页参考：GitHub `pagecurl`、`PTQFlipper`
-- Venera 漫画源：[venera-app/venera-configs](https://github.com/venera-app/venera-configs)
-- ehentai 取图思路：[delta-comic/delta-comic-plugin-ehentai](https://github.com/delta-comic/delta-comic-plugin-ehentai)
+**v1.0.5（2026-09-05）**
 
----
+- 漫画整页翻译：本地 OCR（PP-OCRv6）+ 气泡分割（YOLO-seg int8）+ 双引擎（自定义 AI / 腾讯交互翻译）；译文按气泡形状覆盖并锚定原文行位置；逐页缓存带引擎 / 语言隔离与明细管理；关闭翻译即释放 ONNX 会话内存
 
-## 12. 📄 License
+- Z-Library 节点容灾：六实测节点内置，失效自动切换，登录态跨节点保持；DiamWall PoW 自动求解 + WebView 兜底
 
-本仓库当前**未附带开源许可证（All Rights Reserved）**，代码仅作学习交流。第三方组件分别遵循其自身许可证（Apache-2.0 / MIT / GPL-3.0）。如需商用或二次分发，请联系作者获取授权。
+- PDF 按页位图渲染（漫画管线）
 
----
+- 平板适配统一断点规范；聚合搜索状态保持
 
-## 13. 🕹️ 更新日志
+- 漫画阅读器 28 项体验修复 + 四轮终审（缩放手感 / 卷页物理 / 双页书脊 / FADE 淡化等）
 
-> 逐项变更的完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+- APK 瘦身 22.28MB → 9.62MB（翻译功能引入后回升至约 23MB）
 
-### v1.0.0（2026-08-28）
+**v1.0.1（2026-09-04）**
 
-**阅读体验**
+- 在线小说阅读器（搜索结果直接读正文）；聚合分类与标签
 
-- 「阅读排版」面板全新设计：显示 / 文字 / 阅读主题 / 翻页四组卡片布局，字号步进器（A−/A+）、字体选择列表按对应字体实时渲染示例、主题预览卡片化，面板半透明可边调边对照书页。
-- 移除「薄荷」阅读主题（与白底渲染重复），保留白底 / 羊皮 / 夜间 / 护眼 / 纯黑五套。
-- 修复：打开书籍时若恢复的进度停在最后一章最后一页，会误触发“读完庆祝”动画；现在需要本次阅读中真正翻回末页才庆祝。
+- Legado 兼容增强：POST 搜索、tocUrl 两步解析、调试日志
 
-**视觉与动效**
+- 聚合搜索每源 6 条预览 + 展开全部；开屏 LOGO
 
-- 整卡 3D 视觉：玻璃卡片随按压跷跷板倾斜、随滚动惯性摆动并极软回正；固定光源 AGSL 法线光照压痕（Android 13+，低版本自动降级渐变模拟）。
+**v1.0.0（2026-08-28）**
 
-**此前累积（自上次 README 更新以来一并入库）**
+- 首个正式版：本地书籍 / 漫画阅读、书源聚合搜索与下载、阅读统计、LiquidGlass UI
 
-- 全 App 滑条统一为 FluidSlider goo 风格（章节拖动、漫画页码、阅读排版各项、亮度、护眼），含手势仲裁与手感调校。
-- MAX 极光特效包（三色流边/呼吸光晕/高光跟随/内容视差/入场弹簧）与「自定义卡片参数」实时调参体系。
-- 书架：排序三态切换、书籍卡片进度条、分类长按删除、长按呼出 Acrylic 半屏菜单。
-- 阅读：卷页下拉书签、滚动模式回顶悬浮按钮、读完徽章、阅读器亮度调光、顶栏重设计。
-- 统计：周期总览卡重构（时长/目标圆环/7 天趋势）与报告分享。
-
-**存储管理**
-
-- 缓存管理重写为三区安全模型：缓存区一键即时清理（零风险，进行中的分享/导入自动保留）；离线书籍/漫画/封面/网页浏览数据等用户数据删除需确认并量化后果；书籍数据与设置只读。
-- 统计口径修正：应用总占用精确覆盖缓存、离线内容、封面、个性化文件、书源、数据库等九个分量，「其他」杂项兜底使总数自洽；新增设备剩余空间显示与清理实测释放量反馈；下载进行中自动拦截删除。
-
-**修复与优化**
-
-- 修复：自定义软件背景 / 开屏海报更换后不生效（唯一文件名 + 旧文件清理，杜绝缓存去重失效）。
-- 修复：书库手册「清除下载临时文件」清错目录，现精确清理 `downloads/*.tmp` 且移至后台线程。
-- 精简设置页多处冗余说明文案；版本号升级至 1.0.0。

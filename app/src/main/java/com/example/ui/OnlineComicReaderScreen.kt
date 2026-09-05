@@ -1,60 +1,46 @@
 package com.example.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.ViewDay
-import androidx.compose.material.icons.filled.ViewWeek
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.ImageLoader
-import coil.request.ImageRequest
-import coil.compose.AsyncImagePainter
-import coil.compose.SubcomposeAsyncImage
-import coil.compose.SubcomposeAsyncImageContent
-import com.example.library.MhttuImageDecryptor
-import com.example.library.ImageBytes
 import com.example.data.ReadingSession
-import com.example.source.js.JsImageProcessor
+import com.example.library.ImageBytes
+import com.example.library.MhttuImageDecryptor
 import com.example.source.js.JsCookieJar
+import com.example.source.js.JsImageProcessor
+import com.example.ui.components.AppLiquidButton
+import com.example.ui.components.ChasingDots
+import com.example.ui.comic.ComicPageRef
+import com.example.ui.comic.ComicReaderCore
+import com.example.ui.comic.ComicTocEntry
+import com.example.ui.theme.MintPrimary
+import coil.ImageLoader
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
-import com.example.ui.components.ChasingDots
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppLiquidButton
-import com.example.ui.components.AppIconButton
-import com.example.ui.theme.MintPrimary
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import net.engawapg.lib.zoomable.ExperimentalZoomableApi
-import net.engawapg.lib.zoomable.rememberZoomState
-import net.engawapg.lib.zoomable.zoomable
-import net.engawapg.lib.zoomable.zoomableWithScroll
 
-private enum class ComicReadingMode2 { HORIZONTAL, VERTICAL }
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalZoomableApi::class)
+/**
+ * 在线漫画阅读页（升级版）：
+ * 由统一阅读引擎 [ComicReaderCore] 驱动，保留原有解密/代理/重试图片加载管线；
+ * 新增：章节目录、上一章/下一章连续阅读、每漫画独立配置（bookKey）。
+ */
 @Composable
 fun OnlineComicReaderScreen(
     title: String,
@@ -68,118 +54,43 @@ fun OnlineComicReaderScreen(
     onRecordTime: (Long) -> Unit = {},
     onSessionEnd: (ReadingSession) -> Unit = {},
     onBack: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    /* ── 升级新增（可选，保持旧调用兼容） ── */
+    bookKey: String? = null,
+    bookTitle: String? = null,
+    chapters: List<ComicTocEntry> = emptyList(),
+    currentChapterIndex: Int = -1,
+    onJumpToChapter: ((Int) -> Unit)? = null,
+    onPrevChapter: (() -> Unit)? = null,
+    onNextChapter: (() -> Unit)? = null,
 ) {
-    var readingMode by remember { mutableStateOf(ComicReadingMode2.HORIZONTAL) }
-    var isRightToLeft by remember { mutableStateOf(true) }
-    var showBars by remember { mutableStateOf(true) }
-    var currentPage by remember { mutableIntStateOf(0) }
-
-    // 在线阅读计时：只在 App 前台 + 屏幕亮着时累计（修复后台/锁屏虚增时长 bug）
+    // 在线阅读计时：只在 App 前台 + 屏幕亮着时累计
     ReadingTimerEffect(
         bookId = null,
-        bookTitle = title,
+        bookTitle = bookTitle ?: title,
         onFlush = { seconds -> onRecordTime(seconds) },
         onSessionEnd = { session -> onSessionEnd(session) }
     )
 
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val currentResolveImage by rememberUpdatedState(resolveImage)
-    val currentResolveImageHeaders by rememberUpdatedState(resolveImageHeaders)
+    val currentResolveImage = rememberUpdatedState(resolveImage)
+    val currentResolveImageHeaders = rememberUpdatedState(resolveImageHeaders)
 
-    // 漫画阅读专用加载器：对 tu.mhttu.cc 加密图床自动 AES 解密
+    // 漫画阅读专用加载器：进程级单例（避免反复进出阅读器叠加 Coil 缓存与线程池）
     val imageLoader = remember {
-        val client = OkHttpClient.Builder()
-            .protocols(listOf(Protocol.HTTP_1_1))
-            .proxySelector(com.example.source.js.JsSourceProxy.selector(context))
-            .addInterceptor { chain ->
-                var original = chain.request()
-                if (currentResolveImage != null) {
-                    val pageUrl = original.url.toString()
-                    val resolved = runBlocking { currentResolveImage!!(pageUrl) }
-                    if (!resolved.isNullOrBlank() && resolved != pageUrl) {
-                        if (resolved.startsWith("file:")) {
-                            // H@H 图片已由 Cronet 下载缓存到本地，直接作为响应返回，避免 OkHttp 请求 file://
-                            val f = java.io.File(java.net.URI.create(resolved))
-                            if (f.exists() && f.length() > 0) {
-                                val bytes = f.readBytes()
-                                return@addInterceptor okhttp3.Response.Builder()
-                                    .request(original)
-                                    .protocol(Protocol.HTTP_1_1)
-                                    .code(200)
-                                    .message("OK")
-                                    .header("Content-Type", "image/*")
-                                    .body(bytes.toResponseBody("image/*".toMediaType()))
-                                    .build()
-                            }
-                        } else {
-                            val rb = original.newBuilder().url(resolved)
-                            val rh = runBlocking { currentResolveImageHeaders?.invoke(resolved) }.orEmpty()
-                            rh.forEach { (k, v) -> rb.header(k, v) }
-                            original = rb.build()
-                        }
-                    }
-                }
-                val builder = original.newBuilder()
-                if (original.headers.names().none { it.equals("User-Agent", ignoreCase = true) }) {
-                    builder.header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.128 Mobile Safari/537.36"
-                    )
-                }
-                if (original.headers.names().none { it.equals("Cookie", ignoreCase = true) }) {
-                    val cookie = JsCookieJar.cookieHeader(context, original.url.toString())
-                    if (cookie.isNotBlank()) builder.header("Cookie", cookie)
-                }
-                // 不声明 avif，避免部分图源 CDN 返回 BitmapFactory/Coil 解不了的 AVIF
-                if (original.headers.names().none { it.equals("Accept", ignoreCase = true) }) {
-                    builder.header("Accept", "image/webp,image/jpeg,image/png,*/*;q=0.8")
-                }
-                var response: okhttp3.Response? = null
-                var lastError: Exception? = null
-                for (attempt in 1..3) {
-                    try {
-                        response = chain.proceed(builder.build())
-                        break
-                    } catch (e: Exception) {
-                        lastError = e
-                        Thread.sleep(1000L * attempt)
-                    }
-                }
-                if (response == null) throw (lastError ?: Exception("图片请求失败"))
-                val finalResponse = response!!
-                val raw = finalResponse.body?.bytes() ?: return@addInterceptor finalResponse
-                val host = response.request.url.host
-                var processed = ImageBytes.normalizeImage(raw, finalResponse.header("Content-Encoding"))
-                // 平台解不了 AVIF 时，自动尝试 hitomi 类 CDN 的 webp 变体
-                if (ImageBytes.isAvif(processed) && !ImageBytes.decodeOk(processed)) {
-                    for (candidate in ImageBytes.webpVariants(response.request.url.toString())) {
-                        try {
-                            val r2 = chain.proceed(response.request.newBuilder().url(candidate).build())
-                            val b2 = r2.body?.bytes() ?: continue
-                            val p2 = ImageBytes.normalizeImage(b2, r2.header("Content-Encoding"))
-                            if (!ImageBytes.isAvif(p2) && ImageBytes.decodeOk(p2)) {
-                                processed = p2
-                                break
-                            }
-                        } catch (e: Exception) {
-                            // 尝试下一个候选
-                        }
-                    }
-                }
-                processed = if (MhttuImageDecryptor.isEncryptedHost(host)) {
-                    MhttuImageDecryptor.decryptIfNeeded(processed)
-                } else {
-                    processed
-                }
-                processed = JsImageProcessor.transform(response.request.url.toString(), processed) ?: processed
-                finalResponse.newBuilder()
-                    .body(processed.toResponseBody(finalResponse.body?.contentType()))
-                    .build()
-            }
-            .build()
-        ImageLoader.Builder(context).okHttpClient(client).crossfade(true).build()
+        sharedResolveImage = currentResolveImage
+        sharedResolveImageHeaders = currentResolveImageHeaders
+        synchronized(ComicLoaderLock) {
+            sharedComicLoader ?: buildComicImageLoader(context).also { sharedComicLoader = it }
+        }
+    }
+
+    // 离开阅读器时释放回调引用（拦截器侧已 ?. 判空，飞行中的请求不受影响）
+    DisposableEffect(Unit) {
+        onDispose {
+            sharedResolveImage = null
+            sharedResolveImageHeaders = null
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -187,10 +98,7 @@ fun OnlineComicReaderScreen(
             loading && imageUrls.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ChasingDots(
-                            size = 52.dp,
-                            color = MintPrimary
-                        )
+                        ChasingDots(size = 52.dp, color = MintPrimary)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("正在加载图片…", color = Color.White, fontSize = 14.sp)
                     }
@@ -207,10 +115,7 @@ fun OnlineComicReaderScreen(
                             modifier = Modifier.padding(horizontal = 32.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        AppLiquidButton(
-                            text = "重试",
-                            onClick = onRetry
-                        )
+                        AppLiquidButton(text = "重试", onClick = onRetry)
                     }
                 }
             }
@@ -222,243 +127,144 @@ fun OnlineComicReaderScreen(
             }
 
             else -> {
-                val pagerState = rememberPagerState(initialPage = 0) { imageUrls.size }
-                val listState = rememberLazyListState()
-
-                if (readingMode == ComicReadingMode2.HORIZONTAL) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize()
-                    ) { page ->
-                        OnlineComicPage(
-                            url = imageUrls[page],
-                            context = context,
-                            referer = referer,
-                            headers = imageHeaders[imageUrls[page]].orEmpty(),
-                            imageLoader = imageLoader,
-                            zoomable = true,
-                            onTapLeft = {
-                                if (isRightToLeft) {
-                                    if (pagerState.currentPage < pagerState.pageCount - 1) {
-                                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                                    }
-                                } else if (pagerState.currentPage > 0) {
-                                    scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                                }
-                            },
-                            onTapRight = {
-                                if (isRightToLeft) {
-                                    if (pagerState.currentPage > 0) {
-                                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                                    }
-                                } else if (pagerState.currentPage < pagerState.pageCount - 1) {
-                                    scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                                }
-                            },
-                            onTapCenter = { showBars = !showBars }
-                        )
-                    }
-                    LaunchedEffect(pagerState.currentPage) {
-                        currentPage = pagerState.currentPage
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zoomableWithScroll(
-                                zoomState = rememberZoomState(),
-                                onTap = { showBars = !showBars }
-                            )
-                    ) {
-                        items(imageUrls.size) { page ->
-                            OnlineComicPage(
-                                url = imageUrls[page],
-                                context = context,
-                                referer = referer,
-                                headers = imageHeaders[imageUrls[page]].orEmpty(),
-                                imageLoader = imageLoader,
-                                zoomable = false
-                            )
-                        }
-                    }
-                    LaunchedEffect(listState.firstVisibleItemIndex) {
-                        currentPage = listState.firstVisibleItemIndex
-                    }
-                }
-
-                // 顶部 / 底部控制栏
-                AnimatedVisibility(
-                    visible = showBars,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                ) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = title,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = Color.White
-                            )
-                        },
-                        navigationIcon = {
-                            AppIconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Color.White)
-                            }
-                        },
-                        actions = {
-                            AppIconButton(onClick = { readingMode = ComicReadingMode2.HORIZONTAL }) {
-                                Icon(
-                                    Icons.Filled.ViewWeek,
-                                    contentDescription = "横向",
-                                    tint = if (readingMode == ComicReadingMode2.HORIZONTAL) MintPrimary else Color.White
-                                )
-                            }
-                            AppIconButton(onClick = { readingMode = ComicReadingMode2.VERTICAL }) {
-                                Icon(
-                                    Icons.Filled.ViewDay,
-                                    contentDescription = "纵向",
-                                    tint = if (readingMode == ComicReadingMode2.VERTICAL) MintPrimary else Color.White
-                                )
-                            }
-                            AppIconButton(onClick = { isRightToLeft = !isRightToLeft }) {
-                                Icon(
-                                    Icons.Filled.MenuBook,
-                                    contentDescription = "阅读方向",
-                                    tint = if (isRightToLeft) MintPrimary else Color.White
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Black.copy(alpha = 0.75f)
-                        )
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = showBars,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    Surface(color = Color.Black.copy(alpha = 0.75f)) {
-                        Text(
-                            text = "${currentPage + 1} / ${imageUrls.size}",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                val pages = remember(imageUrls) {
+                    imageUrls.mapIndexed { i, url ->
+                        ComicPageRef.Remote(
+                            id = "u_${url.hashCode()}_$i",
+                            url = url,
+                            headers = imageHeaders[url].orEmpty(),
+                            referer = referer
                         )
                     }
                 }
+                ComicReaderCore(
+                    pages = pages,
+                    title = bookTitle ?: title,
+                    chapterTitle = title,
+                    bookKey = bookKey,
+                    initialPage = 0,
+                    toc = chapters,
+                    currentChapterIndex = currentChapterIndex,
+                    onJumpToChapter = onJumpToChapter,
+                    onPrevChapter = onPrevChapter,
+                    onNextChapter = onNextChapter,
+                    chapterNavLabel = "章",
+                    remoteImageLoader = imageLoader,
+                    onExit = onBack,
+                )
             }
         }
     }
 }
 
-@Composable
-private fun OnlineComicPage(
-    url: String,
-    context: android.content.Context,
-    referer: String?,
-    headers: Map<String, String>,
-    imageLoader: coil.ImageLoader,
-    zoomable: Boolean,
-    onTapLeft: (() -> Unit)? = null,
-    onTapRight: (() -> Unit)? = null,
-    onTapCenter: () -> Unit = {}
-) {
-    var pageWidth by remember { mutableIntStateOf(0) }
-    var attempt by remember(url) { mutableIntStateOf(0) }
-    var autoRetried by remember(url) { mutableStateOf(false) }
-    val zoomState = rememberZoomState()
-    val request = remember(url, referer, headers, attempt) {
-        val builder = ImageRequest.Builder(context)
-            .data(url)
-            .crossfade(true)
-        headers.forEach { (k, v) -> builder.addHeader(k, v) }
-        if (!referer.isNullOrBlank()) {
-            builder.addHeader("Referer", referer)
-        }
-        builder.build()
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .onSizeChanged { pageWidth = it.width },
-        contentAlignment = Alignment.Center
-    ) {
-        SubcomposeAsyncImage(
-            model = request,
-            imageLoader = imageLoader,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = if (zoomable) {
-                Modifier
-                    .fillMaxSize()
-                    .zoomable(
-                        zoomState = zoomState,
-                        onTap = { tapOffset ->
-                            if (onTapLeft != null || onTapRight != null) {
-                                val width = pageWidth.toFloat()
-                                when {
-                                    tapOffset.x < width * 0.35f -> onTapLeft?.invoke()
-                                    tapOffset.x > width * 0.65f -> onTapRight?.invoke()
-                                    else -> onTapCenter()
-                                }
-                            } else {
-                                onTapCenter()
-                            }
+/* ── 进程级共享加载器（拦截器通过 State 引用读取最新解密回调） ── */
+
+private val ComicLoaderLock = Any()
+private var sharedComicLoader: ImageLoader? = null
+private var sharedResolveImage: State<(suspend (String) -> String?)?>? = null
+private var sharedResolveImageHeaders: State<(suspend (String) -> Map<String, String>)?>? = null
+
+/** 构建漫画专用加载器：tu.mhttu.cc 自动 AES 解密、代理路由、AVIF 变体回退、3 次重试 */
+private fun buildComicImageLoader(context: android.content.Context): ImageLoader {
+    val client = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .proxySelector(com.example.source.js.JsSourceProxy.selector(context))
+        .addInterceptor { chain ->
+            var original = chain.request()
+            val resolveImg = sharedResolveImage
+            if (resolveImg?.value != null) {
+                val pageUrl = original.url.toString()
+                val resolved = kotlinx.coroutines.runBlocking { resolveImg.value!!(pageUrl) }
+                if (!resolved.isNullOrBlank() && resolved != pageUrl) {
+                    if (resolved.startsWith("file:")) {
+                        // H@H 图片已由 Cronet 下载缓存到本地，直接作为响应返回
+                        val f = java.io.File(java.net.URI.create(resolved))
+                        if (f.exists() && f.length() > 0) {
+                            val bytes = f.readBytes()
+                            return@addInterceptor okhttp3.Response.Builder()
+                                .request(original)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .header("Content-Type", "image/*")
+                                .body(bytes.toResponseBody("image/*".toMediaType()))
+                                .build()
                         }
-                    )
+                    } else {
+                        val rb = original.newBuilder().url(resolved)
+                        val rh = kotlinx.coroutines.runBlocking {
+                            sharedResolveImageHeaders?.value?.invoke(resolved)
+                        }.orEmpty()
+                        rh.forEach { (k, v) -> rb.header(k, v) }
+                        original = rb.build()
+                    }
+                }
+            }
+            val builder = original.newBuilder()
+            if (original.headers.names().none { it.equals("User-Agent", ignoreCase = true) }) {
+                builder.header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.128 Mobile Safari/537.36"
+                )
+            }
+            if (original.headers.names().none { it.equals("Cookie", ignoreCase = true) }) {
+                val cookie = JsCookieJar.cookieHeader(context, original.url.toString())
+                if (cookie.isNotBlank()) builder.header("Cookie", cookie)
+            }
+            // 不声明 avif，避免部分图源 CDN 返回 BitmapFactory/Coil 解不了的 AVIF
+            if (original.headers.names().none { it.equals("Accept", ignoreCase = true) }) {
+                builder.header("Accept", "image/webp,image/jpeg,image/png,*/*;q=0.8")
+            }
+            var response: okhttp3.Response? = null
+            var lastError: Exception? = null
+            for (attempt in 1..3) {
+                try {
+                    response = chain.proceed(builder.build())
+                    break
+                } catch (e: Exception) {
+                    lastError = e
+                    Thread.sleep(1000L * attempt)
+                }
+            }
+            if (response == null) throw (lastError ?: Exception("图片请求失败"))
+            val finalResponse = response!!
+            val raw = finalResponse.body?.bytes() ?: return@addInterceptor finalResponse
+            val host = response.request.url.host
+            var processed = ImageBytes.normalizeImage(raw, finalResponse.header("Content-Encoding"))
+            // 平台解不了 AVIF 时，自动尝试 hitomi 类 CDN 的 webp 变体
+            if (ImageBytes.isAvif(processed) && !ImageBytes.decodeOk(processed)) {
+                for (candidate in ImageBytes.webpVariants(response.request.url.toString())) {
+                    try {
+                        val r2 = chain.proceed(response.request.newBuilder().url(candidate).build())
+                        val b2 = r2.body?.bytes() ?: continue
+                        val p2 = ImageBytes.normalizeImage(b2, r2.header("Content-Encoding"))
+                        if (!ImageBytes.isAvif(p2) && ImageBytes.decodeOk(p2)) {
+                            processed = p2
+                            break
+                        }
+                    } catch (e: Exception) {
+                        // 尝试下一个候选
+                    }
+                }
+            }
+            processed = if (MhttuImageDecryptor.isEncryptedHost(host)) {
+                MhttuImageDecryptor.decryptIfNeeded(processed)
             } else {
-                Modifier.fillMaxSize()
+                processed
             }
-        ) {
-            when (painter.state) {
-                is AsyncImagePainter.State.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            ChasingDots(size = 30.dp, color = MintPrimary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "加载图片中…",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-                is AsyncImagePainter.State.Error -> {
-                    LaunchedEffect(Unit) {
-                        if (!autoRetried) {
-                            autoRetried = true
-                            kotlinx.coroutines.delay(1500)
-                            attempt++
-                        }
-                    }
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "图片加载失败",
-                                color = Color(0xFFFF8A8A),
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(onClick = { attempt++ }) {
-                                Text("重试", color = MintPrimary)
-                            }
-                        }
-                    }
-                }
-                else -> SubcomposeAsyncImageContent()
-            }
+            processed = JsImageProcessor.transform(response.request.url.toString(), processed) ?: processed
+            finalResponse.newBuilder()
+                .body(processed.toResponseBody(finalResponse.body?.contentType()))
+                .build()
         }
-    }
+        .build()
+    // 内存缓存压到 10%：结果位图由阅读引擎 (ComicPageLoader) 另行缓存，避免双份占用
+    return ImageLoader.Builder(context)
+        .okHttpClient(client)
+        .crossfade(true)
+        // EXIF 方向归一化（第六轮第 4 条现象三）：远程 JPEG 带 90°/270° 标签时
+        // 不处理会横显——与本地解码（ComicPageLoader.decodeLocal）行为对齐
+        .bitmapFactoryExifOrientationPolicy(coil.decode.ExifOrientationPolicy.RESPECT_ALL)
+        .memoryCache { coil.memory.MemoryCache.Builder(context).maxSizePercent(0.10).build() }
+        .build()
 }

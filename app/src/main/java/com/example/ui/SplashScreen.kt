@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -173,13 +174,20 @@ fun SplashScreen(
                         .padding(bottom = 48.dp, start = 24.dp, end = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-    text = "Ciallo阅读",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                    // 手绘风格 LOGO（任务三）：替换原"Ciallo阅读"文字标题；
+                    // 原图为透明底浅色手绘（均亮 ~225），在海报渐变压暗区上对比清晰
+                    Image(
+                        painter = painterResource(R.drawable.splash_ciallo_logo),
+                        contentDescription = "Ciallo阅读",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .width(168.dp)
+                            .graphicsLayer {
+                                scaleX = scale.value
+                                scaleY = scale.value
+                            }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = randomQuote,
                         fontSize = 13.sp,
@@ -283,18 +291,12 @@ private fun ProceduralArtisticPoster(randomQuote: String, styleIndex: Int) {
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Filled.AutoStories,
-                    contentDescription = null,
-                    tint = Color(0xFF7FD8C8),
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-    text = "Ciallo阅读",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                // 手绘风格 LOGO（任务三）：替换原 AutoStories 图标 + "Ciallo阅读"文字
+                Image(
+                    painter = painterResource(R.drawable.splash_ciallo_logo),
+                    contentDescription = "Ciallo阅读",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.width(144.dp)
                 )
             }
         }

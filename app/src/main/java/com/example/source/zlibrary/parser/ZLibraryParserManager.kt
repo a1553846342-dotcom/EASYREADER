@@ -13,6 +13,7 @@ object ZLibraryParserManager {
     private const val TAG = "ZLibraryParserManager"
 
     private val parsers: List<ZLibraryLayoutParser> = listOf(
+        BookcardLayoutParser(),
         DesktopLayoutParser(),
         MobileLayoutParser(),
         LegacyLayoutParser(),

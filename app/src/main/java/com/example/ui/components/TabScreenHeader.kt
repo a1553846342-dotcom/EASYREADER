@@ -96,7 +96,9 @@ fun TabScreenHeader(
     val innerV by animateDpAsState(if (collapsed) 7.dp else 12.dp, tween(220), label = "hdrInnerV")
     val titleSize by animateFloatAsState(if (collapsed) 19f else 24f, tween(220), label = "hdrTitle")
     val subAlpha by animateFloatAsState(if (collapsed) 0f else 1f, tween(180), label = "hdrSubAlpha")
-    val subH by animateDpAsState(if (collapsed) 0.dp else 17.dp, tween(220), label = "hdrSubH")
+    // 17dp 会裁掉中文 12sp 的字形底边（CJK 默认行高 ≈1.47em ≈17.6sp）；
+    // 显式 lineHeight 14sp 收紧段落盒 + 槽位 18dp 留出余量
+    val subH by animateDpAsState(if (collapsed) 0.dp else 18.dp, tween(220), label = "hdrSubH")
 
     GlassCard(
         modifier = modifier
@@ -126,6 +128,7 @@ fun TabScreenHeader(
                         Text(
                             text = subtitle,
                             fontSize = 12.sp,
+                            lineHeight = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = titleColor.copy(alpha = 0.75f),
                             letterSpacing = 1.5.sp,

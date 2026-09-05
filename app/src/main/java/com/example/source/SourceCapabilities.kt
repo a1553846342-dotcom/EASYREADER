@@ -8,7 +8,17 @@ data class SourceCapabilities(
     val supportDebug: Boolean = false,
     val supportImport: Boolean = false,
     val supportComic: Boolean = false,
+    /** 支持章节式在线文字阅读（Legado 网文源：htmlChapters + 文本正文规则） */
+    val supportOnlineText: Boolean = false,
     val environmentOnly: Boolean = false
 ) {
     val requiresLogin: Boolean get() = downloadRequiresLogin
 }
+
+/**
+ * 小说源（电子书/网文）：Z-Library 电子书，或支持章节文字阅读的 Legado 源。
+ * 与漫画源（capabilities.supportComic）互斥，用于书源分类展示与聚合搜索分组。
+ */
+val BookSource.isNovelSource: Boolean
+    get() = id == "zlibrary" ||
+        (capabilities.supportOnlineText && !capabilities.supportComic)

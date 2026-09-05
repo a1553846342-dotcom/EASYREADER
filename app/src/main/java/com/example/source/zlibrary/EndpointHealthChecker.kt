@@ -115,6 +115,8 @@ class EndpointHealthChecker(private val context: Context) {
             // 只认结构标记（zlibrary.js / z-cover / z-bookcard / book-item），
             // 不认纯文本 "Z-Library"——停放域名（如 techblazing.com）的 SEO 文章页
             // 会包含该文案但没有 zlib 结构。
+            // 2026-09-04 22:10 实测教训：指纹网关壳页（/js/fingerprint/iife.min.js）
+            // 不算真实站点——z-lib.is 的壳页对真 Edge 也返回 fp=-7 拒绝，壳页≠可用。
             val looksLikeZlib = homeBody.contains("zlibrary.js") ||
                 homeBody.contains("z-cover") ||
                 homeBody.contains("z-bookcard") ||
@@ -148,7 +150,11 @@ class EndpointHealthChecker(private val context: Context) {
                 eapiResponse.close()
             }
 
-            // Step 4: 搜索服务探针（官网搜索故障时节点仍可达，只是搜索不可用）
+            // Step 4: 搜索服务探针（官网搜索故障时节点仍可达，只是搜索不可用）。
+            // 双重校验（修复"搜索出40本"假通过）：入口跳转域（zh.101z.by 等）会把
+            // /s/{kw} 302 丢路径跳到主页，主页书卡片会让只查"页面有书"的旧探针
+            // 误判搜索可用——所以必须 ① 最终 URL 仍在 /s/ 路径 ② 结果页包含关键词
+            // "三体"（真实搜索结果必然含命中书名；主页/推荐页不会）。
             val encodedKw = URLEncoder.encode("三体", "UTF-8").replace("+", "%20")
             var searchAvailable = false
             var searchDetail = ""
@@ -160,16 +166,19 @@ class EndpointHealthChecker(private val context: Context) {
                     .build()
                 val searchResponse = httpClient.newCall(searchRequest).execute()
                 val searchHtml = searchResponse.peekBody(1024 * 1024).string()
-                searchAvailable = searchResponse.code == 200 &&
-                    !searchHtml.contains("Search service temporary unavailable", ignoreCase = true) &&
-                    (searchHtml.contains("z-bookcard") || searchHtml.contains("resItemBox") ||
-                        searchHtml.contains("book-item") || searchHtml.contains("/book/"))
-                searchDetail = if (searchHtml.contains("Search service temporary unavailable", ignoreCase = true)) {
-                    "搜索服务暂不可用（官网故障）"
-                } else if (searchResponse.code != 200) {
-                    "搜索页 HTTP ${searchResponse.code}"
-                } else {
-                    ""
+                val finalPath = searchResponse.request.url.encodedPath
+                val stayedOnSearchPath = finalPath.startsWith("/s/")
+                val keywordRelevant = searchHtml.contains("三体")
+                val serviceUnavailable =
+                    searchHtml.contains("Search service temporary unavailable", ignoreCase = true)
+                searchAvailable = searchResponse.code == 200 && stayedOnSearchPath &&
+                    !serviceUnavailable && keywordRelevant
+                searchDetail = when {
+                    serviceUnavailable -> "搜索服务暂不可用（官网故障）"
+                    searchResponse.code != 200 -> "搜索页 HTTP ${searchResponse.code}"
+                    !stayedOnSearchPath -> "搜索被重定向到主页（入口跳转域，非真实镜像）"
+                    !keywordRelevant -> "搜索结果与关键词无关（疑似主页充数）"
+                    else -> ""
                 }
                 searchResponse.close()
             }

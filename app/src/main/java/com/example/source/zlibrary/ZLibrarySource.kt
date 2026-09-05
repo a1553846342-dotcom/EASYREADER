@@ -1,6 +1,7 @@
 package com.example.source.zlibrary
 
 import android.content.Context
+import android.util.Log
 import com.example.source.*
 import com.example.library.ZLibraryNodeConfig
 import com.example.library.ZLibraryNodeManager
@@ -11,6 +12,9 @@ import com.example.source.zlibrary.parser.ZLibraryParserManager
 import okhttp3.FormBody
 import org.jsoup.Jsoup
 import java.net.URLEncoder
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
 class ZLibrarySource(
@@ -48,7 +52,10 @@ class ZLibrarySource(
     }
 
     private fun checkCloudflare(responseCode: Int, htmlBody: String) {
-        if (responseCode == 403 || responseCode == 503 || responseCode == 517 ||
+        // 513 = DiamWall 对非浏览器 TLS 指纹的硬拦截（2026-09-04 实测：OkHttp 冷启动
+        // 常态命中）。不抛异常会掉进下方 !isSuccessful 分支只试 eapi 后直接报错，
+        // 错失 WebView（Chromium 指纹）兜底——所以必须并入挑战码集合。
+        if (responseCode == 403 || responseCode == 503 || responseCode == 513 || responseCode == 517 ||
             (htmlBody.contains("Just a moment") && !htmlBody.contains("dwid")) ||
             htmlBody.contains("Checking your browser")
         ) {
@@ -75,10 +82,15 @@ class ZLibrarySource(
                 return SourceResult.Error(SourceException.ParseError("请输入用户名和密码，或提供有效的 Cookie"))
             }
 
-            // 候选节点：用户选中的节点 > 解析器结果 > 默认/扒取节点。
+            // 候选节点：健康检查通过的域优先（2026-09-04 修复"逐域盲提交"——
+            // 旧行为对 18 个候选挨个 POST 登录表单，死域/重定向域浪费几分钟还
+            // 有额外认证请求风险；现在登录前先快速可达性过滤，最多提交 4 个域）。
             // 只对"首页确认是 Z-Library"的主机提交登录（跳过假镜像，如 z-lib.id），
             // 每个候选最多 8 秒，避免 rpc.php 挂起导致读超时。
-            val candidates = buildList {
+            // 2026-09-04 补充：首选域（用户选择/默认 = 1lib.sk）免健康检查——
+            // DiamWall 挑战页会被健康检查误判为不可达，导致登录请求被引到
+            // 仿冒站/死站上；首选域始终排第一优先尝试。
+            val reachable = buildList {
                 runCatching { ZLibraryNodeConfig.domain }.getOrNull()?.let { add(it) }
                 add(domain)
                 add(ZLibraryNodeManager.DEFAULT_NODE)
@@ -86,6 +98,17 @@ class ZLibrarySource(
             }.map {
                 it.trim().removePrefix("https://").removePrefix("http://").removeSuffix("/")
             }.filter { it.isNotBlank() }.distinct()
+
+            val preferred = reachable.firstOrNull()
+            val candidates: List<String> = coroutineScope {
+                val deferred = reachable.drop(1).take(9).map { h: String ->
+                    async {
+                        val ok = runCatching { domainResolver.checkDomainHealth(h).isAvailable }.getOrDefault(false)
+                        if (ok) h else null
+                    }
+                }
+                (listOfNotNull(preferred) + deferred.awaitAll().filterNotNull()).distinct().take(4)
+            }.ifEmpty { reachable.take(4) }
 
             var lastError: String? = null
             for (candidate in candidates) {
@@ -213,6 +236,35 @@ class ZLibrarySource(
                 )
             }
 
+            // 搜索假结果守卫 #1（修复"搜索出40本"）：入口跳转域（zh.101z.by 等）会把
+            // /s/{kw} 302 丢路径跳到主页——最终 URL 不在 /s/ 即铁证，强制扫描换真实
+            // 镜像重试一次。零结果页仍在 /s/ 路径，不受影响。
+            var finalUrl = response.request.url
+            if (response.isSuccessful && !finalUrl.encodedPath.startsWith("/s/")) {
+                response.close()
+                ZLibraryNetworkLogger.logParserResult(
+                    "RETRY_FALLBACK", 0,
+                    "search redirected off /s/: path=${finalUrl.encodedPath}"
+                )
+                val fallbackDomain = domainResolver.resolveDomain(forceScan = true)
+                sessionManager.ensureSessionInitialized(fallbackDomain, forceRefresh = true)
+                val retryResponse = httpClient.get(
+                    "https://$fallbackDomain/s/$encodedKw",
+                    referer = "https://$fallbackDomain/"
+                )
+                val retryHtml = retryResponse.body?.string() ?: ""
+                val retryRedirected = retryResponse.isSuccessful &&
+                    !retryResponse.request.url.encodedPath.startsWith("/s/")
+                if (retryRedirected) {
+                    retryResponse.close()
+                    return SourceResult.Error(
+                        SourceException.NetworkError("搜索被重定向（节点为入口跳转域，非真实镜像），请更换节点后重试")
+                    )
+                }
+                response = retryResponse
+                html = retryHtml
+            }
+
             if (!response.isSuccessful) {
                 response.close()
                 ZLibraryNetworkLogger.logParserResult("RETRY_EAPI", 0, "HTTP ${response.code}")
@@ -221,10 +273,65 @@ class ZLibrarySource(
                     ZLibraryNetworkLogger.logParserResult("SUCCESS_EAPI", eapiBooks.size, "eapi fallback")
                     return SourceResult.Success(eapiBooks)
                 }
+                // 513/529/500 等 HTTP 层全被挡（eapi 也被挡时返回空）：WebView
+                // （Chromium TLS 指纹 + 会话 Cookie）是唯一能进的入口，再兜一次。
+                val webBooks = ZLibraryWebViewHelper.searchViaWebView(
+                    context,
+                    response.request.url.host,
+                    keyword,
+                    cookies = credentialStorage.getCookies()
+                )
+                syncWebViewCookiesToHttp(webBooks.cookies, response.request.url.host)
+                if (webBooks.books.isNotEmpty()) {
+                    ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "HTTP error fallback")
+                    return SourceResult.Success(webBooks.books)
+                }
                 return SourceResult.Error(SourceException.NetworkError("搜索请求失败 HTTP ${response.code}"))
             }
 
             val books = ZLibraryParserManager.parseSearchPage(html, "https://${response.request.url.host}", id)
+            // 搜索假结果守卫 #2：页面留在 /s/ 但内容与关键词无关（登录墙后的推荐书
+            // 列表等）。只拦"大结果集 + 标题归一化零命中 + 页面无关键词"的形态——
+            // 主页充数通常是整页 40 本推荐；作者搜索/繁简变体的合法结果不会同时
+            // 满足三条，避免误伤。
+            if (books.size >= 15 && !html.contains(keyword, ignoreCase = true)) {
+                fun normTitle(s: String): String = com.example.source.anilist.TitleNormalizer.normalize(
+                    s.lowercase().replace(Regex("""[\s\p{Punct}]+"""), "")
+                )
+                val want = normTitle(keyword)
+                val anyTitleHit = want.isNotBlank() && books.any { b ->
+                    val n = normTitle(b.title)
+                    n.isNotEmpty() && (n.contains(want) || want.contains(n))
+                }
+                if (!anyTitleHit) {
+                    response.close()
+                    ZLibraryNetworkLogger.logParserResult("RETRY_FALLBACK", books.size, "results irrelevant to keyword")
+                    val fallbackDomain = domainResolver.resolveDomain(forceScan = true)
+                    sessionManager.ensureSessionInitialized(fallbackDomain, forceRefresh = true)
+                    val retryResponse = httpClient.get(
+                        "https://$fallbackDomain/s/$encodedKw",
+                        referer = "https://$fallbackDomain/"
+                    )
+                    val retryHtml = retryResponse.body?.string() ?: ""
+                    val retryBooks = if (retryResponse.isSuccessful &&
+                        retryResponse.request.url.encodedPath.startsWith("/s/") &&
+                        retryHtml.contains(keyword, ignoreCase = true)
+                    ) {
+                        ZLibraryParserManager.parseSearchPage(retryHtml, "https://${retryResponse.request.url.host}", id)
+                    } else {
+                        emptyList()
+                    }
+                    retryResponse.close()
+                    return if (retryBooks.isNotEmpty()) {
+                        ZLibraryNetworkLogger.logParserResult("SUCCESS_FALLBACK", retryBooks.size, "fallback domain retry")
+                        SourceResult.Success(retryBooks)
+                    } else {
+                        SourceResult.Error(
+                            SourceException.NetworkError("搜索结果与关键词无关（节点返回了无关推荐），请更换节点后重试")
+                        )
+                    }
+                }
+            }
             if (books.isEmpty()) {
                 response.close()
                 // 页面含书卡片标记但解析为空：真实"无结果"
@@ -247,6 +354,7 @@ class ZLibrarySource(
                     keyword,
                     cookies = credentialStorage.getCookies()
                 )
+                syncWebViewCookiesToHttp(webBooks.cookies, response.request.url.host)
                 if (webBooks.books.isNotEmpty()) {
                     ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "HTML empty, WebView fallback")
                     return SourceResult.Success(webBooks.books)
@@ -264,12 +372,14 @@ class ZLibrarySource(
             )
             SourceResult.Success(books)
         } catch (e: SourceException) {
+            val challengeDomain = domainResolver.resolveDomain()
             val webBooks = ZLibraryWebViewHelper.searchViaWebView(
                 context,
-                domainResolver.resolveDomain(),
+                challengeDomain,
                 keyword,
                 cookies = credentialStorage.getCookies()
             )
+            syncWebViewCookiesToHttp(webBooks.cookies, challengeDomain)
             if (webBooks.books.isNotEmpty()) {
                 ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "Challenge fallback")
                 return SourceResult.Success(webBooks.books)
@@ -277,12 +387,14 @@ class ZLibrarySource(
             ZLibraryNetworkLogger.logParserResult("FAILED", 0, e.message)
             SourceResult.Error(e)
         } catch (e: Exception) {
+            val challengeDomain = domainResolver.resolveDomain()
             val webBooks = ZLibraryWebViewHelper.searchViaWebView(
                 context,
-                domainResolver.resolveDomain(),
+                challengeDomain,
                 keyword,
                 cookies = credentialStorage.getCookies()
             )
+            syncWebViewCookiesToHttp(webBooks.cookies, challengeDomain)
             if (webBooks.books.isNotEmpty()) {
                 ZLibraryNetworkLogger.logParserResult("SUCCESS_WEBVIEW", webBooks.books.size, "Exception fallback")
                 return SourceResult.Success(webBooks.books)
@@ -599,6 +711,20 @@ class ZLibrarySource(
             cm.setAcceptCookie(true)
             cm.setCookie("https://$domain/", cookies)
             cm.flush()
+        }
+    }
+
+    /**
+     * WebView 兜底过完 DiamWall 挑战后，把 WebView 侧的完整 Cookie
+     * （dwid / c_token / __diamwall / remix_*）回灌进 OkHttp 的 CookieJar，
+     * 后续详情页与下载请求全程免挑战（2026-09-04 1lib.sk 实测）。
+     */
+    private fun syncWebViewCookiesToHttp(cookies: String?, domain: String) {
+        if (cookies.isNullOrBlank() || domain.isBlank()) return
+        runCatching {
+            httpClient.cookieJar.syncFromRawCookieString(cookies, domain)
+        }.onFailure {
+            Log.w("ZLibSource", "sync WebView cookies failed: ${it.message}")
         }
     }
 

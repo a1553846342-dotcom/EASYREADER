@@ -30,24 +30,31 @@ class ZLibraryDomainResolverTest {
 
     @Test
     fun testCacheValidReturnsCachedEndpoint() = runTest {
-        val testEndpoint = "cached-zlib.com"
+        // 2026-09-04 容灾语义更新：缓存节点先做快速体检——可达（有任何 HTTP 应答，
+        // example.com 稳定返回 200）才原样复用，避免死节点直接返回卡死搜索。
+        val testEndpoint = "example.com"
         endpointProvider.saveCache(testEndpoint)
 
         val resolved = endpointProvider.getEndpoint()
         assertEquals(testEndpoint, resolved)
 
+        // 体检不通的缓存节点（挂了/被墙/根本不存在）不再原样返回：
+        // 自动作废重扫换活节点；离线环境下扫描全挂也兜底预置首域，均不等于死域名。
         endpointProvider.invalidateCache()
+        endpointProvider.saveCache("dead-zlib.invalid")
         val resolvedAfter = endpointProvider.getEndpoint()
+        assertNotEquals("dead-zlib.invalid", resolvedAfter)
         assertNotNull(resolvedAfter)
     }
 
     @Test
     fun testCustomEndpointTakesPrecedence() = runTest {
-        val custom = "custom-zlib.org"
+        // 2026-09-04 容灾语义更新：自定义节点同样先体检，可达才优先返回。
+        val custom = "example.com"
         endpointProvider.setCustomEndpoint(custom)
 
         val resolved = endpointProvider.getEndpoint()
-        assertEquals("custom-zlib.org", resolved)
+        assertEquals(custom, resolved)
         endpointProvider.setCustomEndpoint(null)
     }
 }

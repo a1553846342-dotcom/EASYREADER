@@ -22,7 +22,7 @@ data class Book(
     val author: String = "未知作者",
     val filePath: String,
     val coverUri: String? = null,
-    val category: String = "未分类",
+    val category: String = DEFAULT_CATEGORY,
     val currentChapterIndex: Int = 0,
     val scrollOffset: Int = 0,
     val isFinished: Boolean = false,
@@ -74,10 +74,16 @@ data class Highlight(
     val createdTime: Long = System.currentTimeMillis()
 )
 
+/** 第七轮第 6.1 条：默认分类名——书架不再有聚合视图"全部"，所有书籍必须归属
+ *  一个真实分类；默认分类不可删除。 */
+const val DEFAULT_CATEGORY = "默认"
+
 @Entity(tableName = "categories")
 data class CategoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val name: String
+    val name: String,
+    /** 第七轮第 6.3 条：密码保护标记（隐私模式开启时生效；长按分类或隐私窗口切换） */
+    val isProtected: Boolean = false
 )
 
 @Entity(tableName = "reading_records")

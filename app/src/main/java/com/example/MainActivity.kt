@@ -67,6 +67,24 @@ val LocalNavAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope
 class MainActivity : ComponentActivity() {
     private var mainViewModel: MainViewModel? = null
 
+    /**
+     * 音量键翻页拦截（第 28 条）：仅在漫画阅读器存活且开关开启时消费音量键
+     * （阅读器组合期注册 ComicVolumeKeyBridge.handler，退出即注销）——
+     * 其余场景（其它页面 / 来电 / 开关关闭）返回 false，音量键走系统原生
+     * 音量调节，行为完全一致。消费后不弹系统音量条。
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+            event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+        ) {
+            val isDownAction = event.action == android.view.KeyEvent.ACTION_DOWN
+            if (com.example.ui.comic.ComicVolumeKeyBridge.dispatch(event.keyCode, isDownAction)) {
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 启动看门狗：若"极致"画质在 20 秒内连续两次发生崩溃，自动降回"高"，
@@ -101,6 +119,9 @@ class MainActivity : ComponentActivity() {
         Thread {
             com.example.library.BookShareHelper.cleanupTempShareDir(applicationContext)
         }.start()
+        // 第十轮：AniList 多语言标题库已改为 APK 内置（assets 预填充，
+        // 见 AppDatabase.bundledAniListDb），用户零拉取、离线可用；
+        // 运行时同步调度器已移除。
         enableEdgeToEdge()
         setContent {
             val viewModel: MainViewModel = viewModel()
@@ -463,15 +484,18 @@ class MainActivity : ComponentActivity() {
                                                     viewModel.addCategory(name)
                                                 },
                                                 onSettingsClick = {
-                                                    selectedTab = 2
+                                                    // 第十一轮第 2 条修复：设置页是
+                                                    // Tab 3（2=统计）——旧值跳错页，长按分类
+                                                    // 的"需先开启隐私模式"引导落不到设置页
+                                                    selectedTab = 3
                                                 },
                                                 onNavigateToShelf = {
                                                     selectedTab = 0
                                                 },
                                                 onNavigateToStats = {
-                                                    selectedTab = 1
+                                                    selectedTab = 2
                                                 },
-                                                totalReadTimeSecondsFlow = viewModel.totalReadTimeSeconds,
+                                                todayReadSecondsFlow = viewModel.todayReadSeconds,
                                                 streakDaysFlow = viewModel.streakDays,
                                                 onDeleteBook = { book ->
                                                     viewModel.deleteBook(book)
@@ -481,8 +505,16 @@ class MainActivity : ComponentActivity() {
                                                     viewModel.moveBookToCategory(book, newCategory)
                                                     com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.MoveBook)
                                                 },
-                                                onDeleteCategory = { category ->
-                                                    viewModel.deleteCategory(category)
+                                                onDeleteCategory = { category, onResult ->
+                                                    viewModel.deleteCategory(category) { onResult(it) }
+                                                },
+                                                /* ── 隐私模式（第七轮第 6 条）── */
+                                                privacyModeEnabled = viewModel.privacyModeEnabled.collectAsState().value,
+                                                protectedCategoryNames = viewModel.protectedCategoryNames.collectAsState().value,
+                                                unlockedCategoryIds = viewModel.unlockedCategoryIds.collectAsState().value,
+                                                onUnlockCategory = { cat, pin -> viewModel.unlockCategory(cat.id, pin) },
+                                                onToggleCategoryProtected = { cat, protected ->
+                                                    viewModel.setCategoryProtected(cat.id, protected)
                                                 },
                                             )
                                             2 -> {
@@ -541,7 +573,20 @@ class MainActivity : ComponentActivity() {
                                                 onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
                                                 renderQualityVal = renderQualityIdx,
                                                 onRenderQualityChange = { viewModel.updateRenderQuality(it) },
-                                                cardTweaksState = cardTweaks
+                                                cardTweaksState = cardTweaks,
+                                                /* ── 隐私模式（第七轮第 6.4 条；第八轮审查修复：
+                                                    底部 Tab 的设置页此前漏传隐私参数，全部落到默认
+                                                    { false }——隐私模式在 Tab 设置页永远无法开启） ── */
+                                                privacyModeEnabled = viewModel.privacyModeEnabled.collectAsState().value,
+                                                onEnablePrivacyMode = { pin -> viewModel.enablePrivacyMode(pin) },
+                                                onDisablePrivacyMode = { pin -> viewModel.disablePrivacyMode(pin) },
+                                                onVerifyPrivacyPin = { pin -> viewModel.verifyPrivacyPin(pin) },
+                                                onChangePrivacyPin = { old, new -> viewModel.changePrivacyPin(old, new) },
+                                                onToggleCategoryProtected = { cat, protected ->
+                                                    viewModel.setCategoryProtected(cat.id, protected)
+                                                },
+                                                incognitoBrowsingEnabled = viewModel.incognitoBrowsingEnabled.collectAsState().value,
+                                                onSetIncognitoBrowsing = { viewModel.setIncognitoBrowsing(it) },
                                             )
                                         }
                                     }
@@ -588,7 +633,18 @@ class MainActivity : ComponentActivity() {
                                 onOrientationLockChange = { viewModel.updateScreenOrientationLock(it) },
                                 renderQualityVal = renderQualityIdx,
                                 onRenderQualityChange = { viewModel.updateRenderQuality(it) },
-                                cardTweaksState = cardTweaks
+                                cardTweaksState = cardTweaks,
+                                /* ── 隐私模式（第七轮第 6.4 条） ── */
+                                privacyModeEnabled = viewModel.privacyModeEnabled.collectAsState().value,
+                                onEnablePrivacyMode = { pin -> viewModel.enablePrivacyMode(pin) },
+                                onDisablePrivacyMode = { pin -> viewModel.disablePrivacyMode(pin) },
+                                onVerifyPrivacyPin = { pin -> viewModel.verifyPrivacyPin(pin) },
+                                onChangePrivacyPin = { old, new -> viewModel.changePrivacyPin(old, new) },
+                                onToggleCategoryProtected = { cat, protected ->
+                                    viewModel.setCategoryProtected(cat.id, protected)
+                                },
+                                incognitoBrowsingEnabled = viewModel.incognitoBrowsingEnabled.collectAsState().value,
+                                onSetIncognitoBrowsing = { viewModel.setIncognitoBrowsing(it) },
                             )
                         }
 
@@ -682,15 +738,21 @@ class MainActivity : ComponentActivity() {
                         ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
                             val selectedBook by viewModel.selectedBook.collectAsState()
                             val chapters by viewModel.chapters.collectAsState()
+                            val libraryBooks by viewModel.allBooks.collectAsState()
 
                             ComicReaderScreen(
                                 book = selectedBook,
                                 chapters = chapters,
+                                libraryBooks = libraryBooks,
+                                onOpenBook = { nextBook ->
+                                    viewModel.selectBook(nextBook)
+                                },
                                 onBack = { navController.popBackStack() },
                                 onUpdateProgress = { id, pageIdx, offset, isFinished ->
                                     viewModel.updateProgress(id, pageIdx, offset, isFinished)
                                 },
                                 onRecordTime = { seconds ->
+                                    // 阅读统计修复：本地漫画阅读器走 selectedBook 自动关联，无需传书名
                                     viewModel.recordTime(seconds)
                                 },
                                 onSessionEnd = { session ->
@@ -716,6 +778,7 @@ class MainActivity : ComponentActivity() {
                             val comicDownloadProgress by libraryViewModel.comicDownloadProgress.collectAsState()
                             val comicPaused by libraryViewModel.comicPaused.collectAsState()
                             val comicMessage by libraryViewModel.comicMessage.collectAsState()
+                            val comicIsTextMode by libraryViewModel.comicIsTextMode.collectAsState()
                             val comicContext = androidx.compose.ui.platform.LocalContext.current
 
                             LaunchedEffect(comicMessage) {
@@ -733,11 +796,17 @@ class MainActivity : ComponentActivity() {
                                 downloadingChapters = comicDownloading,
                                 downloadProgress = comicDownloadProgress,
                                 pausedChapters = comicPaused,
+                                textMode = comicIsTextMode,
                                 onBack = { navController.popBackStack() },
                                 onRetry = { comicBook?.let { libraryViewModel.openComic(it) } },
                                 onChapterClick = { chapter ->
-                                    libraryViewModel.loadChapterImages(chapter)
-                                    navController.navigate("comic_reader_online")
+                                    if (comicIsTextMode) {
+                                        libraryViewModel.loadChapterText(chapter)
+                                        navController.navigate("novel_reader_online")
+                                    } else {
+                                        libraryViewModel.loadChapterImages(chapter)
+                                        navController.navigate("comic_reader_online")
+                                    }
                                 },
                                 onDownloadChapter = { chapter ->
                                     comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
@@ -778,6 +847,12 @@ class MainActivity : ComponentActivity() {
                             val imageHeaders by libraryViewModel.comicChapterHeaders.collectAsState()
                             val loading by libraryViewModel.comicChapterLoading.collectAsState()
                             val error by libraryViewModel.comicChapterError.collectAsState()
+                            val comicChaptersList by libraryViewModel.comicChapters.collectAsState()
+
+                            val activeChapterIdx = comicChaptersList.indexOfFirst { it.id == activeChapter?.id }
+                            val prevChapter = if (activeChapterIdx > 0) comicChaptersList[activeChapterIdx - 1] else null
+                            val nextChapter = if (activeChapterIdx in 0 until (comicChaptersList.size - 1))
+                                comicChaptersList[activeChapterIdx + 1] else null
 
                             OnlineComicReaderScreen(
                                 title = activeChapter?.title ?: comicBook?.title ?: "在线漫画",
@@ -795,7 +870,63 @@ class MainActivity : ComponentActivity() {
                                     viewModel.addReadingSession(session)
                                 },
                                 onBack = { navController.popBackStack() },
-                                onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } }
+                                onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } },
+                                bookKey = comicBook?.let { "online_${it.sourceId}_${it.id}" },
+                                bookTitle = comicBook?.title,
+                                chapters = comicChaptersList.map { com.example.ui.comic.ComicTocEntry(it.id, it.title) },
+                                currentChapterIndex = activeChapterIdx,
+                                onJumpToChapter = { idx ->
+                                    comicChaptersList.getOrNull(idx)?.let { ch ->
+                                        if (ch.id != activeChapter?.id) libraryViewModel.loadChapterImages(ch)
+                                    }
+                                },
+                                onPrevChapter = prevChapter?.let { ch -> { libraryViewModel.loadChapterImages(ch) } },
+                                onNextChapter = nextChapter?.let { ch -> { libraryViewModel.loadChapterImages(ch) } },
+                            )
+                        } }
+
+                        composable(
+                            "novel_reader_online",
+                            enterTransition = {
+                                fadeIn(tween(300)) + slideInHorizontally { it / 4 }
+                            },
+                            exitTransition = { fadeOut(tween(200)) }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                            val comicBook by libraryViewModel.comicBook.collectAsState()
+                            val novelChapter by libraryViewModel.activeNovelChapter.collectAsState()
+                            val novelText by libraryViewModel.novelChapterText.collectAsState()
+                            val novelLoading by libraryViewModel.novelChapterLoading.collectAsState()
+                            val novelError by libraryViewModel.novelChapterError.collectAsState()
+                            val chapters by libraryViewModel.comicChapters.collectAsState()
+                            val idx = chapters.indexOfFirst { it.id == novelChapter?.id }
+
+                            com.example.ui.NovelReaderScreen(
+                                bookTitle = comicBook?.title,
+                                chapter = novelChapter,
+                                text = novelText,
+                                loading = novelLoading,
+                                error = novelError,
+                                hasPrevChapter = idx > 0,
+                                hasNextChapter = idx >= 0 && idx < chapters.size - 1,
+                                onBack = { navController.popBackStack() },
+                                onRetry = { novelChapter?.let { libraryViewModel.loadChapterText(it) } },
+                                onLoadPrev = {
+                                    if (idx > 0) {
+                                        libraryViewModel.loadChapterText(chapters[idx - 1])
+                                    }
+                                },
+                                onLoadNext = {
+                                    if (idx >= 0 && idx < chapters.size - 1) {
+                                        libraryViewModel.loadChapterText(chapters[idx + 1])
+                                    }
+                                },
+                                onRecordTime = { seconds ->
+                                    // 阅读统计修复：传书名——此前在线小说阅读从不写阅读记录
+                                    viewModel.recordTime(seconds, comicBook?.title ?: novelChapter?.title)
+                                },
+                                onSessionEnd = { session ->
+                                    viewModel.addReadingSession(session)
+                                }
                             )
                         } }
 

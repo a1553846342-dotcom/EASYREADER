@@ -32,12 +32,35 @@ class ZLibraryNativeSession(
 ) {
     companion object {
         private const val MAX_POLL_TRIES = 5
+        // 挑战态放宽轮询上限：1lib.sk 的 DiamWall 透明 PoW 由页面 JS 自解约 3-8s，
+        // 交互式复选框挑战被代点后还要等校验回程，5 次（12.5s）不够，给 10 次（25s）。
+        private const val MAX_CHALLENGE_POLL_TRIES = 10
         private const val POLL_DELAY_MS = 2500L
-        private const val SEARCH_TIMEOUT_MS = 15000L
+        // 挑战轮询上限放宽到 25s，硬超时同步放到 30s（覆盖代点 + 校验回程时间）
+        private const val SEARCH_TIMEOUT_MS = 30000L
+
+        /** DiamWall 复选框代点（与 ZLibraryWebViewHelper 同款）：
+         *  挑战 iframe 与主文档同源，可跨 contentDocument 操作；点击后挑战页
+         *  JS 自行完成 PoW 校验并放行。 */
+        private const val DIAMWALL_GATE_CLICK_JS = """
+            (function(){
+                try {
+                    var ifr = document.querySelector('iframe');
+                    if (!ifr) return 'no-iframe';
+                    var doc = ifr.contentDocument;
+                    if (!doc || !doc.body) return 'no-doc';
+                    var gate = doc.querySelector('#pane-gate, .dw-gate, [class*="dw-gate"]');
+                    if (!gate) return 'no-gate';
+                    gate.click();
+                    return 'clicked';
+                } catch (e) { return 'err'; }
+            })()
+        """
     }
 
     private val domain: String
-        get() = ZLibraryNodeConfig.domain
+        // 空串 = 尚未恢复用户选择（仅启动空窗/单测），退回默认节点
+        get() = ZLibraryNodeConfig.domain.ifBlank { ZLibraryNodeManager.DEFAULT_NODE }
 
     // 游离 WebView 未挂载时 View.postDelayed 可能不执行，必须用主线程 Handler 调度
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -56,6 +79,7 @@ class ZLibraryNativeSession(
     private var activeSearchUrl: String? = null
     private var downloadHandoffPending = false
     private var pendingDestroy = false
+    private var lastGateClickAt = 0L
 
     /** 离开书库时释放隐藏 WebView，回收渲染进程内存，避免后台持续占用。 */
     fun destroy() {
@@ -166,6 +190,20 @@ class ZLibraryNativeSession(
         try { wv.onResume() } catch (_: Exception) {}
     }
 
+    /** 代点 DiamWall 复选框（6s 节流，重复点击无益）。 */
+    private fun clickDiamWallGate(wv: WebView) {
+        val now = System.currentTimeMillis()
+        if (now - lastGateClickAt < 6000) return
+        runCatching {
+            wv.evaluateJavascript(DIAMWALL_GATE_CLICK_JS) { result ->
+                if (result != null && result.contains("clicked")) {
+                    lastGateClickAt = now
+                    Log.d("ZLibSession", "DiamWall gate auto-clicked on $domain")
+                }
+            }
+        }
+    }
+
     private fun finishSearch(wv: WebView?, books: List<SearchBook>, status: String) {
         if (searchFinished) return
         searchFinished = true
@@ -261,8 +299,10 @@ class ZLibraryNativeSession(
                 html.contains("cpt.lib") ||
                 html.contains("solve this captcha", ignoreCase = true)
             if (isChallenge) {
+                // 被动等不会过：主动代点复选框（挑战 JS 自行完成后续校验）
+                clickDiamWallGate(wv)
                 pollTries++
-                if (pollTries >= MAX_POLL_TRIES) {
+                if (pollTries >= MAX_CHALLENGE_POLL_TRIES) {
                     finishSearch(wv, emptyList(), "验证未通过，请重试或切换节点")
                     return@evaluateJavascript
                 }

@@ -4,11 +4,14 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -62,7 +65,7 @@ import com.example.ui.components.GlassCard
 import com.ramotion.fluidslider.FluidSlider
 import com.example.ui.components.readCardTweaks
 import com.example.ui.components.writeCardTweaks
-import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
+import com.example.ui.components.AppSwitch
 import com.example.ui.components.PageTurnSelectorRow
 import com.example.ui.components.CustomMinutesDialog
 import com.example.ui.components.AppIconButton
@@ -72,6 +75,8 @@ import com.example.ui.theme.onColor
 import com.example.ui.theme.glassTitleColor
 import com.example.ui.help.LibraryHelpBottomSheet
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,7 +103,17 @@ fun SettingsTabScreen(
     renderQualityVal: Int = prefs.renderQuality,
     onRenderQualityChange: (Int) -> Unit = { prefs.renderQuality = it },
     /** 卡片微调共享状态：由 MainActivity 持有并注入 LocalCardTweaks；滑块实时改写。 */
-    cardTweaksState: MutableState<com.example.ui.components.CardTweaks>? = null
+    cardTweaksState: MutableState<com.example.ui.components.CardTweaks>? = null,
+    /* ── 隐私模式（第七轮第 6.4 条）：全部带默认值，未接线时不出现该能力 ── */
+    privacyModeEnabled: Boolean = false,
+    onEnablePrivacyMode: (String) -> Boolean = { false },
+    onDisablePrivacyMode: (String) -> Boolean = { false },
+    onVerifyPrivacyPin: (String) -> Boolean = { false },
+    onChangePrivacyPin: (String, String) -> Boolean = { _, _ -> false },
+    onToggleCategoryProtected: (CategoryEntity, Boolean) -> Unit = { _, _ -> },
+    /* ── 第九轮：全局无痕浏览开关（在线/不受保护分类的阅读也可不计统计） ── */
+    incognitoBrowsingEnabled: Boolean = false,
+    onSetIncognitoBrowsing: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -126,6 +141,14 @@ fun SettingsTabScreen(
     var newCategoryText by remember { mutableStateOf("") }
     var showHelpBottomSheet by remember { mutableStateOf(false) }
     var showCacheManager by remember { mutableStateOf(false) }
+
+    /* ── 隐私模式窗口状态（第七轮第 6.4 条） ── */
+    var showPinSetup by remember { mutableStateOf(false) }
+    var showManageVerify by remember { mutableStateOf(false) }
+    var showManageWindow by remember { mutableStateOf(false) }
+    var showChangePin by remember { mutableStateOf(false) }
+    var showDisableVerify by remember { mutableStateOf(false) }
+    var changePinOld by remember { mutableStateOf("") }
 
     // 卡片参数自定义：折叠栏展开态（跨重建保留）+ 实时写回 prefs / 共享状态
     var showCardPanel by rememberSaveable { mutableStateOf(false) }
@@ -239,9 +262,11 @@ fun SettingsTabScreen(
                 )
             }
         ) { padding ->
-            LazyColumn(
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+LazyColumn(
                 state = settingsListState,
                 modifier = Modifier
+                .widthIn(max = AdaptiveSpec.pageContentMaxWidth)
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
@@ -320,8 +345,7 @@ fun SettingsTabScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("纯净模式", fontWeight = FontWeight.SemiBold)
-                                SquishyToggleSwitch(
-                                    color = MintPrimary,
+                                AppSwitch(
                                     checked = splashPureMode,
                                     onCheckedChange = {
                                         splashPureMode = it
@@ -609,8 +633,7 @@ fun SettingsTabScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("带你登大郎~~~", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                     }
-                                    SquishyToggleSwitch(
-                                        color = MintPrimary,
+                                    AppSwitch(
                                         checked = showAdultSources,
                                         onCheckedChange = {
                                             showAdultSources = it
@@ -711,8 +734,7 @@ fun SettingsTabScreen(
                                         Text("自定义卡片参数", fontWeight = FontWeight.SemiBold)
                                     }
                                 }
-                                SquishyToggleSwitch(
-                                    color = MintPrimary,
+                                AppSwitch(
                                     checked = showCardPanel,
                                     onCheckedChange = { showCardPanel = it }
                                 )
@@ -911,8 +933,7 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("夜间模式", fontWeight = FontWeight.SemiBold)
                                 }
-                                SquishyToggleSwitch(
-                                    color = MintPrimary,
+                                AppSwitch(
                                     checked = autoNightMode,
                                     onCheckedChange = {
                                         autoNightMode = it
@@ -935,8 +956,7 @@ fun SettingsTabScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text("护眼滤镜", fontWeight = FontWeight.SemiBold)
                                 }
-                                SquishyToggleSwitch(
-                                    color = MintPrimary,
+                                AppSwitch(
                                     checked = blueLightFilter,
                                     onCheckedChange = {
                                         blueLightFilter = it
@@ -978,6 +998,69 @@ fun SettingsTabScreen(
                                     barHeightDp = 28
                                 )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // Section 5.5: 隐私与安全（第七轮第 6.4 条）
+                item {
+                    SettingsSectionHeader("隐私与安全")
+                }
+                item {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.Shield,
+                                contentDescription = null,
+                                tint = MintPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("隐私模式", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(
+                                    if (privacyModeEnabled) "已开启 · 分类密码保护与无痕阅读"
+                                    else "设置 6 位密码，为分类加锁",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            // 第十一轮第 4 条：隐私模式开启/关闭的行内过渡动画——
+                            // 尾部控件（开关 ↔ "管理"入口）与副标题随状态淡入淡出切换，不再硬跳变
+                            AnimatedContent(
+                                targetState = privacyModeEnabled,
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = tween(220)))
+                                        .togetherWith(fadeOut(tween(160)))
+                                },
+                                label = "privacyRowSwitch"
+                            ) { enabled ->
+                                if (!enabled) {
+                                // 首次开启：先走 6 位密码设置流程（输入 + 二次确认）
+                                com.example.ui.components.AppSwitch(
+                                    checked = false,
+                                    onCheckedChange = { showPinSetup = true }
+                                )
+                            } else {
+                                // 已开启：验证密码后进入隐私管理悬浮窗口
+                                Text(
+                                    "管理",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MintPrimary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable { showManageVerify = true }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                             }
                         }
                     }
@@ -1089,6 +1172,7 @@ fun SettingsTabScreen(
                     }
                 }
             }
+            }
         }
 
     if (showCacheManager) {
@@ -1152,6 +1236,95 @@ fun SettingsTabScreen(
                 }
             },
             shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    /* ── 隐私模式窗口组（第七轮第 6.4 条）：设置 PIN / 验证进入 / 管理悬浮窗 ══ */
+    // 首次开启：6 位 PIN 设置流程（输入 + 二次确认），完成后直接跳转隐私管理窗口
+    if (showPinSetup) {
+        com.example.ui.privacy.PrivacyPinOverlay(
+            mode = com.example.ui.privacy.PinEntryMode.SETUP,
+            onPinSet = { pin ->
+                if (onEnablePrivacyMode(pin)) {
+                    showPinSetup = false
+                    showManageWindow = true
+                }
+            },
+            onPinVerified = { false },
+            onDismiss = { showPinSetup = false },
+        )
+    }
+
+    // 已开启后进入管理窗口前的 PIN 验证
+    if (showManageVerify) {
+        com.example.ui.privacy.PrivacyPinOverlay(
+            mode = com.example.ui.privacy.PinEntryMode.VERIFY,
+            onPinSet = { },
+            onPinVerified = { pin ->
+                // 第九轮修复①：验证通过必须真正打开管理窗（此前 onDismiss 只关了
+                // 验证层，showManageWindow 从未置位——"输入密码后没有管理"根因）
+                val ok = onVerifyPrivacyPin(pin)
+                if (ok) {
+                    showManageVerify = false
+                    showManageWindow = true
+                }
+                ok
+            },
+            onDismiss = { showManageVerify = false },
+        )
+    }
+
+    // 修改密码：旧密码验证（记录）→ 新密码
+    if (showChangePin) {
+        com.example.ui.privacy.PrivacyPinOverlay(
+            mode = com.example.ui.privacy.PinEntryMode.CHANGE_OLD,
+            onPinSet = { newPin ->
+                if (onChangePrivacyPin(changePinOld, newPin)) {
+                    showChangePin = false
+                    Toast.makeText(context, "密码已更新", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onPinVerified = { pin ->
+                changePinOld = pin
+                onVerifyPrivacyPin(pin)
+            },
+            onDismiss = { showChangePin = false },
+        )
+    }
+
+    // 隐私管理悬浮毛玻璃窗口（6.4.3：分类密码保护总开关管理）
+    if (showManageWindow) {
+        com.example.ui.privacy.PrivacyManageOverlay(
+            categories = categories,
+            privacyModeEnabled = privacyModeEnabled,
+            onToggleProtected = { cat, protected -> onToggleCategoryProtected(cat, protected) },
+            onToggleIncognito = { enabled -> onSetIncognitoBrowsing(enabled) },
+            incognitoBrowsingEnabled = incognitoBrowsingEnabled,
+            onChangePin = { showChangePin = true },
+            onDisablePrivacy = {
+                // 第九轮修复③：不再先收起管理窗——验证层覆盖其上，
+                // 验证成功后双双关闭；取消则回到管理窗（"看起来关了其实没关"的困惑源）
+                showDisableVerify = true
+            },
+            onDismiss = { showManageWindow = false },
+        )
+    }
+
+    // 关闭隐私模式的 PIN 验证
+    if (showDisableVerify) {
+        com.example.ui.privacy.PrivacyPinOverlay(
+            mode = com.example.ui.privacy.PinEntryMode.VERIFY,
+            onPinSet = { },
+            onPinVerified = { pin ->
+                val ok = onDisablePrivacyMode(pin)
+                if (ok) {
+                    showDisableVerify = false
+                    showManageWindow = false
+                    Toast.makeText(context, "隐私模式已关闭", Toast.LENGTH_SHORT).show()
+                }
+                ok
+            },
+            onDismiss = { showDisableVerify = false },
         )
     }
 }

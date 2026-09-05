@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import com.example.ui.components.AppIconButton
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,7 +54,8 @@ fun LibraryHelpBottomSheet(
             .testTag("library_help_bottom_sheet"),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize()) {
             // 顶部标题栏
             Box(
                 modifier = Modifier
@@ -344,6 +347,7 @@ fun LibraryHelpBottomSheet(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+        }
         }
     }
 }

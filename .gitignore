@@ -17,3 +17,10 @@ captures/
 
 # Mimosa 安全工具本地状态
 .mimosa/
+
+# 开发验证截图（adb 调试产物；仅保留 README 使用的 shot*.jpg / demo*.gif）
+app/*.png
+docs/screenshots/*
+!docs/screenshots/shot*.jpg
+!docs/screenshots/demo*.gif
+

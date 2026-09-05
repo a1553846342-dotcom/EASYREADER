@@ -114,7 +114,15 @@ object LegadoRule {
         val atIndex = r.indexOf('@')
         val css = if (atIndex >= 0) r.substring(0, atIndex).trim() else r.trim()
         val attr = if (atIndex >= 0) r.substring(atIndex + 1).trim() else "text"
-        val el = if (css.isBlank()) root else root.selectFirst(css) ?: return emptyList()
+        var el = try { if (css.isBlank()) root else root.selectFirst(css) } catch (e: Exception) { null }
+        // Legado 索引写法混在 CSS 里（如 ".newrap a.0"）：把 a.0 的 .N 当索引去掉重试
+        if (el == null && css.contains(Regex("""\.\d+"""))) {
+            val normalized = css.replace(Regex("""\.(\d+)(?=[\s.#:\[]|$)"""), "").trim()
+            if (normalized.isNotBlank() && normalized != css) {
+                el = try { root.selectFirst(normalized) } catch (e: Exception) { null }
+            }
+        }
+        if (el == null) return emptyList()
         return listOfNotNull(extractContent(el, attr))
     }
 

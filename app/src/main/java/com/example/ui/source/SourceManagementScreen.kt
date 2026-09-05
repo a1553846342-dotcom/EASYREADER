@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +46,7 @@ import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.GradientActionButton
 import com.example.ui.components.AppIconButton
-import com.swapnil.squishyswitch.presentation.SquishyToggleSwitch
+import com.example.ui.components.AppSwitch
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.components.AppIconButton
@@ -55,6 +59,7 @@ import com.example.ui.components.AppIconButton
 import com.example.library.LibraryLoginDialog
 import com.example.library.ZLibraryNodeConfig
 import com.example.source.BookSource
+import com.example.source.isNovelSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.source.SourceViewModel
@@ -83,6 +88,8 @@ fun SourceManagementScreen(
     var showNodeManagement by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
     var networkUrl by remember { mutableStateOf("") }
+    var showDebugLog by remember { mutableStateOf(false) }
+    var debugLogText by remember { mutableStateOf("") }
 
     if (showNodeManagement) {
         ZLibraryNodeManagementScreen(onBack = { showNodeManagement = false })
@@ -274,6 +281,67 @@ fun SourceManagementScreen(
             }
 
             item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = "调试日志",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = "查看/复制最近的书源请求记录与真实报错（HTTP 状态码、超时、解析失败），便于排查问题",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Code,
+                                    contentDescription = null,
+                                    tint = MintPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        trailingContent = {
+                            AssistChip(
+                                onClick = {
+                                    debugLogText = com.example.source.SourceLog.dump()
+                                    showDebugLog = true
+                                },
+                                label = { Text("查看", fontSize = 12.sp) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MintPrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+
+            item {
                 Text(
                     text = "内置书源",
                     fontSize = 13.sp,
@@ -413,6 +481,54 @@ fun SourceManagementScreen(
             }
         }
     }
+    }
+
+    if (showDebugLog) {
+        val clipboard = LocalClipboardManager.current
+        AcrylicDialog(
+            onDismissRequest = { showDebugLog = false },
+            title = { Text("书源调试日志") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "每次搜索/目录/正文请求的完整记录。反馈问题时请点击「复制全部」并把内容发给开发者。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = debugLogText,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState())
+                    )
+                }
+            },
+            confirmButton = {
+                GradientActionButton(
+                    text = "复制全部",
+                    onClick = {
+                        clipboard.setText(AnnotatedString(debugLogText))
+                        Toast.makeText(context, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        com.example.source.SourceLog.clear()
+                        debugLogText = "（已清空）"
+                    }) {
+                        Text("清空")
+                    }
+                    TextButton(onClick = { showDebugLog = false }) {
+                        Text("关闭")
+                    }
+                }
+            }
+        )
     }
 
     if (showPasteDialog) {
@@ -639,6 +755,21 @@ fun SourceItemCard(
                         fontWeight = FontWeight.Medium,
                         fontSize = 15.sp
                     )
+                    // v1.0.1：小说源徽章——与漫画源区分（Z-Library/Legado 文字源）
+                    if (source.isNovelSource) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "小说",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
                     if (isActive) {
                         Spacer(modifier = Modifier.width(8.dp))
                         FilterChip(
@@ -691,8 +822,7 @@ fun SourceItemCard(
                         )
                 }
 
-                SquishyToggleSwitch(
-                    color = MintPrimary,
+                AppSwitch(
                     checked = isEnabled,
                     onCheckedChange = { onToggleEnable(it) }
                 )

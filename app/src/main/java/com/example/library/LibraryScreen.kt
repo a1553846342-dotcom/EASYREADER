@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
@@ -17,6 +18,9 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -38,6 +43,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -60,19 +66,28 @@ import androidx.compose.ui.platform.testTag
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.ChasingDots
 import androidx.compose.material3.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.*
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -88,6 +103,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import kotlin.math.max
 import kotlin.math.roundToInt
 import coil.ImageLoader
 import coil.compose.AsyncImagePainter
@@ -103,12 +119,11 @@ import com.example.source.BookSource
 import com.example.source.ComicSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
+import com.example.source.isNovelSource
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
-import com.example.ui.components.TabScreenHeader
-import com.example.ui.components.rememberHeaderCollapsed
 import com.example.ui.components.PlayPauseMorphButton
 import com.example.ui.components.filmGrain
 import com.example.ui.components.iridescentBorder
@@ -127,6 +142,8 @@ import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.source.ZLibraryLoginDialog
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.widthIn
+import com.example.ui.adaptive.AdaptiveSpec
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,6 +157,10 @@ fun LibraryScreen(
 ) {
     val currentSource by viewModel.currentSource.collectAsState()
     val aggregateMode by viewModel.aggregateMode.collectAsState()
+    // 聚合搜索类别（v1.0.1）："comic" 漫画源 / "novel" 小说源，书源弹层分区选择、互斥过滤
+    val aggregateKind by viewModel.aggregateKind.collectAsState()
+    // 第十一轮第 6 条：多语言搜索开关状态（书源选择弹层内可控）
+    val multiLangSearch by viewModel.multiLanguageSearch.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val availableSources by viewModel.availableSources.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -244,14 +265,34 @@ fun LibraryScreen(
 
     var searchFieldFocused by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val staggeredGridState = rememberLazyStaggeredGridState()
+    // 搜索词/滚动位置跨导航保持（1.05 修复）：进详情页（comic_chapters 路由）时
+    // LibraryScreen 被销毁，remember 会全丢——回来后搜索词清空、grid 跳回顶部。
+    // LazyStaggeredGridState 内部是可 parcel 的，rememberSaveable 原生支持。
+    val staggeredGridState = rememberSaveable(saver = LazyStaggeredGridState.Saver) {
+        LazyStaggeredGridState()
+    }
     // 书架双视图滚动 → 卡片惯性倾斜信号源（任务书「整卡倾斜」§2）
     listState.scrollTiltSource()
     staggeredGridState.scrollTiltSource()
 
-    // 滚动联动折叠头部（四 Tab 统一）：滚过约 20dp 收起，回顶恢复；搜索聚焦强制收起给结果让位
-    val libraryHeaderCollapsed = rememberHeaderCollapsed(staggeredGridState) ||
-        rememberHeaderCollapsed(listState) || searchFieldFocused
+    // 滚动联动渐进折叠头部（书库专属强化版）：滚动偏移在 0→150dp 行程内连续映射为
+    // fraction 0→1（内容紧凑化→整卡高度归零），而非旧版布尔两态切换；
+    // 搜索聚焦时强制完全收起，给搜索结果让出首屏。回顶自然恢复。
+    val headerCollapsePx = with(androidx.compose.ui.platform.LocalDensity.current) { 150.dp.toPx() }
+    val searchFocusedNow by rememberUpdatedState(searchFieldFocused)
+    val headerCollapseFraction by remember(headerCollapsePx) {
+        derivedStateOf {
+            if (searchFocusedNow) return@derivedStateOf 1f
+            val gridIdx = staggeredGridState.firstVisibleItemIndex
+            val listIdx = listState.firstVisibleItemIndex
+            if (gridIdx > 0 || listIdx > 0) return@derivedStateOf 1f
+            val off = max(
+                staggeredGridState.firstVisibleItemScrollOffset,
+                listState.firstVisibleItemScrollOffset
+            )
+            (off / headerCollapsePx).coerceIn(0f, 1f)
+        }
+    }
 
     val performSearch: (String) -> Unit = { keyword ->
         if (keyword.isNotBlank()) {
@@ -278,7 +319,8 @@ fun LibraryScreen(
     }
 
     var loginDialogSource by remember { mutableStateOf<BookSource?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
+    // 搜索词跨导航保持（1.05 修复）：进详情页回来后搜索结果原样还在
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var showSourceSheet by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -305,6 +347,14 @@ fun LibraryScreen(
     // 聚合结果「源速跳」：面板开关 / 当前所处源组 / 流式结果跳转防漂移目标
     var showJumpSheet by remember { mutableStateOf(false) }
     var pendingJumpSourceId by remember { mutableStateOf<String?>(null) }
+    // 每源结果预览折叠状态（任务一）：默认 false=只显示前 6 条；速跳定位也依赖此状态。
+    // 1.05 修复：rememberSaveable 跨导航保持——进详情页回来后已展开的组不再收起。
+    val expandedGroups = rememberSaveable(
+        saver = Saver(
+            save = { map -> map.filterValues { v -> v == true }.keys.toList() },
+            restore = { restored: List<String> -> mutableStateMapOf<String, Boolean>().apply { restored.forEach { k -> put(k, true) } } }
+        )
+    ) { mutableStateMapOf<String, Boolean>() }
     val aggResults = uiState as? LibraryUiState.AggregateResults
     val activeGroupIdx by remember(aggResults?.groups) {
         derivedStateOf {
@@ -314,7 +364,7 @@ fun LibraryScreen(
             var result = groups.lastIndex
             groups.forEachIndexed { i, g ->
                 if (first >= acc) result = i
-                acc += 1 + aggregateGroupItemCount(g)
+                acc += 1 + aggregateGroupItemCount(g, expandedGroups[g.sourceId] == true)
             }
             result
         }
@@ -329,7 +379,7 @@ fun LibraryScreen(
             pendingJumpSourceId = null
             return@LaunchedEffect
         }
-        staggeredGridState.scrollToItem(groupHeaderIndex(groups, idx))
+        staggeredGridState.scrollToItem(groupHeaderIndex(groups, idx, expandedGroups))
         if (!groups[idx].loading) pendingJumpSourceId = null
     }
 
@@ -396,13 +446,21 @@ fun LibraryScreen(
                         if (showLoginDialog || showDownloadPanel) Modifier.haze(hazeState) else Modifier
                     )
             ) {
-            // 滚动联动折叠头部（与统计/设置/书架统一）：滚过约 20dp 收起，副标题淡出，标题保留位置感
-            TabScreenHeader(
-                collapsed = libraryHeaderCollapsed,
-                modifier = Modifier.statusBarsPadding(),
-                title = "书库",
-                subtitle = "LIBRARY & SEARCH",
-                titleColor = glassTitleColor(),
+    // 滚动渐进折叠头部（书库强化版）：fraction 连续驱动副标题淡出→标题缩小→整卡高度归零，
+    // 完全收起后零垂直占用；回顶或搜索失焦后按同一路径平滑恢复。
+    // 搜索聚焦是状态跳变（非滚动连续量），用 260ms 补间过渡避免头部一帧内归零的硬切
+    val headerFractionRaw = headerCollapseFraction
+    val headerFraction by animateFloatAsState(
+        targetValue = headerFractionRaw,
+        animationSpec = if (searchFieldFocused || headerFractionRaw == 1f) tween(260) else tween(120),
+        label = "libHeaderFraction",
+    )
+    LibraryCollapsingHeader(
+        fraction = headerFraction,
+        modifier = Modifier.statusBarsPadding(),
+        title = "书库",
+        subtitle = "LIBRARY & SEARCH",
+        titleColor = glassTitleColor(),
                 trailing = {
                     val latestSt = activeDownloadBook?.let { downloadStates[it.id] }
                     val comicActive = comicDownloading.isNotEmpty()
@@ -442,84 +500,20 @@ fun LibraryScreen(
                     // 根因修复：键盘弹出时压缩本布局而非覆盖（此前无 imePadding，结果网格被键盘遮住约 40% 屏高）
                     .imePadding()
             ) {
-                // Source Selector & Search
+                // 一体化搜索组件：书源入口整合进搜索框左侧（任务书「删除独立书源区域+搜索框重新设计」）
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    // 搜索聚焦时书源选择行收起（返回键或失焦即恢复），给搜索框与结果让出首屏
-                    AnimatedVisibility(
-                        visible = !searchFieldFocused,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Text(
-                            text = "书源:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Box {
-                            FilterChip(
-                                selected = true,
-                                onClick = { showSourceSheet = true },
-                                label = {
-                                    Text(
-                                        if (aggregateMode) "聚合漫画（全部）"
-                                        else currentSource?.name ?: "无可用书源"
-                                    )
-                                },
-                                trailingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = "选择书源"
-                                    )
-                                }
-                            )
-                        }
-                    }
-                    }
-
-                    SearchBar(
-                        expanded = false,
-                        onExpandedChange = { searchFieldFocused = it },
-                        inputField = {
-                            SearchBarDefaults.InputField(
-                                query = searchQuery,
-                                onQueryChange = { searchQuery = it },
-                                onSearch = { performSearch(searchQuery) },
-                                expanded = false,
-                                onExpandedChange = { searchFieldFocused = it },
-                                placeholder = { Text("搜索书名或作者") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = "搜索"
-                                    )
-                                },
-                                trailingIcon = {
-                                    if (searchQuery.isNotBlank()) {
-                                        IconButton(onClick = { searchQuery = "" }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "清空"
-                                            )
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onFocusChanged { searchFieldFocused = it.isFocused },
-                        shape = RoundedCornerShape(22.dp),
-                        tonalElevation = 0.dp
-                    ) {
-                        // 历史面板由下方独立的 Liquid Glass 浮层承载
-                    }
+                    UnifiedSearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onSearch = { performSearch(searchQuery) },
+                        onFocusChanged = { searchFieldFocused = it },
+                        onSourceClick = { showSourceSheet = true },
+                        sourceLabel = if (aggregateMode)
+                            if (aggregateKind == "novel") "全部小说" else "全部漫画"
+                        else currentSource?.name ?: "书源",
+                        searchFocused = searchFieldFocused,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     if (errorMessage != null) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -626,9 +620,31 @@ fun LibraryScreen(
 
                 if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
                     val agg = uiState as LibraryUiState.AggregateResults
+                    // 每源结果预览折叠（任务一）：换搜索词才复位展开组。
+                    // 1.05 修复：此前 LaunchedEffect(searchQuery) 首次组合必跑，
+                    // 从详情页返回时把 rememberSaveable 恢复的展开状态全清了——
+                    // 这就是“展开的会不见+页面跳位”的直接根因。
+                    var lastQueryForExpandReset by rememberSaveable { mutableStateOf<String?>(null) }
+                    LaunchedEffect(searchQuery) {
+                        when (lastQueryForExpandReset) {
+                            null -> lastQueryForExpandReset = searchQuery   // 恢复态：不清
+                            searchQuery -> {}                                // 同词重组：不清
+                            else -> {
+                                expandedGroups.clear()                       // 真正换了词：复位
+                                lastQueryForExpandReset = searchQuery
+                            }
+                        }
+                    }
                     Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     LazyVerticalStaggeredGrid(
-                        columns = StaggeredGridCells.Fixed(2),
+                        columns = StaggeredGridCells.Fixed(
+                            // 多设备一致：手机2列 / 中屏3列 / 宽屏4列，避免平板上两列被拉伸过宽
+                            when {
+                                androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 840 -> 4
+                                androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600 -> 3
+                                else -> 2
+                            }
+                        ),
                         state = staggeredGridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
@@ -661,14 +677,30 @@ fun LibraryScreen(
                                     )
                                 }
                             } else if (group.books.isNotEmpty()) {
-                                items(group.books, key = { "${group.sourceId}_${it.id}" }) { book ->
+                                val groupExpanded = expandedGroups[group.sourceId] == true
+                                val visibleBooks = if (groupExpanded) group.books
+                                    else group.books.take(AGGREGATE_PREVIEW_COUNT)
+                                items(visibleBooks, key = { "${group.sourceId}_${it.id}" }) { book ->
                                     StaggeredComicCard(
                                         book = book,
                                         imageLoader = imageLoader,
                                         coverHeaders = rememberCoverHeaders(book, availableSources),
                                         sourceName = group.sourceName,
+                                        novel = availableSources.firstOrNull { it.id == book.sourceId }?.isNovelSource == true,
                                         onClick = { onOpenComic(book) }
                                     )
+                                }
+                                // 展开按钮：还有隐藏结果时出现在第 6 条之后
+                                if (!groupExpanded && group.books.size > AGGREGATE_PREVIEW_COUNT) {
+                                    item(
+                                        key = "agg_expand_${group.sourceId}",
+                                        span = StaggeredGridItemSpan.FullLine
+                                    ) {
+                                        AggregateExpandButton(
+                                            hiddenCount = group.books.size - visibleBooks.size,
+                                            onExpand = { expandedGroups[group.sourceId] = true }
+                                        )
+                                    }
                                 }
                             } else {
                                 item(
@@ -689,7 +721,7 @@ fun LibraryScreen(
                                 com.example.ui.components.MascotEmptyState(
                                     mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
                                     title = "未找到结果",
-                                    description = "所有漫画源都没有匹配“$searchQuery”的内容",
+                                    description = "所有${if (aggregateKind == "novel") "小说源" else "漫画源"}都没有匹配“$searchQuery”的内容",
                                     actionLabel = "管理与导入书源",
                                     onActionClick = onOpenSourceManagement,
                                     testTagPrefix = "aggregate_empty_state"
@@ -736,7 +768,9 @@ fun LibraryScreen(
                                         staggeredGridState.animateScrollToItem(0)
                                     } else {
                                         pendingJumpSourceId = agg.groups[idx].sourceId
-                                        staggeredGridState.animateScrollToItem(groupHeaderIndex(agg.groups, idx))
+                                        staggeredGridState.animateScrollToItem(
+                                            groupHeaderIndex(agg.groups, idx, expandedGroups)
+                                        )
                                     }
                                 }
                             }
@@ -758,6 +792,8 @@ fun LibraryScreen(
                     val error = (uiState as LibraryUiState.Error).error
                     val (title, desc, action) = when (error) {
                         is LibraryError.NetworkUnavailable -> Triple("无网络连接", "请检查网络设置后重试", "重试")
+                        // v1.0.1：网络失败展示真实原因（HTTP 状态码 / DNS / TLS / 超时），便于排查
+                        is LibraryError.NetworkDetail -> Triple("请求失败", error.message, "重试")
                         is LibraryError.SourceUnavailable -> Triple("服务无响应", "当前书源站点暂无响应，请稍后重试或切换书源", "重试")
                         is LibraryError.AuthenticationRequired -> Triple("需要登录", "当前书源需要账号身份验证", "去登录")
                         is LibraryError.CloudflareBlocked -> Triple("安全验证拦截", "目标站点已启用安全防护，请稍后重试", "重试")
@@ -825,9 +861,11 @@ fun LibraryScreen(
                                 downloadState = st,
                                 imageLoader = imageLoader,
                                 coverHeaders = rememberCoverHeaders(book, availableSources),
-                                comicMode = currentSource?.capabilities?.supportComic == true,
+                                comicMode = currentSource?.capabilities?.supportComic == true ||
+                                        currentSource?.capabilities?.supportOnlineText == true,
                                 onStartDownload = {
-                                    if (currentSource?.capabilities?.supportComic == true) {
+                                    if (currentSource?.capabilities?.supportComic == true ||
+                                        currentSource?.capabilities?.supportOnlineText == true) {
                                         onOpenComic(book)
                                     } else if (currentSource?.capabilities?.downloadRequiresLogin == true && !isCurrentSourceLoggedIn) {
                                         loginDialogSource = currentSource
@@ -961,12 +999,24 @@ fun LibraryScreen(
 
         // 书源选择 Liquid Glass 底部弹层
         if (showSourceSheet) {
+            // v1.0.1：按源类型分区——聚合漫画（漫画源）/ 聚合小说（小说源）互斥展示
+            val comicSources = remember(visibleSources) {
+                visibleSources.filter { !it.isNovelSource }
+            }
+            val novelSources = remember(visibleSources) {
+                visibleSources.filter { it.isNovelSource }
+            }
             SourcePickerSheet(
                 aggregateMode = aggregateMode,
+                aggregateKind = aggregateKind,
                 currentSource = currentSource,
-                visibleSources = visibleSources,
-                onSelectAggregate = {
+                comicSources = comicSources,
+                novelSources = novelSources,
+                multiLanguageSearch = multiLangSearch,
+                onToggleMultiLanguageSearch = { viewModel.setMultiLanguageSearch(it) },
+                onSelectAggregate = { kind ->
                     viewModel.setAggregateMode(true)
+                    viewModel.setAggregateKind(kind)
                     // 双状态残留修复：切模式后非活跃视图的滚动位置不清零会让折叠头部错误保持收起
                     scope.launch {
                         staggeredGridState.scrollToItem(0)
@@ -993,13 +1043,231 @@ fun LibraryScreen(
 }
 }
 
+/**
+ * 书库渐进折叠头部（强化版收缩）——区别于四 Tab 共享的 [TabScreenHeader] 布尔两态：
+ * [fraction] 由滚动偏移连续驱动（0=完全展开，1=完全收起零占位），
+ * 三段式映射（区间重叠交叉淡化）保证全程连续无跳变：
+ * - 0→0.5：内容紧凑化（副标题双通道淡出、标题 24→19sp、内外 padding 收紧）
+ * - 0.4→0.8：整卡淡出（先于压高完成，压高裁切时内容已不可见，杜绝"半截字"伪影）
+ * - 0.6→1：整卡高度按比例归零（自绘 layout 压缩高度，真正释放布局空间）
+ * 滚动中每帧只重排一个 layout 节点，无监听器开销；回顶按同一路径反向恢复。
+ */
+@Composable
+private fun LibraryCollapsingHeader(
+    fraction: Float,
+    modifier: Modifier = Modifier,
+    title: String = "书库",
+    subtitle: String? = null,
+    titleColor: Color = Color.Unspecified,
+    leading: (@Composable RowScope.() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null
+) {
+    val f0 = fraction.coerceIn(0f, 1f)
+    // 三段式：0→0.5 内容紧凑化；0.4→0.8 整卡淡出；0.6→1 压高归零——
+    // 淡出先于压高完成，避免压高裁切把标题/图标拦腰截断的"半截字"伪影
+    val compact = (f0 / 0.5f).coerceIn(0f, 1f)
+    val fade = ((f0 - 0.4f) / 0.4f).coerceIn(0f, 1f)
+    val collapse = ((f0 - 0.6f) / 0.4f).coerceIn(0f, 1f)
+    val titleSize = 24f - 5f * compact
+    val subAlpha = (1f - f0 / 0.3f).coerceIn(0f, 1f)
+    val subH = (17 * subAlpha).dp
+    val outerV = (10 * (1f - collapse) * (1f - collapse)).dp
+    val innerV = (12 - 8 * compact).dp
+
+    GlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = outerV)
+            // 高度按 (1-collapse) 等比压缩 + 淡出（淡出已完成，裁切不可见）：
+            // 完全收起后高度 0、padding 0，真正零垂直占用。
+            // placement 必须真正 place placeable——空 placement 块会让整卡不参与绘制
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val h = (placeable.height * (1f - collapse)).roundToInt()
+                layout(constraints.maxWidth, h) {
+                    placeable.placeRelative(0, 0)
+                }
+            }
+            .alpha(1f - fade)
+            .clipToBounds(),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = innerV),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            leading?.invoke(this)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = titleSize.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = titleColor,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    maxLines = 1
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = titleColor.copy(alpha = 0.75f),
+                        letterSpacing = 1.5.sp,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .height(subH)
+                            .alpha(subAlpha)
+                            .clipToBounds()
+                    )
+                }
+            }
+            trailing?.invoke(this)
+        }
+    }
+}
+
+/**
+ * 一体化搜索组件：书源入口 + 搜索输入合体（任务书「搜索框重新设计」）。
+ * 左侧书源区（当前书源名 + 下拉箭头）点击展开 Liquid Glass 书源选择浮层，
+ * 不触发搜索；右侧 BasicTextField 承载输入，IME 搜索键直接发起检索；
+ * 保留原有清空按钮与焦点联动（搜索历史浮层依赖 onFocusChanged）。
+ * [searchFocused]：聚焦态描边高亮信号。
+ */
+@Composable
+private fun UnifiedSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
+    onSourceClick: () -> Unit,
+    sourceLabel: String,
+    modifier: Modifier = Modifier,
+    searchFocused: Boolean = false,
+) {
+    val focusManager = LocalFocusManager.current
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val fieldTextColor = if (isDark) Color.White else Color.DarkGray
+    val placeholderColor = if (isDark) Color.LightGray.copy(alpha = 0.6f) else Color.Gray
+    val dividerColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.12f)
+    val sourceTint = MaterialTheme.colorScheme.onSurface
+    // 聚焦态视觉反馈：主题强调色描边 + 微高亮（此前聚焦唯一反馈是历史面板弹出，
+    // 违反搜索组件基本状态反馈规范）
+    val focusStroke = MaterialTheme.colorScheme.secondary
+
+    GlassCard(
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .border(
+                1.dp,
+                if (searchFocused) focusStroke.copy(alpha = 0.55f) else Color.Transparent,
+                RoundedCornerShape(22.dp)
+            ),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        // fillMaxWidth 而非 fillMaxSize：fillMaxHeight 会吃掉父级剩余全部屏高，
+        // 把 56dp 搜索卡撑成整屏大空面板（用户实机反馈"搜索框那么大"的根因）
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // 书源入口：点击展开书源选择浮层（复用 Liquid Glass SourcePickerSheet）；
+            // 保留 ripple 按压反馈；垂直 padding 加大到 14dp 保证 ≥44dp 命中高度
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(onClick = onSourceClick)
+                    .padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 6.dp)
+            ) {
+                Text(
+                    text = sourceLabel,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = sourceTint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 96.dp)
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "选择书源",
+                    tint = sourceTint.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            // 书源区与输入区的柔性分隔。
+            // 高度必须固定：fillMaxHeight 在 Row 内会把子项量到父级最大可用高度（~整屏），
+            // Row 随之被撑满 → 56dp 搜索卡变成整屏大空面板（用户实机"搜索框那么大"的真根因）
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 14.dp)
+                    .width(1.dp)
+                    .height(24.dp)
+                    .background(dividerColor)
+            )
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 15.sp, color = fieldTextColor),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    onSearch()
+                    focusManager.clearFocus()
+                }),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .onFocusChanged { onFocusChanged(it.isFocused) },
+                decorationBox = { innerTextField ->
+                    Box(
+                        contentAlignment = Alignment.CenterStart,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (query.isEmpty()) {
+                            // 占位字号与输入一致（15sp，避免首键入瞬间跳变）；单行防大字体溢出
+                            Text(
+                                text = "搜索书名或作者",
+                                fontSize = 15.sp,
+                                color = placeholderColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+            if (query.isNotBlank()) {
+                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "清空",
+                        tint = sourceTint.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SourcePickerSheet(
     aggregateMode: Boolean,
+    aggregateKind: String,
     currentSource: BookSource?,
-    visibleSources: List<BookSource>,
-    onSelectAggregate: () -> Unit,
+    comicSources: List<BookSource>,
+    novelSources: List<BookSource>,
+    multiLanguageSearch: Boolean,
+    onToggleMultiLanguageSearch: (Boolean) -> Unit,
+    onSelectAggregate: (String) -> Unit,
     onSelectSource: (String) -> Unit,
     onManageSources: () -> Unit,
     onDismiss: () -> Unit
@@ -1145,7 +1413,7 @@ private fun SourcePickerSheet(
                                 .width(36.dp)
                                 .height(4.dp)
                                 .clip(RoundedCornerShape(2.dp))
-                                .background(Color(0xFFB9B9BE))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f))
                         )
                     }
                     Text(
@@ -1177,7 +1445,7 @@ private fun SourcePickerSheet(
                                     )
                                 },
                                 colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
+                                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
                                 ),
                                 modifier = Modifier
                                     .graphicsLayer {
@@ -1194,150 +1462,101 @@ private fun SourcePickerSheet(
                         item {
                             HorizontalDivider(
                                 thickness = 1.dp,
-                                color = Color.White.copy(alpha = 0.12f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                 modifier = Modifier.padding(start = 72.dp, end = 20.dp)
                             )
                         }
                         item {
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val pressScale by animateFloatAsState(
-                                targetValue = if (pressed) 0.97f else 1f,
-                                label = "press"
-                            )
-                            val checkScale by animateFloatAsState(
-                                targetValue = if (aggregateMode) 1f else 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                ),
-                                label = "check"
-                            )
-                            ListItem(
-                                headlineContent = {
-                                    Text(
-                                        text = "聚合漫画（全部）",
-                                        fontWeight = if (aggregateMode) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                supportingContent = { Text("同时搜索所有已启用的漫画源") },
-                                leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Default.MenuBook,
-                                        contentDescription = null,
-                                        tint = if (aggregateMode) MaterialTheme.colorScheme.secondary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                trailingContent = {
-                                    if (aggregateMode) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "当前选择",
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier
-                                                .size(22.dp)
-                                                .graphicsLayer {
-                                                    scaleX = checkScale
-                                                    scaleY = checkScale
-                                                }
-                                        )
-                                    }
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale
-                                        scaleY = pressScale
-                                    }
-                                    .clickable(
-                                        interactionSource = interaction,
-                                        indication = null,
-                                        onClick = onSelectAggregate
-                                    )
+                            // v1.0.1：聚合搜索按类别分区——聚合漫画 / 聚合小说 互斥选择
+                            AggregateOptionItem(
+                                title = "聚合漫画（全部）",
+                                subtitle = "同时搜索所有已启用的漫画源",
+                                selected = aggregateMode && aggregateKind == "comic",
+                                onClick = { onSelectAggregate("comic") }
                             )
                         }
+                        item {
+                            AggregateOptionItem(
+                                title = "聚合小说（全部）",
+                                subtitle = "同时搜索所有已启用的小说源（网文/电子书）",
+                                selected = aggregateMode && aggregateKind == "novel",
+                                onClick = { onSelectAggregate("novel") }
+                            )
+                        }
+                        // 第十一轮第 6 条：多语言搜索开关——搜索词自动扩展各语言标题变体
+                        //（如"无职转生"→ 無職転生 / Mushoku Tensei / Jobless Reincarnation）
                         item {
                             HorizontalDivider(
                                 thickness = 1.dp,
-                                color = Color.White.copy(alpha = 0.12f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                 modifier = Modifier.padding(start = 72.dp, end = 20.dp)
                             )
                         }
-                        items(visibleSources, key = { it.id }) { source ->
-                            val selected = !aggregateMode && currentSource?.id == source.id
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val pressScale by animateFloatAsState(
-                                targetValue = if (pressed) 0.97f else 1f,
-                                label = "press"
-                            )
-                            val checkScale by animateFloatAsState(
-                                targetValue = if (selected) 1f else 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                ),
-                                label = "check"
-                            )
+                        item {
                             ListItem(
                                 headlineContent = {
                                     Text(
-                                        text = source.name,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                        text = "多语言搜索",
+                                        fontWeight = if (multiLanguageSearch) FontWeight.Bold else FontWeight.Normal
                                     )
                                 },
                                 supportingContent = {
                                     Text(
-                                        text = source.id,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        if (multiLanguageSearch) "开启：自动用各语言译名扩展搜索"
+                                        else "关闭：仅使用输入的原始关键词"
                                     )
                                 },
                                 leadingContent = {
-                                    SourceAvatar(
-                                        sourceId = source.id,
-                                        sourceName = source.name,
-                                        size = 32.dp
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = null,
+                                        tint = if (multiLanguageSearch) MaterialTheme.colorScheme.secondary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
                                 trailingContent = {
-                                    if (selected) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "当前使用",
-                                            tint = MaterialTheme.colorScheme.secondary,
-                                            modifier = Modifier
-                                                .size(22.dp)
-                                                .graphicsLayer {
-                                                    scaleX = checkScale
-                                                    scaleY = checkScale
-                                                }
-                                        )
-                                    }
+                                    com.example.ui.components.AppSwitch(
+                                        checked = multiLanguageSearch,
+                                        onCheckedChange = onToggleMultiLanguageSearch
+                                    )
                                 },
                                 colors = ListItemDefaults.colors(
-                                    containerColor = Color.White.copy(alpha = 0.06f)
-                                ),
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale
-                                        scaleY = pressScale
-                                    }
-                                    .clickable(
-                                        interactionSource = interaction,
-                                        indication = null
-                                    ) {
-                                        onSelectSource(source.id)
-                                    }
+                                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+                                )
                             )
                         }
                         item {
                             HorizontalDivider(
                                 thickness = 1.dp,
-                                color = Color.White.copy(alpha = 0.12f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
+                            )
+                        }
+                        // v1.0.1：书源按类型分区展示——漫画源 / 小说源
+                        if (comicSources.isNotEmpty()) {
+                            item { SourceSectionLabel("漫画源") }
+                            items(comicSources, key = { it.id }) { source ->
+                                SourceOptionItem(
+                                    source = source,
+                                    selected = !aggregateMode && currentSource?.id == source.id,
+                                    onClick = { onSelectSource(source.id) }
+                                )
+                            }
+                        }
+                        if (novelSources.isNotEmpty()) {
+                            item { SourceSectionLabel("小说源") }
+                            items(novelSources, key = { it.id }) { source ->
+                                SourceOptionItem(
+                                    source = source,
+                                    selected = !aggregateMode && currentSource?.id == source.id,
+                                    onClick = { onSelectSource(source.id) }
+                                )
+                            }
+                        }
+                        item {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                 modifier = Modifier.padding(start = 72.dp, end = 20.dp)
                             )
                         }
@@ -1346,6 +1565,160 @@ private fun SourcePickerSheet(
             }
         }
     }
+}
+
+/** 聚合搜索选项行（聚合漫画/聚合小说）：按下缩放 + 选中弹入对勾，与弹层整体 Liquid Glass 风格一致。 */
+@Composable
+private fun AggregateOptionItem(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        label = "press"
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "check"
+    )
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Default.MenuBook,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "当前选择",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                        }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+        ),
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+    )
+}
+
+/** 书源分区小标题（漫画源 / 小说源）。 */
+@Composable
+private fun SourceSectionLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp)
+    )
+}
+
+/** 单个书源选项行。 */
+@Composable
+private fun SourceOptionItem(
+    source: BookSource,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        label = "press"
+    )
+    val checkScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "check"
+    )
+    ListItem(
+        headlineContent = {
+            Text(
+                text = source.name,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        },
+        supportingContent = {
+            Text(
+                text = source.id,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        leadingContent = {
+            SourceAvatar(
+                sourceId = source.id,
+                sourceName = source.name,
+                size = 32.dp
+            )
+        },
+        trailingContent = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "当前使用",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer {
+                            scaleX = checkScale
+                            scaleY = checkScale
+                        }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+        ),
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+    )
 }
 
 @Composable
@@ -1999,6 +2372,9 @@ private fun SearchBook.displayFormat(): String {
  */
 private val STAGGER_RATIO_PALETTE = listOf(0.62f, 0.70f, 0.78f, 0.90f, 3f / 4f)
 
+/** 聚合搜索每源默认预览条数（任务一）：超出部分折叠到「展开全部」按钮之后。 */
+private const val AGGREGATE_PREVIEW_COUNT = 6
+
 /** 用 书源+书ID 稳定映射到一个瀑布流比例：同一本书任何时候算出来都一样。 */
 private fun SearchBook.staggerRatio(): Float {
     val seed = "${sourceId}_$id"
@@ -2012,6 +2388,7 @@ private fun StaggeredComicCard(
     imageLoader: ImageLoader,
     coverHeaders: Map<String, String>,
     sourceName: String,
+    novel: Boolean = false,
     onClick: () -> Unit
 ) {
     // 固定比例：不再依赖图片解码结果，卡片测量高度全程不变
@@ -2043,11 +2420,11 @@ private fun StaggeredComicCard(
         label = "cardEnterSlide"
     )
     val cardShape = RoundedCornerShape(14.dp)
-    val formatBadge = remember(book) {
+    val formatBadge = remember(book, novel) {
         listOfNotNull(
             book.comicId?.takeIf { it.isNotBlank() }?.let { "#$it" },
             book.format?.takeIf { it.isNotBlank() && !it.equals("epub", true) }?.uppercase()
-        ).firstOrNull() ?: "漫画"
+        ).firstOrNull() ?: if (novel) "小说" else "漫画"
     }
     Column(
         modifier = Modifier
@@ -2246,18 +2623,86 @@ private fun AggregateSourceHeader(
     }
 }
 
-/** 每个源组在 StaggeredGrid 占用的 item 数：组头 + (shimmer×4 | 书卡 | 错误卡)，与网格 emit 逻辑一一对应。 */
-private fun aggregateGroupItemCount(group: LibraryUiState.AggregateGroup): Int = when {
+/**
+ * 「展开全部 N 条」按钮（任务一）：聚合结果每源默认只展示前 6 条，
+ * 点击后展开该书源全部搜索结果。整行胶囊样式与 [AggregateSourceHeader] 同语言。
+ */
+@Composable
+private fun AggregateExpandButton(
+    hiddenCount: Int,
+    onExpand: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        label = "aggExpandPress"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(RoundedCornerShape(20.dp))
+            .border(
+                width = 1.dp,
+                color = MintPrimary.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .background(MintPrimary.copy(alpha = 0.08f))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onExpand
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "展开全部 $hiddenCount 条",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MintPrimary
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowDown,
+            contentDescription = "展开该书源全部结果",
+            tint = MintPrimary,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/**
+ * 每个源组在 StaggeredGrid 占用的 item 数：组头 + (shimmer×4 | 书卡[+展开按钮] | 错误卡)，
+ * 与网格 emit 逻辑一一对应。折叠态只占前 [AGGREGATE_PREVIEW_COUNT] 张书卡 + 1 个展开按钮。
+ */
+private fun aggregateGroupItemCount(
+    group: LibraryUiState.AggregateGroup,
+    expanded: Boolean = false
+): Int = when {
     group.loading -> 4
-    group.books.isNotEmpty() -> group.books.size
+    group.books.isNotEmpty() -> {
+        val cards = if (expanded) group.books.size
+            else minOf(group.books.size, AGGREGATE_PREVIEW_COUNT)
+        if (!expanded && group.books.size > AGGREGATE_PREVIEW_COUNT) cards + 1 else cards
+    }
     else -> 1
 }
 
 /** 目标源组组头的 item index（跳转定位用）。 */
-private fun groupHeaderIndex(groups: List<LibraryUiState.AggregateGroup>, target: Int): Int {
+private fun groupHeaderIndex(
+    groups: List<LibraryUiState.AggregateGroup>,
+    target: Int,
+    expandedGroups: Map<String, Boolean> = emptyMap()
+): Int {
     var index = 0
     for (i in 0 until target.coerceIn(0, groups.lastIndex)) {
-        index += 1 + aggregateGroupItemCount(groups[i])
+        index += 1 + aggregateGroupItemCount(groups[i], expandedGroups[groups[i].sourceId] == true)
     }
     return index
 }
@@ -2283,7 +2728,8 @@ private fun AggregateJumpSheet(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2389,6 +2835,7 @@ private fun AggregateJumpSheet(
                     }
                 }
             }
+        }
         }
     }
 }
