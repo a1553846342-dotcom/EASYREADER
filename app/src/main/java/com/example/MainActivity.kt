@@ -930,6 +930,44 @@ class MainActivity : ComponentActivity() {
                             )
                         } }
 
+                        composable(
+                            "novel_reader_online",
+                            enterTransition = {
+                                fadeIn(tween(300)) + slideInHorizontally { it / 4 }
+                            },
+                            exitTransition = { fadeOut(tween(200)) }
+                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
+                            val comicBook by libraryViewModel.comicBook.collectAsState()
+                            val novelChapter by libraryViewModel.activeNovelChapter.collectAsState()
+                            val novelText by libraryViewModel.novelChapterText.collectAsState()
+                            val novelLoading by libraryViewModel.novelChapterLoading.collectAsState()
+                            val novelError by libraryViewModel.novelChapterError.collectAsState()
+                            val chapters by libraryViewModel.comicChapters.collectAsState()
+                            val idx = chapters.indexOfFirst { it.id == novelChapter?.id }
+
+                            com.example.ui.NovelReaderScreen(
+                                bookTitle = comicBook?.title,
+                                chapter = novelChapter,
+                                text = novelText,
+                                loading = novelLoading,
+                                error = novelError,
+                                hasPrevChapter = idx > 0,
+                                hasNextChapter = idx >= 0 && idx < chapters.size - 1,
+                                onBack = { navController.popBackStack() },
+                                onRetry = { novelChapter?.let { libraryViewModel.loadChapterText(it) } },
+                                onLoadPrev = {
+                                    if (idx > 0) {
+                                        libraryViewModel.loadChapterText(chapters[idx - 1])
+                                    }
+                                },
+                                onLoadNext = {
+                                    if (idx >= 0 && idx < chapters.size - 1) {
+                                        libraryViewModel.loadChapterText(chapters[idx + 1])
+                                    }
+                                }
+                            )
+                        } }
+
                         composable("source_management") {
                             com.example.ui.source.SourceManagementScreen(
                                 viewModel = sourceViewModel,
