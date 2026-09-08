@@ -1470,7 +1470,7 @@ private fun ComicVerticalItem(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     com.example.ui.components.ChasingDots(
-                        size = 44.dp,
+                        size = 52.dp,
                         color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
                     )
                     enhanceHintFor(
@@ -1956,7 +1956,7 @@ private fun DoubleSpreadContent(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             com.example.ui.components.ChasingDots(
-                                size = 44.dp,
+                                size = 52.dp,
                                 color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
                             )
                             enhanceHintFor(
@@ -2023,7 +2023,7 @@ private fun PagePlaceholder(state: PageBitmapState, onRetry: () -> Unit, enhance
                 // ChasingDots 组件（同一 Composable、同一套动画曲线与配色参数），
                 // 保持全 App 加载态视觉语言一致，不使用系统默认转圈圈
                 com.example.ui.components.ChasingDots(
-                    size = 44.dp,
+                    size = 52.dp,
                     color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
                 )
                 // 第六轮第 5 条：增强引擎开启时的耗时预期提示——用户可区分

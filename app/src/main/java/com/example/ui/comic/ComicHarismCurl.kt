@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -33,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -541,20 +541,8 @@ internal class ComicHarismController {
         val srcs = resolved.mapNotNull { it.second }
         // 第 4 条：当前 spread 纹理未就绪（慢网络）→ 标记待补纹理（占位→真实）
         if (exactMiss && toOur(hIdx) == currentSpreadHint) pendingRetexture = true
-        // 第 4 条终审补强：未加载槽位画加载指示（与 Compose 侧 CircularProgressIndicator
-        // 同语义——占位不能是"无信号的纯色纸面"，否则用户无法区分加载中与失败）
-        if (srcs.isEmpty()) {
-            drawCurlLoadingGlyph(canvas, bw / 2f, bh / 2f, min(bw, bh) / 9f)
-        } else if (slots.size == 2 && srcs.size == 1) {
-            // 双页部分缺失：画在缺失槽位那一半（slots[0]=首读页，RTL 在右）
-            val missingIdx = resolved.firstOrNull { it.second == null }?.first
-            if (missingIdx != null) {
-                val firstReadRight = cfg.direction == ComicDirection.RTL
-                val slotRight = if (missingIdx == 0) firstReadRight else !firstReadRight
-                val cx = if (slotRight) bw * 0.75f else bw * 0.25f
-                drawCurlLoadingGlyph(canvas, cx, bh / 2f, min(bw, bh) / 9f)
-            }
-        }
+        // 未加载槽位画纯色纸面即可：加载指示统一由 Compose 层动画 ChasingDots
+        // 承接（此处不再画 GL 静态圈，避免与动画圈叠加出现双圈）
         if (srcs.isEmpty()) {
             if (com.example.BuildConfig.DEBUG) android.util.Log.d("CURLDBG", "composeSpread EMPTY srcs idx=$hIdx our=${toOur(hIdx)} spread=${toOur(hIdx)} cacheSize=${cacheSize()}")
             return bmp
@@ -623,8 +611,8 @@ internal class ComicHarismController {
         val src = (exact ?: getCacheAnyVariant(slot.ref.id))
             ?.let { softenForSoftware(it) }
         if (src == null) {
-            // 第 4 条终审补强：未加载占位画加载指示图形（非无信号纯色纸面）
-            drawCurlLoadingGlyph(canvas, bw / 2f, bh / 2f, min(bw, bh) / 9f)
+            // 加载指示统一由 Compose 层动画 ChasingDots 承接（此处曾画 GL 静态圈，
+            // 与动画圈叠加出现双圈，已删除）
             return bmp
         }
         val paint = Paint().apply { isFilterBitmap = true }
@@ -787,27 +775,6 @@ internal fun applyCurlBackground(
             }
         }
     }
-}
-
-/**
- * CURL 占位纹理的加载指示图形（第 4 条终审补强）：
- * 暗环 + 亮弧扫过的"转圈"形态，与 Compose 侧 CircularProgressIndicator
- * （0x88FFFFFF）同语义。GL 纹理由 harism 按需拉取、无逐帧重绘通道，
- * 静态图形 + pendingRetexture 到达后的真实页替换即满足"占位可辨加载中"。
- */
-internal fun drawCurlLoadingGlyph(canvas: Canvas, cx: Float, cy: Float, radius: Float) {
-    if (radius < 4f) return
-    val stroke = (radius * 0.24f).coerceAtLeast(3f)
-    val dim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = stroke; color = 0x30FFFFFF
-    }
-    canvas.drawCircle(cx, cy, radius, dim)
-    val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = stroke; color = 0xB0FFFFFF.toInt()
-        strokeCap = Paint.Cap.ROUND
-    }
-    val oval = android.graphics.RectF(cx - radius, cy - radius, cx + radius, cy + radius)
-    canvas.drawArc(oval, -75f, 255f, false, arc)
 }
 
 /** harism 索引映射（纯函数，可单测）：RTL 倒序 our = n-1-harism；LTR 恒等 */
@@ -1010,6 +977,9 @@ internal fun ComicHarismCurlReader(
     var lastReloadedSpread by remember { mutableIntStateOf(-1) }
     // 第 17 条：缩放覆盖层（双击/长按/双指触发）
     var zoomOverlay by remember { mutableStateOf(false) }
+    // 当前 spread 纹理未就绪（慢网络）：GL 纸面只有静止点环（harism 无逐帧重绘通道），
+    // Compose 层叠加与书库搜索同款的动画 ChasingDots —— 纹理就绪即刻撤下
+    var curlPageLoading by remember { mutableStateOf(false) }
     val latestCurrent by rememberUpdatedState(currentSpread)
     val latestOnSpread by rememberUpdatedState(onSpreadChanged)
     val latestGoNext by rememberUpdatedState(goNext)
@@ -1144,6 +1114,11 @@ internal fun ComicHarismCurlReader(
         controller.bookState = bookState
         controller.currentSpreadHint = currentSpread
         val gen = ++controller.displayGeneration
+        // 加载圈判定与 composeSpread 纹理解析同源：精确键或任意变体命中即视为已就绪
+        curlPageLoading = layout.spreads.getOrNull(currentSpread)?.slots?.any { slot ->
+            controller.getCache(slotCacheKey(slot, config, bookState)) == null &&
+                controller.getCacheAnyVariant(slot.ref.id) == null
+        } == true
         val targets = listOf(currentSpread, currentSpread - 1, currentSpread + 1)
             .filter { it in layout.spreads.indices }
         var currentShown = false
@@ -1168,6 +1143,9 @@ internal fun ComicHarismCurlReader(
                         if (si == currentSpread) currentShown = true
                     }
                 }
+                // 当前 spread 的槽位无论成败都已处理完：撤下加载圈
+                //（失败态由 GL 纸面占位承接，重试由下次预载/翻页触发）
+                if (si == currentSpread) curlPageLoading = false
             }
         }
         // 提交前代校验：本 effect 期间若布局/页码再变（新一轮 effect 已接管），
@@ -1342,6 +1320,21 @@ internal fun ComicHarismCurlReader(
               单指拖拽/快 tap 由 GL 卷页原生处理。
               （不能在 GL 视图上叠 Compose 仲裁层：Compose pointerInput 会截获
               整条触摸流，interop AndroidView 收不到任何事件，拖拽翻页失效） ── */
+        // 页面纹理加载中：动画加载圈（书库搜索同款 ChasingDots）盖在 GL 纸面之上。
+        // 纯展示层无 pointerInput —— 不参与命中测试，触摸穿透回 GL 卷页视图
+        if (curlPageLoading && !zoomOverlay) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0.94f },
+                contentAlignment = Alignment.Center,
+            ) {
+                com.example.ui.components.ChasingDots(
+                    size = 52.dp,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
         if (zoomOverlay) {
             val v = controller.view
             val bmp = remember(zoomOverlay, currentSpread, layout) {
@@ -1409,7 +1402,10 @@ private fun ComicCurlZoomOverlay(
                     )
                 }
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0x88FFFFFF), strokeWidth = 2.4.dp)
+                com.example.ui.components.ChasingDots(
+                    size = 52.dp,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
+                )
             }
         }
         Text(

@@ -38,9 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,6 +52,7 @@ import eu.wewox.pagecurl.config.PageCurlConfig
 import eu.wewox.pagecurl.page.PageCurl
 import eu.wewox.pagecurl.page.rememberPageCurlState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 /**
@@ -71,11 +74,14 @@ fun PageCurlReaderContainer(
     onClickCenter: () -> Unit,
     onToggleBookmark: () -> Unit = {},
     isCurrentBookmarked: Boolean = false,
+    /** 中间区域长按 2s：触发串珠快速翻页（PageScrubberOverlay）。 */
+    onLongPressCenter: (() -> Unit)? = null,
     menuVisible: Boolean,
     modifier: Modifier = Modifier
 ) {
     val state = rememberPageCurlState(initialCurrent = 1)
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // ── 下拉充能状态（与 PageTurnContainer 同参数）──
     var pullValue by remember { mutableFloatStateOf(0f) }
@@ -95,8 +101,12 @@ fun PageCurlReaderContainer(
         shadowOffset = androidx.compose.ui.unit.DpOffset((-6).dp, 2.dp),
         dragForwardEnabled = !menuVisible,
         dragBackwardEnabled = !menuVisible,
-        tapForwardEnabled = !menuVisible,
-        tapBackwardEnabled = !menuVisible,
+        // 左右点按翻页改由本容器手势仲裁器（Initial pass）处理：
+        // 1) 连点时可"即时翻页"（不与在飞的卷页动画互抢同一 Animatable）；
+        // 2) 库内 tapGesture → next()/prev() 的 animateJob 僵尸 finally 会与
+        //    重置 LaunchedEffect 竞态（快速连点后卡死、无法回翻的根因）。
+        tapForwardEnabled = false,
+        tapBackwardEnabled = false,
         tapCustomEnabled = true,
         dragInteraction = PageCurlConfig.StartEndDragInteraction(),
         tapInteraction = PageCurlConfig.TargetTapInteraction(),
@@ -118,11 +128,30 @@ fun PageCurlReaderContainer(
         val latestOnNextPage by androidx.compose.runtime.rememberUpdatedState(onNextPage)
         val latestOnPrevPage by androidx.compose.runtime.rememberUpdatedState(onPrevPage)
         val latestOnClickCenter by androidx.compose.runtime.rememberUpdatedState(onClickCenter)
+        val latestOnLongPressCenter by androidx.compose.runtime.rememberUpdatedState(onLongPressCenter)
+        val latestMenuVisible by androidx.compose.runtime.rememberUpdatedState(menuVisible)
 
         LaunchedEffect(state.current) {
             when (state.current) {
                 2 -> { latestOnNextPage(); state.snapTo(1) }
                 0 -> { latestOnPrevPage(); state.snapTo(1) }
+            }
+        }
+
+        // 点按翻页：动画进行中（连点）→ 取消在飞动画并即时翻页；
+        // 空闲 → 交给库的 next()/prev() 播放完整卷页动画。
+        // cancel+join 确保僵尸 finally 先落定，再由重置 LaunchedEffect 收敛回 1。
+        fun tapTurn(forward: Boolean) {
+            scope.launch {
+                val job = state.internalState?.animateJob
+                if (job != null && job.isActive) {
+                    job.cancel()
+                    job.join()
+                    if (forward) latestOnNextPage() else latestOnPrevPage()
+                    state.snapTo(1)
+                } else {
+                    if (forward) state.next() else state.prev()
+                }
             }
         }
 
@@ -142,9 +171,39 @@ fun PageCurlReaderContainer(
                         var isDrag = false
                         var activeMode = 0 // 0=未定 1=水平翻页 2=下拉书签
                         var fired = false
+                        var longPressFired = false
+                        // 长按触发区扩展到整个页面：任意位置静置 1s 均可唤出串珠快速翻页
+                        var longPressArmed = true
+                        var lastUptime = down.uptimeMillis
+                        val longPressDeadline = down.uptimeMillis + 1000L
 
                         while (true) {
-                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            val ev = if (longPressArmed) {
+                                withTimeoutOrNull((longPressDeadline - lastUptime).coerceAtLeast(1L)) {
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                }
+                            } else {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                            }
+                            if (ev == null) {
+                                // 中间区域静置 1s：触发串珠快速翻页
+                                longPressArmed = false
+                                if (!isDrag && !latestMenuVisible) {
+                                    longPressFired = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    latestOnLongPressCenter?.invoke()
+                                    // 吞掉余下事件直到抬起：防止遮罩出现前 pagecurl 抢手势
+                                    while (true) {
+                                        val drain = awaitPointerEvent(PointerEventPass.Initial)
+                                        drain.changes.forEach { it.consume() }
+                                        if (drain.changes.any { !it.pressed }) break
+                                    }
+                                    break
+                                }
+                                continue
+                            }
+
+                            lastUptime = maxOf(lastUptime, ev.changes.maxOf { it.uptimeMillis })
                             val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
                             if (!ch.pressed) break
                             val delta = ch.positionChange()
@@ -188,6 +247,16 @@ fun PageCurlReaderContainer(
                                     elapsed += stepMs.toInt()
                                 }
                                 pullValue = 0f
+                            }
+                        }
+
+                        // 纯点按（未越过 touchSlop）：左右三分之一分区翻页（与 onCustomTap 中间三分之一互补）
+                        if (!isDrag && !longPressFired && !latestMenuVisible) {
+                            val x = down.position.x
+                            val w = size.width.toFloat()
+                            when {
+                                x > w * 2f / 3f -> tapTurn(forward = true)
+                                x < w / 3f -> tapTurn(forward = false)
                             }
                         }
                     }

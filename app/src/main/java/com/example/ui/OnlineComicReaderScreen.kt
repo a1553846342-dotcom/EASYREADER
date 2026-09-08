@@ -29,7 +29,6 @@ import com.example.ui.components.ChasingDots
 import com.example.ui.comic.ComicPageRef
 import com.example.ui.comic.ComicReaderCore
 import com.example.ui.comic.ComicTocEntry
-import com.example.ui.theme.MintPrimary
 import coil.ImageLoader
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -98,7 +97,10 @@ fun OnlineComicReaderScreen(
             loading && imageUrls.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ChasingDots(size = 52.dp, color = MintPrimary)
+                        ChasingDots(
+                            size = 52.dp,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("正在加载图片…", color = Color.White, fontSize = 14.sp)
                     }

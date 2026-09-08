@@ -243,7 +243,11 @@ public class PageCurlState(
                         animate(Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat()))
                     } finally {
                         withContext(NonCancellable) {
-                            snapTo(target())
+                            // 落点必须用调用时捕获的值：原实现 finally 里重新求值 target()，
+                            // 动画期间 current 被外部（三页窗口重置逻辑）改写后，
+                            // 取消态的"僵尸 finally"会把 current 顶到错误页（max 边界钳制/±1 漂移），
+                            // 造成快速连点后 prev() 有动画无翻页、next() 越界早退的卡死状态。
+                            snapTo(targetIndex)
                         }
                     }
                 }

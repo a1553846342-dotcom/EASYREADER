@@ -32,13 +32,18 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 enum class PageTurnType(val id: Int, val title: String, val description: String) {
@@ -63,11 +68,14 @@ fun PageTurnContainer(
     isBookmarked: Boolean = false,
     onToggleBookmark: (() -> Unit)? = null,
     pageKey: Any = Unit,
+    /** 中间区域长按 1s：触发串珠快速翻页（PageScrubberOverlay）。 */
+    onLongPressCenter: (() -> Unit)? = null,
     /** 菜单（顶/底栏）打开时不再响应点击翻页/切章，避免“想关菜单却切了章”。 */
     menuVisible: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // Stable animatables across page turns - never recreate/destroy on pageKey change
     val dragOffset = remember { Animatable(0f) }
@@ -82,6 +90,7 @@ fun PageTurnContainer(
     val latestOnClickLeft by rememberUpdatedState(onClickLeft)
     val latestOnClickRight by rememberUpdatedState(onClickRight)
     val latestOnToggleBookmark by rememberUpdatedState(onToggleBookmark)
+    val latestOnLongPressCenter by rememberUpdatedState(onLongPressCenter)
     val latestMenuVisible by rememberUpdatedState(menuVisible)
 
     // Reset offsets when pageKey changes (page turned)
@@ -103,6 +112,11 @@ fun PageTurnContainer(
                 if (mode == PageTurnType.SCROLL) {
                     return@pointerInput
                 }
+                // 在飞的翻页动画协程（点按/拖拽共用）：快速连点时旧协程被取消、
+                // 新协程直接即时翻页——两个协程并发驱动同一 dragOffset 会互相
+                // 抢占 Animatable，落败协程死在半路且永远不执行 snapTo(0)，
+                // 页面停在非零偏移（屏幕显示滞后一页、点左无响应只能点右）。
+                var turnJob: kotlinx.coroutines.Job? = null
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     touchDownY = down.position.y
@@ -110,12 +124,42 @@ fun PageTurnContainer(
                     var totalY = 0f
                     var isDrag = false
                     var activeMode = 0 // 0: uncommitted, 1: horizontal page turn, 2: pull-down bookmark
+                    var longPressFired = false
 
                     val touchSlop = viewConfiguration.touchSlop
                     val screenWidth = size.width.toFloat()
+                    // 长按触发区扩展到整个页面：任意位置静置 1s 均可唤出串珠快速翻页
+                    var longPressArmed = true
+                    var lastUptime = down.uptimeMillis
+                    val longPressDeadline = down.uptimeMillis + 1000L
 
                     while (true) {
-                        val event = awaitPointerEvent()
+                        val event = if (longPressArmed) {
+                            withTimeoutOrNull((longPressDeadline - lastUptime).coerceAtLeast(1L)) {
+                                awaitPointerEvent()
+                            }
+                        } else {
+                            awaitPointerEvent()
+                        }
+                        if (event == null) {
+                            // 中间区域静置 1s：触发串珠快速翻页
+                            longPressArmed = false
+                            if (!isDrag && !latestMenuVisible) {
+                                longPressFired = true
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                latestOnLongPressCenter?.invoke()
+                                // 吞掉余下事件直到抬起：防止遮罩出现前底层误翻页
+                                while (true) {
+                                    val drain = awaitPointerEvent()
+                                    drain.changes.forEach { it.consume() }
+                                    if (drain.changes.any { !it.pressed }) break
+                                }
+                                break
+                            }
+                            continue
+                        }
+
+                        lastUptime = maxOf(lastUptime, event.changes.maxOf { it.uptimeMillis })
                         val currentChange = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!currentChange.pressed) {
                             break
@@ -176,16 +220,21 @@ fun PageTurnContainer(
                             }
 
                             if (abs(currentVal) > threshold) {
-                                coroutineScope.launch {
-                                    val target = if (currentVal < 0) -screenWidth else screenWidth
-                                    dragOffset.animateTo(target, tween(180))
-                                    if (currentVal < 0) {
-                                        latestOnNextPage()
-                                    } else {
-                                        latestOnPrevPage()
+                                turnJob = coroutineScope.launch {
+                                    try {
+                                        val target = if (currentVal < 0) -screenWidth else screenWidth
+                                        dragOffset.animateTo(target, tween(180))
+                                        if (currentVal < 0) {
+                                            latestOnNextPage()
+                                        } else {
+                                            latestOnPrevPage()
+                                        }
+                                    } finally {
+                                        withContext(NonCancellable) {
+                                            dragOffset.snapTo(0f)
+                                            dragOffsetY.snapTo(0f)
+                                        }
                                     }
-                                    dragOffset.snapTo(0f)
-                                    dragOffsetY.snapTo(0f)
                                 }
                             } else {
                                 coroutineScope.launch {
@@ -193,7 +242,7 @@ fun PageTurnContainer(
                                 }
                             }
                         }
-                    } else if (!latestMenuVisible) {
+                    } else if (!latestMenuVisible && !longPressFired) {
                         val tapX = down.position.x
                         val leftZone = screenWidth * 0.35f
                         val rightZone = screenWidth * 0.65f
@@ -202,24 +251,43 @@ fun PageTurnContainer(
                             tapX < leftZone -> {
                                 if (mode == PageTurnType.SCROLL) {
                                     latestOnClickLeft()
+                                } else if (turnJob?.isActive == true) {
+                                    // 上一次翻页动画未结束的快速连点：取消旧动画、即时翻页
+                                    turnJob?.cancel()
+                                    latestOnPrevPage()
                                 } else {
-                                    coroutineScope.launch {
-                                        dragOffset.animateTo(-screenWidth * 0.05f, tween(60))
-                                        dragOffset.animateTo(screenWidth, tween(180))
-                                        latestOnPrevPage()
-                                        dragOffset.snapTo(0f)
+                                    turnJob = coroutineScope.launch {
+                                        try {
+                                            dragOffset.animateTo(-screenWidth * 0.05f, tween(60))
+                                            dragOffset.animateTo(screenWidth, tween(180))
+                                            latestOnPrevPage()
+                                        } finally {
+                                            withContext(NonCancellable) {
+                                                dragOffset.snapTo(0f)
+                                                dragOffsetY.snapTo(0f)
+                                            }
+                                        }
                                     }
                                 }
                             }
                             tapX > rightZone -> {
                                 if (mode == PageTurnType.SCROLL) {
                                     latestOnClickRight()
+                                } else if (turnJob?.isActive == true) {
+                                    turnJob?.cancel()
+                                    latestOnNextPage()
                                 } else {
-                                    coroutineScope.launch {
-                                        dragOffset.animateTo(screenWidth * 0.05f, tween(60))
-                                        dragOffset.animateTo(-screenWidth, tween(180))
-                                        latestOnNextPage()
-                                        dragOffset.snapTo(0f)
+                                    turnJob = coroutineScope.launch {
+                                        try {
+                                            dragOffset.animateTo(screenWidth * 0.05f, tween(60))
+                                            dragOffset.animateTo(-screenWidth, tween(180))
+                                            latestOnNextPage()
+                                        } finally {
+                                            withContext(NonCancellable) {
+                                                dragOffset.snapTo(0f)
+                                                dragOffsetY.snapTo(0f)
+                                            }
+                                        }
                                     }
                                 }
                             }

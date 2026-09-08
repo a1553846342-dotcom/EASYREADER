@@ -171,7 +171,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.*
 
 import com.example.ui.pageturn.PageCurlReaderContainer
-
+import com.example.ui.pageturn.PageScrubberOverlay
 import com.example.ui.pageturn.PageTurnContainer
 
 import com.example.ui.pageturn.PageTurnType
@@ -316,6 +316,17 @@ fun ReaderScreen(
     var previousPosition by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     var showReturnChip by remember { mutableStateOf(false) }
+
+    // 返回上次处气泡：出现后 5 秒无操作自动消失（用户反馈"跳页后一直不消失"）
+    LaunchedEffect(showReturnChip) {
+        if (showReturnChip) {
+            delay(5000)
+            showReturnChip = false
+        }
+    }
+
+    // 串珠快速翻页遮罩（长按阅读区中间 1s 触发）
+    var scrubberVisible by remember { mutableStateOf(false) }
 
 
 
@@ -1232,6 +1243,8 @@ fun ReaderScreen(
 
             val textHeightPx = containerHeightPx - with(density) { PAGE_TEXT_BOTTOM_PADDING_DP.dp.toPx().toInt() }.coerceAtLeast(16)
 
+            android.util.Log.d("ScrubDebug", "pagination: pageContainer=${pageContainerSize?.width}x${pageContainerSize?.height} textW=${textWidthPx} textH=${textHeightPx}")
+
             val fontFamilyResolver = LocalFontFamilyResolver.current
 
             val currentTitleReservePx = remember(currentChapter?.title, textWidthPx, titleStyle, density, fontFamilyResolver) {
@@ -2143,6 +2156,10 @@ fun ReaderScreen(
                                                         it.chapterIndex == currentChapterIndex
                                             },
 
+                                            onLongPressCenter = {
+                                                if (pagesList.size >= 2) scrubberVisible = true
+                                            },
+
                                             menuVisible = showBars
 
                                         )
@@ -2175,10 +2192,39 @@ fun ReaderScreen(
 
                                             isBookmarked = bookmarks.any { (it.bookId == (book?.id ?: 0) || it.bookId == 0) && it.chapterIndex == currentChapterIndex },
 
-                                            onToggleBookmark = toggleBookmark
+                                            onToggleBookmark = toggleBookmark,
+
+                                            onLongPressCenter = {
+                                                if (pagesList.size >= 2) scrubberVisible = true
+                                            }
 
                                         )
 
+                                    }
+
+
+                                    // 串珠快速翻页：本章页面缩至 75% 排开，滑动掠页（振动+翻纸声），松手跳转
+                                    if (!isScrollMode && scrubberVisible && pagesList.size >= 2) {
+                                        PageScrubberOverlay(
+                                            pageCount = pagesList.size,
+                                            initialPage = activeSubPageIndex,
+                                            pageContent = { idx ->
+                                                RenderSinglePage(
+                                                    pageIndex = idx,
+                                                    pageText = pagesList.getOrNull(idx) ?: "",
+                                                    chapterTitle = currentChapter?.title,
+                                                    bgColor = bgColor,
+                                                    textColor = textColor,
+                                                    bodyStyle = bodyTextStyle,
+                                                    titleStyle = titleStyle,
+                                                    titleReservePx = currentTitleReservePx,
+                                                    marginHorizontal = marginHorizontal,
+                                                    showBars = false
+                                                )
+                                            },
+                                            onDismiss = { scrubberVisible = false },
+                                            onPageSelected = { idx -> updateSubPage(idx) }
+                                        )
                                     }
 
 
@@ -2499,56 +2545,41 @@ fun ReaderScreen(
 
 
 
-                        if (showReturnChip && previousPosition != null) {
-
+                        AnimatedVisibility(
+                            visible = showReturnChip && previousPosition != null,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 80.dp),
+                            enter = fadeIn(tween(240)) + slideInVertically(
+                                initialOffsetY = { -it / 2 },
+                                animationSpec = tween(280, easing = EaseOut)
+                            ),
+                            exit = fadeOut(tween(420)) + slideOutVertically(
+                                targetOffsetY = { -it / 2 },
+                                animationSpec = tween(360, easing = EaseOut)
+                            )
+                        ) {
                             Surface(
-
-                                modifier = Modifier
-
-                                    .align(Alignment.TopCenter)
-
-                                    .padding(top = 80.dp)
-
-                                    .clickableWithFeedback {
-
-                                        previousPosition?.let { (ch, offset) ->
-
-                                            currentChapterIndex = ch
-
-                                            scope.launch { scrollState.scrollTo(offset) }
-
-                                        }
-
-                                        showReturnChip = false
-
-                                    },
-
+                                modifier = Modifier.clickableWithFeedback {
+                                    previousPosition?.let { (ch, offset) ->
+                                        currentChapterIndex = ch
+                                        scope.launch { scrollState.scrollTo(offset) }
+                                    }
+                                    showReturnChip = false
+                                },
                                 shape = RoundedCornerShape(20.dp),
-
                                 color = MintPrimary,
-
                                 shadowElevation = 6.dp
-
                             ) {
-
                                 Row(
-
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-
                                     verticalAlignment = Alignment.CenterVertically
-
                                 ) {
-
                                     Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null, tint = Color.White)
-
                                     Spacer(modifier = Modifier.width(6.dp))
-
                                     Text("返回上次处", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-
                                 }
-
                             }
-
                         }
 
                     }

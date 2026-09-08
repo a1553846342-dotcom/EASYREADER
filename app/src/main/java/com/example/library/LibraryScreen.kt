@@ -681,13 +681,26 @@ fun LibraryScreen(
                                 val visibleBooks = if (groupExpanded) group.books
                                     else group.books.take(AGGREGATE_PREVIEW_COUNT)
                                 items(visibleBooks, key = { "${group.sourceId}_${it.id}" }) { book ->
+                                    val bookSource = availableSources.firstOrNull { it.id == book.sourceId }
                                     StaggeredComicCard(
                                         book = book,
                                         imageLoader = imageLoader,
                                         coverHeaders = rememberCoverHeaders(book, availableSources),
                                         sourceName = group.sourceName,
-                                        novel = availableSources.firstOrNull { it.id == book.sourceId }?.isNovelSource == true,
-                                        onClick = { onOpenComic(book) }
+                                        novel = bookSource?.isNovelSource == true,
+                                        onClick = {
+                                            if (bookSource != null && bookSource.isNovelSource &&
+                                                !bookSource.capabilities.supportOnlineText
+                                            ) {
+                                                // 下载型小说源（Z-Library）：不走漫画章节页
+                                                //（会报"当前书源不支持漫画"），直接进下载流程
+                                                activeDownloadBook = book
+                                                showDownloadPanel = true
+                                                viewModel.startDownload(book)
+                                            } else {
+                                                onOpenComic(book)
+                                            }
+                                        }
                                     )
                                 }
                                 // 展开按钮：还有隐藏结果时出现在第 6 条之后

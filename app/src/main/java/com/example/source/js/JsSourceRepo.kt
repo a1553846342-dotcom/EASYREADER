@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 object JsSourceRepo {
 
     /** 本地补丁版本：升级后强制重新下载全部源脚本，避免缓存到旧补丁/坏脚本。 */
-    private const val PATCH_VERSION = 25
+    private const val PATCH_VERSION = 26
 
     /** 已知成人源 key 黑名单（默认隐藏，设置彩蛋开启后可见）。 */
     val ADULT_KEYS = setOf(
@@ -569,11 +569,64 @@ object JsSourceRepo {
             if (!url.endsWith('/')) url += '/';
             """.trimIndent()
         )
-        // comick：loadEp 请求章节页没带 headers，容易被反爬拒绝导致图片列表为空
-        "comick" -> script.replace(
-            Regex("""let res = await Network\.get\(url\);"""),
-            """let res = await Network.get(url, Comick.getRandomHeaders());"""
-        )
+        // comick：loadEp 请求章节页没带 headers，容易被反爬拒绝导致图片列表为空；
+        // 且章节列表 key 含 hid，同语言同章节号被不同汉化组重复上传时会出现 11、11、22、22 的重复章节
+        "comick" -> {
+            var patched = script.replace(
+                Regex("""let res = await Network\.get\(url\);"""),
+                """let res = await Network.get(url, Comick.getRandomHeaders());"""
+            )
+            patched = patched.replace(
+                Regex(
+                    """orderedItems\.forEach\(item => \{.*?chaptersMap\.set\(key, label\);\s*\}\);""",
+                    setOf(RegexOption.DOT_MATCHES_ALL)
+                ),
+                """
+                // 两遍扫描去重（编号相同仅保留最新上传的 hid）：
+                // orderedItems 已按旧→新排列，latestByNumber 后写覆盖即最新
+                let latestByNumber = new Map();
+                orderedItems.forEach(item => {
+                    let lang = item?.lang || 'unknown';
+                    let hasChap = item?.chap != null && item.chap !== "";
+                    let hasVol = item?.vol != null && item.vol !== "";
+                    if (hasChap) {
+                        latestByNumber.set('chapter//' + item.chap + '//' + lang, item);
+                    } else if (hasVol) {
+                        latestByNumber.set('volume//' + item.vol + '//' + lang, item);
+                    }
+                });
+                orderedItems.forEach(item => {
+                    let lang = item?.lang || 'unknown';
+                    let hid = item?.hid || 'unknown';
+                    let hasChap = item?.chap != null && item.chap !== "";
+                    let hasVol = item?.vol != null && item.vol !== "";
+                    let key;
+                    let label;
+                    let dedupKey = null;
+
+                    if (hasChap) {
+                        key = hid + '//chapter//' + item.chap + '//' + lang;
+                        label = '第' + item.chap + '话';
+                        dedupKey = 'chapter//' + item.chap + '//' + lang;
+                    } else if (hasVol) {
+                        key = hid + '//volume//' + item.vol + '//' + lang;
+                        label = '第' + item.vol + '卷';
+                        dedupKey = 'volume//' + item.vol + '//' + lang;
+                    } else {
+                        key = hid + '//no//-1//' + lang;
+                        label = item?.title ? item.title : '无标卷';
+                    }
+
+                    if (dedupKey != null && latestByNumber.get(dedupKey) !== item) {
+                        return;
+                    }
+
+                    chaptersMap.set(key, label);
+                });
+                """.trimIndent()
+            )
+            patched
+        }
         // picacg：登录后补存账号，否则搜索时的 reLogin 报 Invalid account data
         "picacg" -> {
             var patched = script.replace(

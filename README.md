@@ -19,7 +19,7 @@ Kotlin · Jetpack Compose (Material 3) · MVVM · 单 Activity
 [提交 Issue](https://github.com/a1553846342-dotcom/EASYREADER/issues)
 
 ![Android](https://img.shields.io/badge/Android-API%2024%2B-green)
-![Release](https://img.shields.io/badge/Release-v1.0.5-orange)
+![Release](https://img.shields.io/badge/Release-v1.0.6-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20M3-8A2BE2)
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
@@ -64,6 +64,8 @@ Android 端小说 / 漫画阅读器，内置多书源在线聚合搜索与下载
 ### 📖 文字阅读器
 
 - **翻页动画（五种）**：仿真 3D 卷页（真实折角、阴影、纸背反光）/ 覆盖 / 平移 / 渐变淡出 / 上下滚动，每种单独调过手感
+
+- **串珠快速翻页（v1.0.6）**：长按页面任意位置 1s 唤出——所有页面整页刚体贴在圆柱内壁上环绕圆心排列（等半径、仅 Y 轴单次旋转、无缩放，侧页变窄纯靠透视收窄，边缘完整连续无拼条痕迹）；拖动沿弧 1:1 跟手，松手磁吸最近页点击进入；甩动按力度惯性连翻（普通快甩约 3 页、极速甩封顶 12 页）；进场 / 逐页掠过 / 提交 / 取消四处伴随真实翻书声（page_flip.ogg）
 
 - **真实排版分页引擎**：基于 Compose `Paragraph` 测量，分页点均为真实行边界，段落跨页不丢行；超大章节（>20 万字符）分块渐进测量 + LRU 分页缓存，首屏几乎即时
 
@@ -522,6 +524,28 @@ Release 包仅含 arm64 ONNX 库，x86\_64 模拟器经 ARM 转译运行 ONNX �
 ## 更新日志摘要
 
 逐项变更的完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+**v1.0.6（2026-09-08）— 串珠快速翻页（整页刚体）+ 长按全页触发**
+
+新增串珠快速翻页：
+
+- **整页刚体圆柱布局**：长按页面任意位置 1s 唤出——每页为完整不可切割刚体，贴在圆柱内壁上环绕圆心排列：所有页面到圆心等半径、每页仅一次 Y 轴旋转（统一虚拟圆心轴）、无任何额外缩放，侧页变窄完全来自旋转本身的自然透视收窄（foreshortening）——页面边缘完整连续、高度一致，无切条拼接的锯齿与断裂（早期实现曾走切条方案，边缘破碎如碎纸片，已整体重构）
+
+- **手感**：拖动沿圆弧 1:1 跟手（stride = 弧长投影），松手磁吸最近页；进场 / 退场时目标页在满屏与环上一页之间收放过渡
+
+- **甩动惯性按力度连翻**：基于松手速度（VelocityTracker，px/s）投影翻页数——慢拖（≈400px/s）0 页、普通快甩（≈2500px/s）约 3 页、极速甩封顶 12 页
+
+- **真实翻书声**：page_flip.ogg 走 SoundPool，进场 / 逐页掠过 / 提交 / 取消四个触发点
+
+- **长按全页触发**：触发区域从中间 1/3 扩展到整个页面，左右 1/3 快速点按翻页不受影响
+
+阅读器与书源修复：
+
+- **漫画加载单圈**：删除 GL 纹理层静态加载圈，加载指示统一为 Compose 层 ChasingDots 动画（与书库搜索同款 52dp 主题色），根治两圈叠加
+
+- **书架下载型小说源**：Z-Library 等下载型小说源在聚合区点击不再误入漫画章节页（原会报「当前书源不支持漫画」），改为直接进入下载流程
+
+- **comick 书源补丁 v26**：章节列表两遍扫描去重——同语言同章节号被不同汉化组重复上传时只保留最新（修复 11、11、22、22 重复章节）
 
 **v1.0.5（2026-09-05）— 漫画阅读器整体重做 + 漫画整页翻译**
 
