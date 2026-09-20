@@ -3,6 +3,10 @@ package com.example.ui.components
 import androidx.compose.animation.AnimatedContent
 import com.example.ui.components.AppIconButton
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -10,6 +14,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -277,6 +283,18 @@ private fun DayCell(
     }
 }
 
+/**
+ * 年视图：GitHub 贡献图布局 —— 列 = 周（约 53 列），行 = 星期（7 行，周一起始）。
+ *
+ * 为什么重写：原先是「12 行 x 31 列」矩阵，在手机上每一格只有约 9.5dp 宽，
+ * 却要塞进 8sp 的日期数字，横轴标签互相挤压重叠、根本看不清写的是什么；
+ * 单元格 .height(20.dp) 配 weight(1f)，宽 9.5 高 20 —— 就是「长方形不好看」。
+ *
+ * 改成周列布局后：
+ * - 单元格用 size(cell) 强制正方形，手机上最小 16dp，宽屏自动放大铺满；
+ * - 横轴变成「月份」标签（1月…12月），每个横跨约 4 周，宽度足够、看得清；
+ * - 窄屏放不下全年时横向滚动，并自动定位到今天所在的周。
+ */
 @Composable
 private fun YearHeatmap(
     dailyTotals: Map<String, Long>,
@@ -284,83 +302,236 @@ private fun YearHeatmap(
     onDayClick: (String) -> Unit
 ) {
     val todayStr = remember { dateStrOf(todayCalendar()) }
-    Column {
-        // 表头：月份标签列 + 1..31 天数
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(modifier = Modifier.width(34.dp))
-            Row(Modifier.weight(1f)) {
-                for (d in 1..31) {
-                    Text(
-                        text = if (d % 5 == 0 || d == 31) "$d" else "",
-                        fontSize = 8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+    val cellGap = 3.dp
+    val minCell = 16.dp          // 手机上保证可点、视觉舒坦的最小边长
+    val weekdayLabelWidth = 20.dp
+
+    // 该年全部日期预计算成 (列 x 行) 网格，避免组合期反复创建 Calendar
+    val grid = remember(year) { buildYearGrid(year) }
+
+    // 入场：按星期行错峰淡入。每行共用一个动画状态（7 个），
+    // 不给 370+ 个格子各起一个 animateFloatAsState。
+    var started by remember(year) { mutableStateOf(false) }
+    LaunchedEffect(year) { started = true }
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val avail = maxWidth - weekdayLabelWidth
+        val minStep = minCell + cellGap
+        // 宽屏（平板 / 横屏 / 折叠屏展开）：整年铺满，格子自动变大；
+        // 窄屏：保持最小边长，横向滚动查看全年。
+        val step = if (minStep * grid.columns <= avail) avail / grid.columns else minStep
+        val cell = step - cellGap
+
+        val scrollState = rememberScrollState()
+        // 打开年视图先滚到「今天」附近，而不是停在 1 月
+        val density = LocalDensity.current
+        LaunchedEffect(year, step) {
+            val stepPx = with(density) { step.toPx() }
+            val target = if (grid.todayColumn >= 0) {
+                ((grid.todayColumn - 3) * stepPx).toInt().coerceAtLeast(0)
+            } else {
+                scrollState.maxValue
             }
+            scrollState.animateScrollTo(target.coerceAtMost(scrollState.maxValue))
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        for (m in 0..11) {
-            val daysInMonth = Calendar.getInstance().apply {
-                set(year, m, 1)
-            }.getActualMaximum(Calendar.DAY_OF_MONTH)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "${m + 1}月",
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.width(34.dp)
-                )
-                Row(Modifier.weight(1f)) {
-                    for (d in 1..31) {
-                        val valid = d <= daysInMonth
-                        val dateStr = "%04d-%02d-%02d".format(year, m + 1, d)
-                        val seconds = dailyTotals[dateStr] ?: 0L
-                        val isToday = dateStr == todayStr
+
+        Column {
+            Row(Modifier.horizontalScroll(scrollState)) {
+                // 左侧星期标签：只标 一/三/五/日，避免小屏挤成一团
+                Column {
+                    Spacer(Modifier.height(16.dp)) // 与顶部月份标签行对齐
+                    for (r in 0..6) {
                         Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(1.dp)
-                                .height(20.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(
-                                    if (valid && seconds > 0) {
-                                        MintPrimary.copy(alpha = heatAlpha(seconds))
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            modifier = Modifier.height(cell),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (r == 0 || r == 2 || r == 4 || r == 6) {
+                                Text(
+                                    text = WEEKDAY_LABELS[r],
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.width(weekdayLabelWidth)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    // ── 横轴：月份标签。每个横跨约 4 周，宽度足够，看得清 ──
+                    Box(Modifier.height(16.dp)) {
+                        Row {
+                            for (m in 0..11) {
+                                val start = grid.monthStartColumn[m]
+                                val end = if (m == 11) grid.columns else grid.monthStartColumn[m + 1]
+                                val span = (end - start).coerceAtLeast(1)
+                                val w = step * span
+                                Box(Modifier.width(w)) {
+                                    // 放不下就不画，宁缺毋滥（避免又挤成一团模糊）
+                                    if (w >= 26.dp) {
+                                        Text(
+                                            text = "${m + 1}月",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
                                     }
-                                )
-                                .then(
-                                    if (isToday) Modifier.border(1.dp, MintPrimary, RoundedCornerShape(3.dp)) else Modifier
-                                )
-                                .then(
-                                    if (valid) Modifier.clickableWithFeedback { onDayClick(dateStr) } else Modifier
-                                )
+                                }
+                            }
+                        }
+                    }
+
+                    // ── 7 行 x columns 列 的正方形格子 ──
+                    for (r in 0..6) {
+                        val rowAlpha by animateFloatAsState(
+                            targetValue = if (started) 1f else 0f,
+                            animationSpec = tween(durationMillis = 240, delayMillis = r * 45),
+                            label = "yearRowAlpha"
                         )
+                        Row(Modifier.graphicsLayer { alpha = rowAlpha }) {
+                            for (col in 0 until grid.columns) {
+                                val dateStr = grid.cellDate(col, r)
+                                YearCell(
+                                    dateStr = dateStr,
+                                    seconds = if (dateStr != null) dailyTotals[dateStr] ?: 0L else 0L,
+                                    isToday = dateStr != null && dateStr == todayStr,
+                                    cell = cell,
+                                    onDayClick = onDayClick
+                                )
+                            }
+                        }
                     }
                 }
             }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("少", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            listOf(0.2f, 0.4f, 0.65f, 0.9f).forEach { a ->
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 图例
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("少", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                listOf(0.2f, 0.4f, 0.65f, 0.9f).forEach { a ->
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MintPrimary.copy(alpha = a))
+                    )
+                }
                 Spacer(modifier = Modifier.width(4.dp))
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(MintPrimary.copy(alpha = a))
+                Text("多", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    "颜色越深 = 当天读得越久",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("多", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.weight(1f))
-            Text("颜色越深 = 当天读得越久", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** 单个年份格子：正方形，可点击。 */
+@Composable
+private fun YearCell(
+    dateStr: String?,
+    seconds: Long,
+    isToday: Boolean,
+    cell: Dp,
+    onDayClick: (String) -> Unit
+) {
+    if (dateStr == null) {
+        // 该年 1 月 1 日之前的空位
+        Spacer(modifier = Modifier.size(cell))
+        return
+    }
+    val shape = RoundedCornerShape(3.dp)
+    val filled = seconds > 0
+    Box(
+        modifier = Modifier
+            .size(cell)
+            .clip(shape)
+            .background(
+                if (filled) {
+                    MintPrimary.copy(alpha = heatAlpha(seconds))
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                }
+            )
+            .then(
+                if (isToday) Modifier.border(1.5.dp, MintGold, shape) else Modifier
+            )
+            .clickableWithFeedback { onDayClick(dateStr) }
+    )
+}
+
+private val WEEKDAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
+
+/** 年视图网格：列 = 周，行 = 星期（周一起始）。 */
+private class YearGrid(
+    val columns: Int,
+    val daysInYear: Int,
+    val todayColumn: Int,
+    val monthStartColumn: IntArray
+) {
+    private val cells: Array<String?> = arrayOfNulls(columns * 7)
+
+    fun put(index: Int, value: String) {
+        cells[index] = value
+    }
+
+    fun cellDate(col: Int, row: Int): String? {
+        val i = col * 7 + row
+        return if (i in cells.indices) cells[i] else null
+    }
+}
+
+private fun buildYearGrid(year: Int): YearGrid {
+    val first = Calendar.getInstance().apply {
+        clear()
+        set(Calendar.YEAR, year)
+        set(Calendar.MONTH, Calendar.JANUARY)
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+    val jan1Dow = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0
+    val daysInYear = first.getActualMaximum(Calendar.DAY_OF_YEAR)
+    val columns = (jan1Dow + daysInYear + 6) / 7
+
+    val monthStartColumn = IntArray(12)
+    for (m in 0..11) {
+        val c = Calendar.getInstance().apply {
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, m)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }
+        monthStartColumn[m] = (jan1Dow + c.get(Calendar.DAY_OF_YEAR) - 1) / 7
+    }
+
+    val today = Calendar.getInstance()
+    val todayColumn = if (today.get(Calendar.YEAR) == year) {
+        (jan1Dow + today.get(Calendar.DAY_OF_YEAR) - 1) / 7
+    } else {
+        -1
+    }
+
+    val grid = YearGrid(columns, daysInYear, todayColumn, monthStartColumn)
+    val c = Calendar.getInstance().apply {
+        clear()
+        set(Calendar.YEAR, year)
+        set(Calendar.MONTH, Calendar.JANUARY)
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+    for (d in 1..daysInYear) {
+        grid.put(
+            jan1Dow + d - 1,
+            "%04d-%02d-%02d".format(year, c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+        )
+        c.add(Calendar.DAY_OF_MONTH, 1)
+    }
+    return grid
 }
 
 /** 分钟数 -> 颜色 alpha（0/1-9/10-29/30-59/60+）。 */

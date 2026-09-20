@@ -33,12 +33,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import dev.liquidglass.compose.liquidGlassProvider
 import dev.liquidglass.compose.rememberLiquidGlassProviderState
 import com.example.ui.components.LocalLiquidGlassState
@@ -54,6 +57,7 @@ import com.kashif_e.backdrop.backdrops.layerBackdrop
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
 import com.example.ui.*
+import com.example.ui.theme.LocalAppBottomInset
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.luminance
@@ -147,6 +151,19 @@ class MainActivity : ComponentActivity() {
             }
 
             val autoNightMode by viewModel.autoNightMode.collectAsState()
+
+            // ── A5 系统栏图标对比度跟随 App 自己的主题 ────────────────────
+            // enableEdgeToEdge() 裸调用后，状态栏/导航栏图标颜色跟随**系统** uimode，
+            // 与 App 内的 autoNightMode 开关不同步：用户在 App 里开了夜间模式、
+            // 系统是白天时，会出现「深色背景 + 深色图标」看不见的情况。
+            val view = LocalView.current
+            DisposableEffect(autoNightMode) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                // 浅色背景 -> 图标用深色（isAppearanceLightStatusBars = true）
+                controller.isAppearanceLightStatusBars = !autoNightMode
+                controller.isAppearanceLightNavigationBars = !autoNightMode
+                onDispose {}
+            }
             val blueLightFilter by viewModel.blueLightFilter.collectAsState()
             val blueLightAlpha by viewModel.blueLightAlpha.collectAsState()
             val colorPrimaryIndex by viewModel.colorPrimaryIndex.collectAsState()
@@ -165,7 +182,25 @@ class MainActivity : ComponentActivity() {
                 colorSecondaryIndex = colorSecondaryIndex
             ) {
                 val liquidGlass = rememberLiquidGlassProviderState()
+
+                // ── A1 系统字体缩放钳制 ────────────────────────────────────
+                // 全 App 有 443 处硬编码 xx.sp，而大量容器高度是写死的
+                // （底栏角标 16dp、日历格 44dp、封面 155dp、图表标签 20dp…）。
+                // 小米「巨无霸字体」/华为大字体可把 sp 放大到 1.3~1.5 倍，
+                // 直接撑爆这些容器 → 这就是「在自己手机上正常、别人手机上错位」的主因。
+                // 这里把 fontScale 夹到 [0.85, 1.15]：放大不再撑爆布局，
+                // 缩小也保留下限不至于看不清。
+                // 注：阅读器正文字号由 ReaderScreen 自管，不受此影响。
+                val systemDensity = LocalDensity.current
+                val clampedDensity = remember(systemDensity) {
+                    Density(
+                        density = systemDensity.density,
+                        fontScale = systemDensity.fontScale.coerceIn(0.85f, 1.15f)
+                    )
+                }
+
                 CompositionLocalProvider(
+                    LocalDensity provides clampedDensity,
                     LocalLiquidGlassState provides liquidGlass,
                     com.example.ui.components.LocalScrollTilt provides scrollTilt
                 ) {
@@ -221,6 +256,12 @@ class MainActivity : ComponentActivity() {
                         // 效果异常（疑似该机型快照管线不应用链式 RenderEffect / 背景图异步加载竞态），
                         // 已回退实时模糊路径；相关代码保留在 backdrop 库中但不再接线。
                         val bgBackdrop = rememberLayerBackdrop()
+                        // ── A2 底部避让唯一事实来源 ──────────────────────────
+                        // 悬浮 Tab 栏总高 = 12dp 上边距 + 68dp 栏体 + 12dp 下边距 = 92dp，
+                        // 再叠上真实系统导航栏高度（手势导航 ≈0、三键导航 ≈48dp）。
+                        // 此前各页各写 96/104/120/24/60.dp 去猜，三键导航机型必然压栏。
+                        val navBarBottom =
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                         Box(modifier = Modifier.fillMaxSize()) {
                             Box(
                                 modifier = Modifier
@@ -248,6 +289,7 @@ class MainActivity : ComponentActivity() {
                             }
                             CompositionLocalProvider(
                                 LocalAppBackgroundActive provides bgActive,
+                                LocalAppBottomInset provides (navBarBottom + 92.dp + 8.dp),
                                 LocalBackgroundTone provides bgTone,
                                 LocalGlassBackdrop provides (bgBackdrop.takeIf { glassEnabled }),
                                 com.example.ui.components.LocalRenderQuality provides renderQuality,
@@ -417,7 +459,8 @@ class MainActivity : ComponentActivity() {
                                 snackbarHost = {
                                     SnackbarHost(
                                         hostState = snackbarHostState,
-                                        modifier = Modifier.padding(bottom = 60.dp)
+                                        // A2：原先固定 60dp，三键导航机型会被 Tab 栏+导航栏一起盖住
+                                        modifier = Modifier.padding(bottom = LocalAppBottomInset.current)
                                     ) { data ->
                                         com.example.ui.components.AppErrorSnackbar(
                                             message = data.visuals.message,
@@ -463,7 +506,7 @@ class MainActivity : ComponentActivity() {
                                                         libraryViewModel.openComic(book)
                                                         navController.navigate("comic_chapters")
                                                     },
-                                                    extraBottomPadding = 96.dp
+                                                    extraBottomPadding = LocalAppBottomInset.current
                                                 )
                                             1 -> HomeScreen(
                                                 books = books,
@@ -552,7 +595,7 @@ class MainActivity : ComponentActivity() {
                                                     prefs = viewModel.prefs,
                                                     backupManager = viewModel.backupManager,
                                                     categories = categories,
-                                                    extraBottomPadding = 96.dp,
+                                                    extraBottomPadding = LocalAppBottomInset.current,
                                                     onAdultSourcesChange = { sourceViewModel.setAdultSourcesEnabled(it) },
                                                     onAddCategory = { name ->
                                                         viewModel.addCategory(name)
@@ -926,44 +969,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onSessionEnd = { session ->
                                     viewModel.addReadingSession(session)
-                                }
-                            )
-                        } }
-
-                        composable(
-                            "novel_reader_online",
-                            enterTransition = {
-                                fadeIn(tween(300)) + slideInHorizontally { it / 4 }
-                            },
-                            exitTransition = { fadeOut(tween(200)) }
-                        ) { CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this) {
-                            val comicBook by libraryViewModel.comicBook.collectAsState()
-                            val novelChapter by libraryViewModel.activeNovelChapter.collectAsState()
-                            val novelText by libraryViewModel.novelChapterText.collectAsState()
-                            val novelLoading by libraryViewModel.novelChapterLoading.collectAsState()
-                            val novelError by libraryViewModel.novelChapterError.collectAsState()
-                            val chapters by libraryViewModel.comicChapters.collectAsState()
-                            val idx = chapters.indexOfFirst { it.id == novelChapter?.id }
-
-                            com.example.ui.NovelReaderScreen(
-                                bookTitle = comicBook?.title,
-                                chapter = novelChapter,
-                                text = novelText,
-                                loading = novelLoading,
-                                error = novelError,
-                                hasPrevChapter = idx > 0,
-                                hasNextChapter = idx >= 0 && idx < chapters.size - 1,
-                                onBack = { navController.popBackStack() },
-                                onRetry = { novelChapter?.let { libraryViewModel.loadChapterText(it) } },
-                                onLoadPrev = {
-                                    if (idx > 0) {
-                                        libraryViewModel.loadChapterText(chapters[idx - 1])
-                                    }
-                                },
-                                onLoadNext = {
-                                    if (idx >= 0 && idx < chapters.size - 1) {
-                                        libraryViewModel.loadChapterText(chapters[idx + 1])
-                                    }
                                 }
                             )
                         } }

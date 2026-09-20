@@ -181,7 +181,15 @@ fun WeeklyReadingChart(
                     val isSelected = index == selectedDayIndex
                     
                     val rawFraction = if (maxMinutes <= 0 || mins <= 0) 0f else (mins.toFloat() / maxMinutes.toFloat()).coerceIn(0.04f, 1f)
-                    val animatedFraction = rawFraction * barAnimatables[index].value
+                    // B4：原先只有一个入场遮罩（barAnimatables 跑一次到 1f 就再也不动），
+                    // 之后当天阅读时长实时增长时柱子直接重绘、毫无过渡。
+                    // 拆成两层：本层负责「数值变化」的过渡，入场遮罩仍由 barAnimatables 负责。
+                    val animatedRaw by animateFloatAsState(
+                        targetValue = rawFraction,
+                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                        label = "barValue_$index"
+                    )
+                    val animatedFraction = animatedRaw * barAnimatables[index].value
 
                     val scaleState by animateFloatAsState(
                         targetValue = if (isSelected) 1.08f else 1.0f,

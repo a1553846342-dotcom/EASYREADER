@@ -35,6 +35,7 @@ import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.rememberInfiniteTransition
 
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 
 import androidx.compose.animation.core.infiniteRepeatable
 
@@ -195,6 +196,7 @@ import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
 
 import com.example.ui.theme.clickableWithFeedback
+import com.example.ui.theme.animateAlpha
 
 import com.example.ui.theme.MintGold
 
@@ -1637,7 +1639,9 @@ fun ReaderScreen(
 
                                         // 此链禁止添加 clickable/pointerInput：
                                         // graphicsLayer alpha=0 不豁免 Compose 命中测试，会变成幽灵热区
-                                        .graphicsLayer { alpha = if (showBars) 0f else 1f },
+                                        // B5：原先 alpha 直接取 0/1，页眉页脚是"瞬间闪没"，
+                                        // 与顶/底栏的 slideInVertically 完全不同步。改为透明度过渡。
+                                        .animateAlpha(if (showBars) 0f else 1f),
 
                                     horizontalArrangement = Arrangement.SpaceBetween
 
@@ -2395,7 +2399,9 @@ fun ReaderScreen(
 
                                         .padding(horizontal = marginHorizontal.dp, vertical = 6.dp)
 
-                                        .graphicsLayer { alpha = if (showBars) 0f else 1f },
+                                        // B5：原先 alpha 直接取 0/1，页眉页脚是"瞬间闪没"，
+                                        // 与顶/底栏的 slideInVertically 完全不同步。改为透明度过渡。
+                                        .animateAlpha(if (showBars) 0f else 1f),
 
                                     horizontalArrangement = Arrangement.SpaceBetween
 
@@ -2423,13 +2429,18 @@ fun ReaderScreen(
 
 
 
-                        if (showTtsBar) {
+                        // B5：TTS 播放器原先直接显隐、无任何进出场，
+                        // 与其它浮层（目录/设置面板都有动画）观感不一致。
+                        AnimatedVisibility(
+                            visible = showTtsBar,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            enter = fadeIn(tween(180)) + slideInVertically(tween(240, easing = EaseOut)) { it / 3 },
+                            exit = fadeOut(tween(150)) + slideOutVertically(tween(200)) { it / 3 }
+                        ) {
 
                             Card(
 
                                 modifier = Modifier
-
-                                    .align(Alignment.BottomCenter)
 
                                     .padding(16.dp)
 
@@ -2549,7 +2560,10 @@ fun ReaderScreen(
                             visible = showReturnChip && previousPosition != null,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
-                                .padding(top = 80.dp),
+                                // B5：原 80.dp 是拍脑袋的魔法数字，刘海/挖孔更高的机型
+                                // 会把浮层顶到状态栏里。改为真实状态栏高度 + 视觉间距。
+                                .statusBarsPadding()
+                                .padding(top = 56.dp),
                             enter = fadeIn(tween(240)) + slideInVertically(
                                 initialOffsetY = { -it / 2 },
                                 animationSpec = tween(280, easing = EaseOut)
@@ -2600,7 +2614,11 @@ fun ReaderScreen(
 
             exit = fadeOut(tween(150)),
 
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp)
+            // B5：同上，三键导航机型（导航栏 ≈48dp）会把浮层压在导航栏后面
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 56.dp)
 
         ) {
 
@@ -2692,7 +2710,14 @@ fun ReaderScreen(
 
         // 亮度遮罩：夜间阅读降低刺眼感（不拦截触摸，不影响菜单栏）
 
-        if (readerBrightness < 0.99f) {
+        // B5：拖亮度滑块时遮罩 alpha 原本逐帧硬跳（拖动过程一卡一卡的），
+        // 改为平滑过渡；阈值判断也改用动画值，避免从"无遮罩"到"有遮罩"瞬现。
+        val dimAlpha by animateFloatAsState(
+            targetValue = (1f - readerBrightness) * 0.6f,
+            animationSpec = tween(durationMillis = 160),
+            label = "readerDim"
+        )
+        if (dimAlpha > 0.002f) {
 
             Box(
 
@@ -2700,7 +2725,7 @@ fun ReaderScreen(
 
                     .fillMaxSize()
 
-                    .background(Color.Black.copy(alpha = (1f - readerBrightness) * 0.6f))
+                    .background(Color.Black.copy(alpha = dimAlpha))
 
             )
 

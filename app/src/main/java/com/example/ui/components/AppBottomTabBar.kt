@@ -14,12 +14,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -47,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -154,12 +159,19 @@ fun AppBottomTabBar(
     val shape = RoundedCornerShape(50)
     val quality = LocalRenderQuality.current
 
-    // 主题 key：主题色变化时强制重建玻璃样式/着色器
-    key(animatedPrimary, animatedAccent) {
+    // 主题 key：主题色变化时强制重建玻璃样式/着色器。
+    // 修复：原先 key 用的是 animatedPrimary/animatedAccent（弹簧动画的**当前帧值**），
+    // 主题切换动画期间每帧都在变 → 每帧销毁重建整条 Tab 栏，掉帧并丢失
+    // tabPositions（指示条位置）与按压状态。改用动画的**目标值** colors.primary/accent，
+    // 只在用户真正换主题时重建一次。
+    key(colors.primary, colors.accent) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = horizontalMargin, vertical = 12.dp)
+                // A2：让开系统导航栏。手势导航高度为 0（无影响），
+                // 三键导航约 48dp——此前没有这行，Tab 栏会被压在导航栏后面截掉一截。
+                .navigationBarsPadding()
         ) {
             Row(
                 modifier = Modifier
@@ -262,6 +274,23 @@ private fun TabIcon(
     onPositioned: (Rect) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    // B7：Tab 此前 indication = null 且无任何按压缩放/触觉，点下去完全没有手感。
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessHigh
+        ),
+        label = "tabPressScale"
+    )
+    val haptics = LocalHapticFeedback.current
+    // 只在「未按下 -> 按下」跳变时振一次；写在组合期会随重组重复触发
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
 
     val iconScale by animateFloatAsState(
         targetValue = if (selected) 1.15f else 1f,
@@ -275,6 +304,10 @@ private fun TabIcon(
 
     Column(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .onGloballyPositioned { coords ->
                 onPositioned(
                     Rect(

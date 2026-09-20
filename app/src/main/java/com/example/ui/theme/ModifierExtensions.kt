@@ -53,9 +53,13 @@ fun Modifier.clickableWithFeedback(
         label = "click_glow"
     )
 
-    // Haptic tick on press
-    if (isPressed) {
-        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    // Haptic tick on press。
+    // 修复：原先直接在组合期调用，重组会重复触发（同一按住状态被振多次）。
+    // 放进 LaunchedEffect 后只在「从未按下 -> 按下」这一跳变时执行一次。
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
     }
 
     this
@@ -79,5 +83,25 @@ fun Modifier.clickableWithFeedback(
             enabled = enabled,
             onClick = onClick
         )
+}
+
+/**
+ * 透明度过渡：把 `graphicsLayer { alpha = if (x) 0f else 1f }` 这种**瞬间闪没**
+ * 改成平滑淡入淡出。
+ *
+ * 只叠 graphicsLayer，不会引入 clickable / pointerInput，
+ * 因此用于「禁止命中测试」的装饰链（如阅读页页眉页脚）是安全的。
+ */
+fun Modifier.animateAlpha(
+    target: Float,
+    durationMillis: Int = 220,
+    label: String = "animateAlpha"
+): Modifier = composed {
+    val alpha by animateFloatAsState(
+        targetValue = target,
+        animationSpec = tween(durationMillis = durationMillis),
+        label = label
+    )
+    this.graphicsLayer { this.alpha = alpha }
 }
 

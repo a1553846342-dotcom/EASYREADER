@@ -65,6 +65,7 @@ import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.glassTitleColor
+import com.example.ui.theme.LocalAppBottomInset
 import com.example.ui.mascot.MascotSpriteSheet
 import java.util.Calendar
 import androidx.compose.ui.semantics.contentDescription
@@ -140,7 +141,8 @@ LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 // 底部避让放进 contentPadding：contentPadding 区不做裁剪，
                 // 卡片滚动到 tab 栏背后时玻璃背景/内容照常渲染（与其他页一致）。
-                contentPadding = PaddingValues(top = 12.dp, bottom = 120.dp)
+                // A2：原 120.dp magic number → 统一避让值
+                contentPadding = PaddingValues(top = 12.dp, bottom = LocalAppBottomInset.current)
             ) {
                 if (totalReadTimeSeconds == 0L) {
                     item(key = "stats_empty") {

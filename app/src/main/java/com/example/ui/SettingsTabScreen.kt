@@ -455,8 +455,10 @@ LazyColumn(
                                         },
                                         barHeightDp = 32,
                                         bubbleText = "$appBgDim%",
-                                        startText = "0",
-                                        endText = "50",
+                                        startText = "0%",
+                                        // C4：原先左端 "0"、右端 "50"、气泡 "$appBgDim%"，
+                                        // 单位与量纲混用；统一成 0%~50%
+                                        endText = "50%",
                                         colorBar = MintPrimary,
                                         colorBubble = Color.White,
                                         colorBubbleText = MintPrimary,
@@ -520,7 +522,7 @@ LazyColumn(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceAround
                             ) {
-                                val colorNames = listOf("蓝", "紫", "绿", "粉", "橙")
+                                // C3：此处曾声明 val colorNames（"蓝/紫/绿/粉/橙"）但从未使用，已删除
                                 com.example.ui.theme.BasePrimaryColors.forEachIndexed { index, color ->
                                     val selected = colorPrimaryIndex == index
                                     ColorMorphSwatch(

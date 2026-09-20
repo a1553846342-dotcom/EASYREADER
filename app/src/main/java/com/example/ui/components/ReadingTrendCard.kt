@@ -1,8 +1,11 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -103,7 +106,9 @@ fun ReadingTrendCard(
                     options = listOf(0 to "周", 1 to "月", 2 to "年"),
                     selected = tab,
                     onSelect = { tab = it },
-                    modifier = Modifier.width(150.dp)
+                    // A7：原固定 150.dp，窄屏 / 大字体下会把标题挤到换行。
+                    // 改为"最多 150dp"，空间不足时自动让给标题。
+                    modifier = Modifier.widthIn(max = 150.dp)
                 )
             }
 
@@ -351,6 +356,30 @@ private fun PeakHoursBars(
             val v = peak[hour]
             val ratio = v.toFloat() / max
             val isMax = v > 0 && v == max
+            // B4：原先 fillMaxHeight(ratio) 是即时计算，切「周/月/年」时 24 根柱
+            // 全部瞬间跳变——与同文件 TrendLineChart 的 reveal 生长动画落差极大。
+            // 改为每根柱独立过渡，并按小时错峰 12ms 形成"波浪式"刷新。
+            val animatedRatio by animateFloatAsState(
+                targetValue = ratio.coerceAtLeast(0.04f),
+                animationSpec = tween(
+                    durationMillis = 420,
+                    delayMillis = hour * 12,
+                    easing = FastOutSlowInEasing
+                ),
+                label = "peakBar_$hour"
+            )
+            // 选中/峰值高亮也过渡，避免点选小时时颜色硬切
+            val barColor by animateColorAsState(
+                targetValue = if (selectedHour == hour) {
+                    MintGold.copy(alpha = 0.95f)
+                } else if (isMax) {
+                    MintGold.copy(alpha = 0.65f)
+                } else {
+                    MintPrimary.copy(alpha = 0.55f)
+                },
+                animationSpec = tween(260),
+                label = "peakColor_$hour"
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -362,16 +391,9 @@ private fun PeakHoursBars(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 0.5.dp)
-                        .fillMaxHeight(ratio.coerceAtLeast(0.04f))
+                        .fillMaxHeight(animatedRatio)
                         .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                        .background(
-                            if (selectedHour == hour) {
-                                MintGold.copy(alpha = 0.95f)
-                            } else if (isMax) {
-                                MintGold.copy(alpha = 0.65f)
-                            }
-                            else MintPrimary.copy(alpha = 0.55f)
-                        )
+                        .background(barColor)
                 )
             }
         }

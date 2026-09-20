@@ -14,10 +14,17 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.MyApplication">
+        <!-- A4：折叠屏开合触发的是 smallestScreenSize（不是 screenSize）；
+             改「显示大小」触发 density，改字体触发 fontScale，主题切换触发 uiMode。
+             缺这些会导致折叠屏开合 / 调显示大小时 Activity 重建，
+             阅读进度、滚动位置、未保存输入全部丢失。
+             A3：enableEdgeToEdge() 不会替你设置软键盘模式。缺省时部分 OEM ROM
+             （MIUI / ColorOS 某些版本）走 adjustPan，键盘直接盖住底部面板的输入框。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|fontScale|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MyApplication">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

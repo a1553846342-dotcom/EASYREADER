@@ -1438,7 +1438,9 @@ private fun SourcePickerSheet(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(420.dp),
+                            // A7：原写死 420.dp，小屏或横屏（可用高可能只有 ~360dp）
+                            // 会溢出且无法滚动。改为"最多 420dp"，空间不足时收缩。
+                            .heightIn(max = 420.dp),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
                         item {

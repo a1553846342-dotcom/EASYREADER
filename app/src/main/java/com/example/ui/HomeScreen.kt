@@ -93,6 +93,7 @@ import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.clickableWithFeedback
 import com.example.ui.theme.glassTitleColor
+import com.example.ui.theme.LocalAppBottomInset
 import kotlin.math.roundToInt
 import android.widget.Toast
 import kotlinx.coroutines.launch
@@ -1109,7 +1110,9 @@ if (sortedBooks.isEmpty()) {
 
                     item(span = { GridItemSpan(maxLineSpan) }, key = "bottom_stats") {
                         // 4. BOTTOM INFO CARD: READING STATISTICS PREVIEW
-                        Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                        // A2：原 24.dp 完全不足以躲开悬浮 Tab 栏 + 系统导航栏，
+                        // 改用全 App 统一的下发值
+                        Column(modifier = Modifier.padding(bottom = LocalAppBottomInset.current)) {
                             Text(
                                 text = "阅读统计",
                                 fontSize = 20.sp,
@@ -1402,11 +1405,11 @@ private fun CategoryActionSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 // 任务四修复：悬浮 Tab 栏渲染在 MainActivity 层级（本面板之上），
-                // 原 28dp 底边距使「删除分类」行落在 Tab 栏后面被挡——抬高面板
-                // 至 Tab 栏上方（96dp 为全 App 底部避让惯例，见 LibraryScreen
-                // extraBottomPadding），另加 8dp 视觉间隙
+                // 原 28dp 底边距使「删除分类」行落在 Tab 栏后面被挡——抬高面板至 Tab 栏上方。
+                // A2：原 104.dp 是拍脑袋的 magic number，手势导航下多余、
+                // 三键导航下不足；改用 LocalAppBottomInset（导航栏 + Tab 栏实测高度）。
                 .padding(horizontal = 20.dp)
-                .padding(top = 28.dp, bottom = 104.dp)
+                .padding(top = 28.dp, bottom = LocalAppBottomInset.current)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null

@@ -1,8 +1,26 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class
+)
 
 package com.example.ui
 
 import android.os.StatFs
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -21,14 +39,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as ComposeSize
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppIconButton
+import com.example.ui.components.ShimmerBox
 import com.example.ui.theme.MintPrimary
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -85,6 +109,27 @@ fun CacheManagementScreen(
     var hasActiveComicDownload by remember { mutableStateOf(false) }
     var scanTrigger by remember { mutableIntStateOf(0) }
     var confirmRow by remember { mutableStateOf<StorageRow?>(null) }
+
+    // ── B1 清理动画状态 ──────────────────────────────────────────
+    // 清理完成后弹出「打勾 + 释放量」，替代原来只有一个 Toast
+    var successFreed by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(successFreed) {
+        if (successFreed != null) {
+            delay(2400)
+            successFreed = null
+        }
+    }
+    // 总占用数字：从 0 滚动到实测值，而不是直接蹦出来
+    val totalAnim = remember { Animatable(0f) }
+    LaunchedEffect(appTotalSize) {
+        if (appTotalSize > 0L) {
+            totalAnim.snapTo(0f)
+            totalAnim.animateTo(
+                appTotalSize.toFloat(),
+                androidx.compose.animation.core.tween(650, easing = FastOutSlowInEasing)
+            )
+        }
+    }
 
     fun formatSize(bytes: Long): String = when {
         bytes >= 1_073_741_824 -> String.format(Locale.getDefault(), "%.1f GB", bytes / 1_073_741_824.0)
@@ -170,12 +215,13 @@ fun CacheManagementScreen(
                     val after = targetsFor(key).sumOf { dirSize(it) }
                     (before - after).coerceAtLeast(0L)
                 }
+                // B1：清理成功不再只弹 Toast，改为播放「打勾 + 释放量」动画
                 val msg = when {
                     freed < 0 -> "检测到下载正在进行，已取消删除"
-                    freed > 0 -> "已释放 ${formatSize(freed)}"
+                    freed > 0 -> { successFreed = freed; "" }
                     else -> "没有可释放的内容"
                 }
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                if (msg.isNotEmpty()) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 scanTrigger++
             } finally {
                 isClearing = false
@@ -196,8 +242,12 @@ fun CacheManagementScreen(
                     val after = keys.sumOf { key -> targetsFor(key).sumOf { dirSize(it) } }
                     (before - after).coerceAtLeast(0L)
                 }
-                val msg = if (freed > 0) "已释放 ${formatSize(freed)}" else "没有可释放的内容"
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                // B1：同上，成功走动画
+                val msg = if (freed > 0) {
+                    successFreed = freed
+                    ""
+                } else "没有可释放的内容"
+                if (msg.isNotEmpty()) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 scanTrigger++
             } finally {
                 isClearing = false
@@ -371,13 +421,13 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-LazyColumn(
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(
                 modifier = Modifier
                 .widthIn(max = AdaptiveSpec.pageContentMaxWidth).fillMaxSize().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
-            ) {
+                ) {
                 item(key = "overview") {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -386,11 +436,17 @@ LazyColumn(
                     ) {
                         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             if (isScanning) {
-                                CircularProgressIndicator(Modifier.size(32.dp))
-                                Spacer(Modifier.height(8.dp))
-                                Text("正在计算…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // B1：原先只有一个转圈 + 一行字，扫描期间整块空白。
+                                // 改成骨架屏，形状与目标内容一一对应，扫描完直接"长"出来。
+                                ScanningSkeleton()
                             } else {
-                                Text(formatSize(appTotalSize), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                // B1：数字从 0 滚动到实测值
+                                Text(
+                                    formatSize(totalAnim.value.toLong().coerceAtLeast(0L)),
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                                 Text("应用总占用", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                                 // 占比条：缓存 / 用户数据 / 书籍数据与设置（+ 其他杂项，让总数与分段自洽）
@@ -457,11 +513,9 @@ LazyColumn(
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         if (isClearing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
+                            // B1：正在清理 → 文件飞进垃圾桶的粒子动画，
+                            // 取代原来一个 18dp 转圈（完全看不出在"清理垃圾"）
+                            FileSweepIndicator(tint = MaterialTheme.colorScheme.onPrimary)
                             Spacer(Modifier.width(10.dp))
                             Text("正在清理…", fontWeight = FontWeight.SemiBold)
                         } else {
@@ -493,10 +547,19 @@ LazyColumn(
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                modifier = Modifier.fillMaxWidth().then(
-                                    if (row.deletable) Modifier.clickable { detailRow = row }
-                                    else Modifier
-                                )
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    // B1：清理后本行内容会变（尺寸/文案），
+                                    // 加 animateContentSize 让变化平滑，不再瞬间跳
+                                    .animateContentSize(
+                                        androidx.compose.animation.core.spring(
+                                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                        )
+                                    )
+                                    .then(
+                                        if (row.deletable) Modifier.clickable { detailRow = row }
+                                        else Modifier
+                                    )
                             ) {
                                 Row(
                                     Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -535,7 +598,25 @@ LazyColumn(
                         }
                     }
                 }
-            }
+                }
+                // ── B1 清理成功动画：打勾 + 释放量，弹簧弹出后自动消失 ──
+                // 单独包一层居中 Box：不依赖外层 Box 的 align 重载，
+                // 也不影响 LazyColumn 自身的 TopCenter 排布。
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = successFreed != null,
+                        enter = fadeIn(androidx.compose.animation.core.tween(180)) + scaleIn(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            initialScale = 0.6f
+                        ),
+                        exit = fadeOut(androidx.compose.animation.core.tween(260))
+                    ) {
+                        CleanSuccessBadge(freedText = formatSize(successFreed ?: 0L))
+                    }
+                }
             }
         }
         }
@@ -583,12 +664,159 @@ private fun RowScope.segmentedBar(
         add(Triple(appDataTotal, Color(0xFF74B9FF), "appdata"))
         if (otherTotal > 0) add(Triple(otherTotal, Color(0xFF90A4AE), "other"))
     }
-    segments.forEach { (size, color, _) ->
+    // B1：原先 weight 直接赋值 → 占比条瞬间成形。
+    // 改为逐段错峰生长（每段延迟 90ms），扫描完有"填充起来"的过程感。
+    var grown by remember { mutableStateOf(false) }
+    LaunchedEffect(grandTotal) { grown = grandTotal > 0L }
+    segments.forEachIndexed { index, (size, color, _) ->
+        val target = (size.toFloat() / grandTotal).coerceAtLeast(0.005f)
+        val w by animateFloatAsState(
+            targetValue = if (grown) target else 0f,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 520,
+                delayMillis = index * 90,
+                easing = FastOutSlowInEasing
+            ),
+            label = "segment_$index"
+        )
         Box(
             Modifier
-                .weight((size.toFloat() / grandTotal).coerceAtLeast(0.005f))
+                .weight(w.coerceAtLeast(0.0001f))
                 .fillMaxHeight()
                 .background(color)
         )
+    }
+}
+
+/* ── B1 清理动画组件 ───────────────────────────────────────────────── */
+
+/** 扫描中骨架屏：形状与扫描完成后的内容一一对应。 */
+@Composable
+private fun ScanningSkeleton() {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        ShimmerBox(modifier = Modifier.size(width = 128.dp, height = 38.dp), cornerRadius = 10)
+        Spacer(Modifier.height(8.dp))
+        ShimmerBox(modifier = Modifier.size(width = 76.dp, height = 16.dp), cornerRadius = 8)
+        Spacer(Modifier.height(18.dp))
+        // 占比条
+        ShimmerBox(modifier = Modifier.fillMaxWidth().height(8.dp), cornerRadius = 4)
+        Spacer(Modifier.height(14.dp))
+        // 三行图例
+        repeat(3) {
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(14.dp), cornerRadius = 7)
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/**
+ * 「文件飞进垃圾桶」粒子动画：清理中替代原来那个 18dp 转圈。
+ * 3 个方块从左上朝右下抛物线飞入并缩小消失，循环播放。
+ */
+@Composable
+private fun FileSweepIndicator(
+    modifier: Modifier = Modifier,
+    tint: Color
+) {
+    val transition = rememberInfiniteTransition(label = "fileSweep")
+    val t by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(1250, easing = LinearEasing)
+        ),
+        label = "sweepT"
+    )
+    Canvas(modifier = modifier.size(22.dp)) {
+        val cx = size.width * 0.5f
+        val cy = size.height * 0.70f
+        for (i in 0..2) {
+            val phase = (t + i / 3f) % 1f
+            // 水平匀速、垂直加速（抛物线感）
+            val px = size.width * 0.04f + (cx - size.width * 0.04f) * phase
+            val py = size.height * 0.02f + (cy - size.height * 0.02f) * (phase * phase)
+            val alpha = (1f - phase).coerceIn(0f, 1f)
+            val side = size.width * 0.26f * (1f - phase * 0.55f)
+            drawRect(
+                color = tint.copy(alpha = alpha),
+                topLeft = Offset(px - side / 2f, py - side / 2f),
+                size = ComposeSize(side, side)
+            )
+        }
+        // 底部"桶口"
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.22f, size.height * 0.88f),
+            end = Offset(size.width * 0.78f, size.height * 0.88f),
+            strokeWidth = 2f,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+/** 清理成功：打勾（逐笔画出）+ 释放量。 */
+@Composable
+private fun CleanSuccessBadge(freedText: String) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        shadowElevation = 12.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 30.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color(0xFF00B894), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedCheckMark()
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("清理完成", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "已释放 $freedText",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** 打勾：短边先画完、再画长边，避免整条线一起出现显得生硬。 */
+@Composable
+private fun AnimatedCheckMark(color: Color = Color.White) {
+    var started by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { started = true }
+    val progress by animateFloatAsState(
+        targetValue = if (started) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(420, easing = FastOutSlowInEasing),
+        label = "checkProgress"
+    )
+    Canvas(Modifier.size(28.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 3.5.dp.toPx()
+        val p1 = (progress / 0.45f).coerceIn(0f, 1f)
+        val p2 = ((progress - 0.45f) / 0.55f).coerceIn(0f, 1f)
+        drawLine(
+            color = color,
+            start = Offset(w * 0.18f, h * 0.52f),
+            end = Offset(w * 0.18f + w * 0.24f * p1, h * 0.52f + h * 0.24f * p1),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        if (p2 > 0f) {
+            drawLine(
+                color = color,
+                start = Offset(w * 0.42f, h * 0.76f),
+                end = Offset(w * 0.42f + w * 0.42f * p2, h * 0.76f - h * 0.48f * p2),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
     }
 }
