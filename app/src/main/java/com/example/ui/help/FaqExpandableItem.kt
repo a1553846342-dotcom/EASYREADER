@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.ui.theme.clickableRowFeedback
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +48,7 @@ fun FaqExpandableItem(
     ) {
         Column(
             modifier = Modifier
-                .clickable { expanded = !expanded }
+                .clickableRowFeedback { expanded = !expanded }
                 .padding(16.dp)
         ) {
             Row(

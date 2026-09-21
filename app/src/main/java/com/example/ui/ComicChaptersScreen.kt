@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.ui.theme.clickableRowFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -551,7 +552,7 @@ private fun ChapterItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = if (selectionMode) onToggleSelect else onClick),
+            .clickableRowFeedback(onClick = if (selectionMode) onToggleSelect else onClick),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)

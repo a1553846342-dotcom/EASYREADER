@@ -12,6 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -68,6 +70,56 @@ fun Modifier.clickableWithFeedback(
             scaleX = scaleState.value
             scaleY = scaleState.value
             alpha = dimState.value
+        }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick
+        )
+}
+
+/**
+ * iOS 列表行的按压反馈（2026-09-21 新增）。
+ *
+ * 与 [clickableWithFeedback] 的区别：列表行（整行宽、44dp 高以上）按下时
+ * **只铺一层次级背景色，不改变尺寸**。iOS 的 UITableViewCell 就是这么做的 ——
+ * 整行缩放到 0.96 会显得晃眼，而整个 App 一起变淡也太重。
+ * 手感：按下瞬间出现浅灰底（80ms），松手后缓慢淡出（220ms），并给一次轻震动。
+ */
+fun Modifier.clickableRowFeedback(
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier = composed {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val haptics = LocalHapticFeedback.current
+
+    // 按下要“立刻”有反应（80ms），松手则缓慢淡出（220ms），这个不对称是 iOS 手感的关键
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (isPressed) 80 else 220,
+            easing = EaseOut
+        ),
+        label = "row_highlight"
+    )
+
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+    }
+
+    this
+        .drawBehind {
+            if (highlightAlpha > 0f) {
+                // 中性灰，深浅主题下都成立；不用白色（深色卡片上会发白）
+                drawRect(
+                    color = Color.Gray.copy(alpha = 0.16f * highlightAlpha),
+                    size = size
+                )
+            }
         }
         .clickable(
             interactionSource = interactionSource,
