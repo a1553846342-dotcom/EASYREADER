@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.FastOutSlowInEasing
+import com.example.ui.theme.IosMotion
 
 /*
  * ══════════════ 弹层入场动画（第十一轮第 4 条）══════════════
@@ -30,13 +31,16 @@ fun DialogEntrance(
     content: @Composable () -> Unit,
 ) {
     val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
+    // 2026-09-21：改用 iOS 弹簧（缩放走 spring、淡入走短 easeOut）。
+    // 原来是 Material 的 FastOutSlowInEasing 补间，收尾偏“钝”；
+    // iOS 的弹窗是 0.92 起跳 + 临界阻尼弹簧，落位干脆且有一点点“吸附”手感。
     AnimatedVisibility(
         visibleState = entrance,
         modifier = modifier,
-        enter = fadeIn(tween(durationMillis, easing = FastOutSlowInEasing)) +
+        enter = fadeIn(tween(180, easing = IosMotion.EaseOut)) +
             scaleIn(
-                initialScale = 0.96f,
-                animationSpec = tween(durationMillis, easing = FastOutSlowInEasing)
+                initialScale = 0.92f,
+                animationSpec = IosMotion.spring()
             ),
     ) {
         content()
@@ -54,10 +58,12 @@ fun BottomSheetEntrance(
     AnimatedVisibility(
         visibleState = entrance,
         modifier = modifier,
-        enter = fadeIn(tween((durationMillis * 0.8f).toInt(), easing = FastOutSlowInEasing)) +
+        // 2026-09-21：底部面板改为 iOS 弹簧上推（位移大，用偏软的 spring 更自然），
+        // 淡入同步缩短，避免遮罩比面板“先到位”的割裂感。
+        enter = fadeIn(tween(160, easing = IosMotion.EaseOut)) +
             slideInVertically(
                 initialOffsetY = { it / 6 },
-                animationSpec = tween(durationMillis, easing = FastOutSlowInEasing)
+                animationSpec = IosMotion.springSoft()
             ),
     ) {
         content()

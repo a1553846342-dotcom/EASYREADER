@@ -203,28 +203,20 @@ LazyColumn(
                         val weekDates = remember {
                             weekDatesOf(todayCalendar()).map { dateStrOf(it) }
                         }
-                        val minutesList = remember(readingRecords, weekDates, totalReadTimeSeconds / 60, todayIdx) {
-                            val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
-                            if (hasAnyRecords) {
-                                weekDates.map { date ->
-                                    (readingRecords.filter { it.dateStr == date }
-                                        .sumOf { it.durationSeconds } / 60).toInt()
-                                }
-                            } else {
-                                List(7) { i -> if (i == todayIdx) (totalReadTimeSeconds / 60).toInt() else 0 }
+                        // 2026-09-21 修复：原实现在本周无任何阅读记录时，把「历史累计总时长」
+                        // 整个塞进“今天”那一格（表现为“今天读了 197 分钟，但我根本没看”），
+                        // 并凭空把书架第一本书当成今天读的书。这是凭空伪造数据，一律删除：
+                        // 没有记录就是 0，空状态交给 WeeklyReadingChart 自己呈现。
+                        val minutesList = remember(readingRecords, weekDates) {
+                            weekDates.map { date ->
+                                (readingRecords.filter { it.dateStr == date }
+                                    .sumOf { it.durationSeconds } / 60).toInt()
                             }
                         }
-                        val booksList = remember(readingRecords, weekDates, books, totalReadTimeSeconds / 60, todayIdx) {
-                            val hasAnyRecords = readingRecords.any { weekDates.contains(it.dateStr) }
-                            if (hasAnyRecords) {
-                                weekDates.map { date ->
-                                    val daily = readingRecords.filter { it.dateStr == date }
-                                    if (daily.isEmpty()) "" else daily.map { it.bookTitle }.distinct().joinToString(", ")
-                                }
-                            } else {
-                                List(7) { i ->
-                                    if (i == todayIdx && totalReadTimeSeconds > 0) (books.firstOrNull()?.title ?: "自选图书") else ""
-                                }
+                        val booksList = remember(readingRecords, weekDates) {
+                            weekDates.map { date ->
+                                val daily = readingRecords.filter { it.dateStr == date }
+                                if (daily.isEmpty()) "" else daily.map { it.bookTitle }.distinct().joinToString(", ")
                             }
                         }
                         val dayRecords = remember(readingRecords, weekDates) {

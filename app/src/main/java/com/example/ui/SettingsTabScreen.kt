@@ -149,6 +149,10 @@ fun SettingsTabScreen(
     var showChangePin by remember { mutableStateOf(false) }
     var showDisableVerify by remember { mutableStateOf(false) }
     var changePinOld by remember { mutableStateOf("") }
+    // 2026-09-21 新增：隐私开关的“乐观选中”态。原先开关把 checked 硬编码成 false，
+    // 用户点下去开关纹丝不动、只弹出密码框，看起来像没点上；现在点击后立即置为选中，
+    // 若密码设置被取消/失败则回弹为关闭。
+    var privacySwitchPending by remember { mutableStateOf(false) }
 
     // 卡片参数自定义：折叠栏展开态（跨重建保留）+ 实时写回 prefs / 共享状态
     var showCardPanel by rememberSaveable { mutableStateOf(false) }
@@ -1047,8 +1051,17 @@ LazyColumn(
                                 if (!enabled) {
                                 // 首次开启：先走 6 位密码设置流程（输入 + 二次确认）
                                 com.example.ui.components.AppSwitch(
-                                    checked = false,
-                                    onCheckedChange = { showPinSetup = true }
+                                    // 2026-09-21 修复：原为硬编码 false（点了开关不动、只弹窗，
+                                    // 用户以为没点上）。改为反映点击意图，取消时再回弹。
+                                    checked = privacySwitchPending,
+                                    onCheckedChange = { wantOn ->
+                                        if (wantOn) {
+                                            privacySwitchPending = true
+                                            showPinSetup = true
+                                        } else {
+                                            privacySwitchPending = false
+                                        }
+                                    }
                                 )
                             } else {
                                 // 已开启：验证密码后进入隐私管理悬浮窗口
@@ -1249,11 +1262,19 @@ LazyColumn(
             onPinSet = { pin ->
                 if (onEnablePrivacyMode(pin)) {
                     showPinSetup = false
+                    privacySwitchPending = false
                     showManageWindow = true
+                } else {
+                    // PIN 非法 / 持久化失败：开关回弹，不要停在“已开启”的假象上
+                    privacySwitchPending = false
                 }
             },
             onPinVerified = { false },
-            onDismiss = { showPinSetup = false },
+            onDismiss = {
+                // 取消设置：开关回弹到关闭
+                showPinSetup = false
+                privacySwitchPending = false
+            },
         )
     }
 
@@ -1337,11 +1358,15 @@ LazyColumn(
  */
 @Composable
 private fun SettingsSectionHeader(text: String) {
+    // 2026-09-21：改为 iOS 分组标题规格 —— 13sp 半粗、次级色、轻微正字距。
+    // 原来是 14sp Bold + 主色，字号比行标题还大、颜色还重，和下方内容抢视觉重心，
+    // 一屏十几个分组时整页“全是标题”，层级糊成一片。
     Text(
         text = text,
-        fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        color = adaptiveTitleColor()
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 13.sp,
+        letterSpacing = 0.1.sp,
+        color = adaptiveTitleColor().copy(alpha = 0.62f)
     )
 }
 

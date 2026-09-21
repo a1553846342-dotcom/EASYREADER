@@ -1,6 +1,7 @@
 package com.example.ui.privacy
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -65,13 +66,25 @@ import com.example.ui.theme.MintPrimary
 /** 6 位密码圆点指示 */
 @Composable
 private fun PinDots(filled: Int, error: Boolean, modifier: Modifier = Modifier) {
-    val shake by animateFloatAsState(
-        targetValue = if (error) 1f else 0f,
-        animationSpec = tween(60), label = "pinShake"
-    )
-    val offsetX = if (error) (if (shake > 0.5f) 8f else -8f) else 0f
+    // 2026-09-21 修复：原实现用 animateFloatAsState 把 shake 从 0 补间到 1 后停住，
+    // 而 offsetX 由 `shake > 0.5f` 二值判断 —— 于是圆点从 -8 跳到 +8 之后永久停在 +8，
+    // 表现为“整排圆点错位后回不来”，而不是抖动。改为阻尼衰减摆动后归零（iOS 同款反馈）。
+    val offsetX = remember { Animatable(0f) }
+    LaunchedEffect(error) {
+        if (!error) {
+            offsetX.snapTo(0f)
+            return@LaunchedEffect
+        }
+        // 3 次递减摆动：振幅 10 → 6.7 → 3.3，末了回到 0
+        repeat(3) { i ->
+            val amp = 10f * (1f - i / 3f)
+            offsetX.animateTo(amp, spring(dampingRatio = 0.15f, stiffness = 1400f))
+            offsetX.animateTo(-amp, spring(dampingRatio = 0.15f, stiffness = 1400f))
+        }
+        offsetX.animateTo(0f, spring(dampingRatio = 0.6f, stiffness = 900f))
+    }
     Row(
-        modifier.graphicsLayer { translationX = offsetX },
+        modifier.graphicsLayer { translationX = offsetX.value },
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         repeat(6) { i ->
@@ -183,6 +196,9 @@ fun PrivacyPinOverlay(
     var firstSetup by remember { mutableStateOf<String?>(null) }
     // CHANGE 流程在 overlay 内部推进：OLD 验证通过后切到 NEW
     var currentMode by remember { mutableStateOf(mode) }
+    // 2026-09-21 新增：标记当前 CONFIRM 阶段属于“修改密码”流程（而非首次设置），
+    // 使二次确认失败时回到 CHANGE_NEW 而不是 SETUP。
+    var changeFlow by remember { mutableStateOf(false) }
 
     fun reset(msg: String? = null) {
         entered = ""
@@ -201,9 +217,17 @@ fun PrivacyPinOverlay(
             PinEntryMode.CONFIRM -> {
                 if (entered == firstSetup) onPinSet(entered)
                 else {
+                    val inChangeFlow = changeFlow
                     firstSetup = null
-                    currentMode = PinEntryMode.SETUP
-                    reset("两次输入不一致，请重新设置")
+                    changeFlow = false
+                    if (inChangeFlow) {
+                        // 改密码的二次确认失败：回到“输入新密码”，不要退回首次设置流程
+                        currentMode = PinEntryMode.CHANGE_NEW
+                        reset("两次输入不一致，请重新输入新密码")
+                    } else {
+                        currentMode = PinEntryMode.SETUP
+                        reset("两次输入不一致，请重新设置")
+                    }
                 }
             }
             PinEntryMode.VERIFY -> {
@@ -216,9 +240,14 @@ fun PrivacyPinOverlay(
                 } else reset("密码错误，请重试")
             }
             PinEntryMode.CHANGE_NEW -> {
-                // 与 CHANGE_OLD 的第二次输入一致性由上层 onPinSet 校验流程复用：
-                // 这里直接回调，外层完成"确认新密码"（简化：一次输入即生效前先确认）
-                onPinSet(entered)
+                // 2026-09-21 修复：原实现只输入一次新密码就直接 onPinSet 生效，
+                // 手滑输错 6 位会永久锁死自己的隐私分类（项目内没有找回/重置途径），
+                // 且与“首次设置”要求的二次确认标准不一致。
+                // 现在改为与首次设置同规格：先存下来，进入 CONFIRM 阶段再输一次。
+                firstSetup = entered
+                changeFlow = true
+                currentMode = PinEntryMode.CONFIRM
+                reset()
             }
         }
     }

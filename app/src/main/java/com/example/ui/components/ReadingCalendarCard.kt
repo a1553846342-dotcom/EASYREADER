@@ -140,14 +140,17 @@ fun ReadingCalendarCard(
                     }
                 },
                 label = "calendarSwitch"
-            ) { _ ->
-                if (showYear) {
-                    YearHeatmap(dailyTotals = dailyTotals, year = viewYear, onDayClick = onDayClick)
+            ) { (targetShowYear, targetYear, targetMonth) ->
+                // 2026-09-21 修复：原来这里用 `_` 忽略 target、直接读外部 showYear/viewYear/viewMonth。
+                // AnimatedContent 在过渡期间会让“旧内容 + 新内容”同时存在，读外部变量会导致
+                // 退场中的旧内容瞬间变成新值（动画还没完就跳变）。改用 target 快照才是正确写法。
+                if (targetShowYear) {
+                    YearHeatmap(dailyTotals = dailyTotals, year = targetYear, onDayClick = onDayClick)
                 } else {
                     MonthGrid(
                         dailyTotals = dailyTotals,
-                        year = viewYear,
-                        month = viewMonth,
+                        year = targetYear,
+                        month = targetMonth,
                         onDayClick = onDayClick
                     )
                 }
@@ -390,7 +393,12 @@ private fun YearHeatmap(
                             animationSpec = tween(durationMillis = 240, delayMillis = r * 45),
                             label = "yearRowAlpha"
                         )
-                        Row(Modifier.graphicsLayer { alpha = rowAlpha }) {
+                        // 2026-09-21 修复：cellGap 之前只参与 step 计算，却没真正加到布局上，
+                        // 导致格子零间距紧挨成一片，配合过淡的底色就是“看不见网格”。
+                        Row(
+                            modifier = Modifier.graphicsLayer { alpha = rowAlpha },
+                            horizontalArrangement = Arrangement.spacedBy(cellGap)
+                        ) {
                             for (col in 0 until grid.columns) {
                                 val dateStr = grid.cellDate(col, r)
                                 YearCell(
@@ -411,7 +419,7 @@ private fun YearHeatmap(
             // 图例
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("少", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                listOf(0.2f, 0.4f, 0.65f, 0.9f).forEach { a ->
+                HEAT_LEVELS.forEach { a ->
                     Spacer(modifier = Modifier.width(4.dp))
                     Box(
                         modifier = Modifier
@@ -457,7 +465,11 @@ private fun YearCell(
                 if (filled) {
                     MintPrimary.copy(alpha = heatAlpha(seconds))
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    // 2026-09-21 修复：原来是 surfaceVariant.copy(alpha = 0.35f)，
+                    // 在浅色主题下淡到几乎与卡片同色，整片年视图看起来是“全空白”。
+                    // 改用 onSurface 低透明度（Material3 标准空态底色，GitHub 贡献图同思路），
+                    // 浅色下呈淡灰、深色下呈淡白，配合格子间距始终能看出网格。
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
                 }
             )
             .then(
@@ -534,11 +546,24 @@ private fun buildYearGrid(year: Int): YearGrid {
     return grid
 }
 
-/** 分钟数 -> 颜色 alpha（0/1-9/10-29/30-59/60+）。 */
+/**
+ * 分钟数 -> 颜色 alpha（0/1-9/10-29/30-59/60+）。
+ *
+ * 2026-09-21 调整：最低档原本只有 0.2，在浅色卡片上几乎看不出是绿色，
+ * “读了 5 分钟”和“没读”在视觉上分不开 —— 这也是年视图看起来一片空白的原因之一。
+ * 对照 GitHub 贡献图的最低档（明显的浅绿），把四档整体抬到 0.32/0.52/0.72/0.95，
+ * 保证最低档也与空格子的灰底有清晰区分。
+ */
 private fun heatAlpha(seconds: Long): Float = when {
     seconds <= 0 -> 0f
-    seconds < 600 -> 0.2f
-    seconds < 1800 -> 0.4f
-    seconds < 3600 -> 0.65f
-    else -> 0.9f
+    seconds < 600 -> HEAT_LEVELS[0]
+    seconds < 1800 -> HEAT_LEVELS[1]
+    seconds < 3600 -> HEAT_LEVELS[2]
+    else -> HEAT_LEVELS[3]
 }
+
+/**
+ * 四档热力 alpha（由浅到深）。格子配色与底部图例共用同一份数据，
+ * 避免以前那种“图例写死 0.2/0.4/0.65/0.9、格子另算”导致图例和实际颜色对不上的问题。
+ */
+private val HEAT_LEVELS = listOf(0.32f, 0.52f, 0.72f, 0.95f)
