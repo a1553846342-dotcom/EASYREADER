@@ -58,13 +58,20 @@ object TranslateModelManager {
      */
     val bubbleModel = ModelSpec(
         fileName = "mt_yolo_bubble.onnx",
+        // 源顺序按「国内直连可达性」排：GitHub 国内不可直连，故全部走代理/CDN，
+        // 末尾保留两个海外直连作为最终兜底（境外用户或已挂代理时最快）。
         urls = listOf(
-            // 1) jsDelivr CDN（国内可达性最好）。注意用 @main 分支：模型文件为了不被
-            //    打进 APK 已从 assets/mt/ 移到仓库根 models/，v1.0.7 tag 里没有它。
+            // 1) ghproxy.net 代理 GitHub Release 直链（国内最常用的 GitHub 文件代理）
+            "https://ghproxy.net/https://github.com/a1553846342-dotcom/EASYREADER/releases/download/v1.0.7/manga-bubble-seg-yolo26n.onnx",
+            // 2) jsDelivr 的 Fastly 节点（相对 cdn.jsdelivr.net 国内可达性更好）
+            "https://fastly.jsdelivr.net/gh/a1553846342-dotcom/EASYREADER@main/models/manga-bubble-seg-yolo26n.onnx",
+            // 3) gh-proxy.com 代理 GitHub raw
+            "https://gh-proxy.com/https://raw.githubusercontent.com/a1553846342-dotcom/EASYREADER/main/models/manga-bubble-seg-yolo26n.onnx",
+            // 4) jsDelivr 主域（2021 年 ICP 被吊销后国内时好时坏，仍保留）
             "https://cdn.jsdelivr.net/gh/a1553846342-dotcom/EASYREADER@main/models/manga-bubble-seg-yolo26n.onnx",
-            // 2) GitHub raw 兜底
+            // 5) 海外直连兜底：GitHub raw
             "https://raw.githubusercontent.com/a1553846342-dotcom/EASYREADER/main/models/manga-bubble-seg-yolo26n.onnx",
-            // 3) GitHub Release 直链兜底（已作为 v1.0.7 asset 上传，与 tag 绑定最稳）
+            // 6) 海外直连兜底：GitHub Release（已作为 v1.0.7 asset 上传）
             "https://github.com/a1553846342-dotcom/EASYREADER/releases/download/v1.0.7/manga-bubble-seg-yolo26n.onnx",
         ),
         minBytes = 4_000_000L,
