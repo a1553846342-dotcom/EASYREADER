@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -504,8 +505,9 @@ fun PrivacyManageOverlay(
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    items(categories.size) { i ->
-                        val cat = categories[i]
+                    // 2026-09-21：改用 items(list) + key，不再按下标取元素。
+                    // 原写法 items(size) 没有身份信息，分类增删改后重排会错位。
+                    items(categories, key = { it.id }) { cat ->
                         Row(
                             Modifier
                                 .fillMaxWidth()

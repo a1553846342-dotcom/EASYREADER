@@ -3287,7 +3287,12 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                 LazyColumn(state = tocListState) {
 
-                    itemsIndexed(filteredChapters) { _, chapter ->
+                    // 2026-09-21：补 key。animateItemPlacement 依赖 key 追踪元素身份，
+                    // 没有 key 时 Compose 只能用下标当身份，筛选/重排时动画会错位。
+                    itemsIndexed(
+                        filteredChapters,
+                        key = { _, chapter -> chapter.chapterOrder }
+                    ) { _, chapter ->
 
                         val index = chapter.chapterOrder
 
@@ -3758,7 +3763,10 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                         LazyColumn(modifier = Modifier.height(240.dp)) {
 
-                            itemsIndexed(searchResults) { _, item ->
+                            itemsIndexed(
+                                searchResults,
+                                key = { _, item -> item.chapterIndex }
+                            ) { _, item ->
 
                                 Card(
 
@@ -3851,7 +3859,9 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                     LazyColumn(modifier = Modifier.height(280.dp)) {
 
-                        itemsIndexed(bookmarks) { _, bm ->
+                        // 书签会增删，key 用数据库主键：删除某条后其余条目平滑上移，
+                        // 而不是整列瞬间跳位。
+                        itemsIndexed(bookmarks, key = { _, bm -> bm.id }) { _, bm ->
 
                             Row(
 
