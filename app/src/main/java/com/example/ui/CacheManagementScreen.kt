@@ -219,7 +219,7 @@ fun CacheManagementScreen(
                 // B1：清理成功不再只弹 Toast，改为播放「打勾 + 释放量」动画
                 val msg = when {
                     freed < 0 -> "检测到下载正在进行，已取消删除"
-                    freed > 0 -> { successFreed = freed; "" }
+                    freed > 0 -> { successFreed = freed; com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.CleanComplete); "" }
                     else -> "没有可释放的内容"
                 }
                 if (msg.isNotEmpty()) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -246,6 +246,7 @@ fun CacheManagementScreen(
                 // B1：同上，成功走动画
                 val msg = if (freed > 0) {
                     successFreed = freed
+                    com.example.ui.mascot.MascotAnimationController.play(com.example.ui.mascot.MascotEvent.CleanComplete)
                     ""
                 } else "没有可释放的内容"
                 if (msg.isNotEmpty()) Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -389,8 +390,8 @@ fun CacheManagementScreen(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp)
     ) {
-                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize()) {
+                Column(Modifier.fillMaxSize().navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize()) {
             // 顶部标题栏（同手册页：64dp + 图标 + 标题 + 关闭）
             Box(
                 modifier = Modifier

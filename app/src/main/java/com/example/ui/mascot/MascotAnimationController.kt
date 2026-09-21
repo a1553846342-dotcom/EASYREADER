@@ -15,6 +15,8 @@ sealed class MascotEvent {
     object AddBookmark : MascotEvent()
     object MoveBook : MascotEvent()
     object BookComplete : MascotEvent()
+    /** 清理缓存成功（B6：原先只有 Toast + 打勾，缺吉祥物反馈）。 */
+    object CleanComplete : MascotEvent()
 }
 
 /**
@@ -89,6 +91,7 @@ fun MascotOverlay(modifier: Modifier = Modifier) {
                     is MascotEvent.AddBookmark -> BookmarkHappyAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.MoveBook -> MoveBookAnimation(onComplete = { currentInstance = null })
                     is MascotEvent.BookComplete -> BookCompleteAnimation(onComplete = { currentInstance = null })
+                    is MascotEvent.CleanComplete -> BookCompleteAnimation(onComplete = { currentInstance = null })
                     null -> {}
                 }
             }
