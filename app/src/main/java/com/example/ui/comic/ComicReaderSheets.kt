@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example.ui.comic
 
 import android.graphics.Bitmap
@@ -1296,10 +1298,12 @@ internal fun ComicTocSheet(
                 runCatching { listState.scrollToItem(currentChapterIndex.coerceAtLeast(0)) }
             }
             LazyColumn(state = listState) {
-                itemsIndexed(toc) { i, entry ->
+                // 2026-09-21：补 key（章节 id 稳定唯一），并挂重排动画。
+                itemsIndexed(toc, key = { _, entry -> entry.id }) { i, entry ->
                     val active = i == currentChapterIndex
                     Row(
                         Modifier
+                            .animateItemPlacement()
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (active) PanelChipActiveBg else Color.Transparent)
