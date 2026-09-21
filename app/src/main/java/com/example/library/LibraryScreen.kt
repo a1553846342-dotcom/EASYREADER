@@ -9,14 +9,19 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+// 2026-09-21：本文件同时存在 LazyColumn 与 LazyVerticalStaggeredGrid，
+// 两者各有一个同名 items。先前直接 import 两个同名 items，编译器无法确定
+// lambda 的 receiver 是 LazyItemScope 还是 LazyStaggeredGridItemScope，
+// 导致 animateItemPlacement() 无法解析（书架页列表重排动画因此一直没做）。
+// 用别名区分调用点后 receiver 唯一确定，动画即可启用。
+import androidx.compose.foundation.lazy.items as columnItems
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
-import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.items as gridItems
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -674,7 +679,11 @@ fun LibraryScreen(
                                 )
                             }
                             if (group.loading) {
-                                items(4, key = { "agg_loading_${group.sourceId}_$it" }) { index ->
+                                // 加载占位固定 4 个、不参与重排，无需 key。
+                                // 注意：LazyStaggeredGridScope 没有 items(count) 重载
+                                //（只有 items(List)），原先 items(4, key=...) 实际是匹配到了
+                                // LazyListScope 的版本 —— 正是两个同名 import 造成的错配。
+                                gridItems(List(4) { it }) { index ->
                                     ShimmerBox(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -685,7 +694,7 @@ fun LibraryScreen(
                                 val groupExpanded = expandedGroups[group.sourceId] == true
                                 val visibleBooks = if (groupExpanded) group.books
                                     else group.books.take(AGGREGATE_PREVIEW_COUNT)
-                                items(visibleBooks, key = { "${group.sourceId}_${it.id}" }) { book ->
+                                gridItems(visibleBooks, key = { "${group.sourceId}_${it.id}" }) { book ->
                                     val bookSource = availableSources.firstOrNull { it.id == book.sourceId }
                                     StaggeredComicCard(
                                         book = book,
@@ -693,6 +702,10 @@ fun LibraryScreen(
                                         coverHeaders = rememberCoverHeaders(book, availableSources),
                                         sourceName = group.sourceName,
                                         novel = bookSource?.isNovelSource == true,
+                                        // 2026-09-21：书架瀑布流重排动画（此前因 items 同名
+                                        // 导致 receiver 歧义一直没做）。折叠/展开分组、
+                                        // 删除书籍后，其余卡片平滑归位而不是瞬间跳排。
+                                        modifier = Modifier.animateItemPlacement(),
                                         onClick = {
                                             if (bookSource != null && bookSource.isNovelSource &&
                                                 !bookSource.capabilities.supportOnlineText
@@ -868,7 +881,7 @@ fun LibraryScreen(
                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp + extraBottomPadding),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(searchResults, key = { it.id }) { book ->
+                        columnItems(searchResults, key = { it.id }) { book ->
                             val st by remember(book.id) {
                                 derivedStateOf {
                                     downloadStatesState.value[book.id] ?: DownloadState.Idle
@@ -877,6 +890,7 @@ fun LibraryScreen(
                             LibraryBookCard(
                                 book = book,
                                 downloadState = st,
+                                modifier = Modifier.animateItemPlacement(),
                                 imageLoader = imageLoader,
                                 coverHeaders = rememberCoverHeaders(book, availableSources),
                                 comicMode = currentSource?.capabilities?.supportComic == true ||
@@ -1557,7 +1571,7 @@ private fun SourcePickerSheet(
                         // v1.0.1：书源按类型分区展示——漫画源 / 小说源
                         if (comicSources.isNotEmpty()) {
                             item { SourceSectionLabel("漫画源") }
-                            items(comicSources, key = { it.id }) { source ->
+                            columnItems(comicSources, key = { it.id }) { source ->
                                 SourceOptionItem(
                                     source = source,
                                     selected = !aggregateMode && currentSource?.id == source.id,
@@ -1567,7 +1581,7 @@ private fun SourcePickerSheet(
                         }
                         if (novelSources.isNotEmpty()) {
                             item { SourceSectionLabel("小说源") }
-                            items(novelSources, key = { it.id }) { source ->
+                            columnItems(novelSources, key = { it.id }) { source ->
                                 SourceOptionItem(
                                     source = source,
                                     selected = !aggregateMode && currentSource?.id == source.id,
