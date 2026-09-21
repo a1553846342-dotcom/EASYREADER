@@ -558,7 +558,12 @@ Release 包仅含 arm64 ONNX 库，x86\_64 模拟器经 ARM 转译运行 ONNX �
 
 **列表动画**：目录 / 搜索 / 书签 / 漫画目录 / 书架瀑布流补齐重排动画与元素 key（此前有动画却没 key，重排会错位）。
 
-**APK 瘦身**：debug 与 release 统一只打 arm64 —— 原先 debug 永远额外打包一份 x86_64 原生库，这正是 debug 62MB / release 23MB 的全部落差。需要在 x86_64 模拟器跑 ONNX 时加 `-PincludeX86`。
+**APK 瘦身**（release 23MB → **19.7MB**，debug 62MB → 41.8MB）：
+
+- **debug / release 统一只打 arm64**：原先 debug 永远额外打包一份 x86_64 原生库，这正是 debug 62MB / release 23MB 的全部落差。需要在 x86_64 模拟器跑 ONNX 时加 `-PincludeX86`
+- **气泡分割模型改为按需下载**：YOLO26n-seg 模型（4.0MB）原先随 APK 内置，现与 PP-OCR 的 det/rec 模型一样，首次开启漫画翻译时同批下载（jsDelivr CDN → GitHub raw → GitHub Release 三源容灾，MIT 允许再分发）
+- 至此 **APK 内已不含任何 ONNX 模型**；剩余最大单项是 `libonnxruntime.so`（压缩后约 10.6MB）—— 它是 OCR 推理运行时，官方仅支持随 APK 分发（`System.loadLibrary` 要求 `.so` 在 `nativeLibraryDir`），无法按需加载
+- debug 需要更小体积时可加 `-PminifyDebug`（默认关闭以保证可调试）
 
 **v1.0.6（2026-09-08）— 串珠快速翻页（整页刚体）+ 长按全页触发**
 

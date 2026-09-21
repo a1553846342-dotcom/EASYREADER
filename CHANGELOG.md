@@ -83,11 +83,26 @@ All notable changes to Ciallo 阅读 are documented in this file.
 - `configChanges` 补 `smallestScreenSize|density|fontScale|uiMode`；`windowSoftInputMode="adjustResize"`
 - `AppSwitch` 接收的 `modifier` 此前从未向下传递（静默丢弃），已修复
 
-### 📦 APK 瘦身
+### 📦 APK 瘦身（release 23MB → 19.7MB，debug 62MB → 41.8MB）
 
-debug 与 release 统一只打 arm64 —— 原先只有 release 是纯 arm64，debug 永远额外打包
-一份 x86_64（onnxruntime 约 38MB），这是 debug 62MB / release 23MB 的全部落差。
-需在 x86_64 模拟器跑 ONNX 时显式加 `-PincludeX86`（ARM 翻译层执行 onnxruntime 会 SIGSEGV）。
+- **debug / release 统一只打 arm64**：原先只有 release 是纯 arm64，debug 永远额外打包
+  一份 x86_64（onnxruntime 约 38MB），这是 debug 62MB / release 23MB 的全部落差。
+  需在 x86_64 模拟器跑 ONNX 时显式加 `-PincludeX86`（ARM 翻译层执行会 SIGSEGV）
+- **YOLO 气泡分割模型改为按需下载**（4.0MB，压缩后约 2.3MB）：
+  - 文件从 `app/src/main/assets/mt/` 移到仓库根 `models/` —— 仍在 git 中（jsDelivr CDN
+    需要），但不在任何 assets sourceSet，故不打进 APK。
+    （AGP 的 `packaging {}` 没有 assets 块，无法用 excludes 排除，故采用移目录方案）
+  - `TranslateModelManager` 新增 `bubbleModel`，三源容灾：jsDelivr CDN → GitHub raw →
+    GitHub Release 直链；已对 CDN 文件做 SHA256 校验（与本地一致）
+  - `MangaTranslationCore.bubbleDetector()` 改为读下载目录的文件；`isReady` /
+    `ensureDownloaded` / `totalBytes` 纳入 bubble
+  - bubble 是翻译必需项（`pageRegionDetector` 依赖它），故纳入 `isReady` 是正确的；
+    下载失败时 UI 显示错误并可重试
+- 至此 **APK 内已无任何 ONNX 模型**。剩余最大单项 `libonnxruntime.so`（压缩后约 10.6MB）
+  无法按需加载：onnxruntime 的 Java 层用 `System.loadLibrary` 按库名加载，
+  要求 `.so` 位于 APK 的 `nativeLibraryDir`，官方不支持运行时从自定义路径加载
+  （官方精简版 `onnxruntime-mobile` 在 Maven 上最高只到 1.18.0，本项目用 1.28.0）
+- debug 可选 `-PminifyDebug` 开启混淆（默认关闭以保证可调试）
 
 ## \[Unreleased] — 2026-08-30（六轮补：用户回归反馈修复）
 
