@@ -1072,7 +1072,7 @@ LazyColumn(
                                     color = MintPrimary,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(14.dp))
-                                        .clickable { showManageVerify = true }
+                                        .clickableWithFeedback { showManageVerify = true }
                                         .padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
                             }

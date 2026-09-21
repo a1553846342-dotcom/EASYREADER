@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.ui.theme.clickableWithFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -554,7 +555,7 @@ fun PrivacyManageOverlay(
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                            .clickable { onChangePin() }
+                            .clickableWithFeedback { onChangePin() }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -570,7 +571,7 @@ fun PrivacyManageOverlay(
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.error.copy(alpha = 0.10f))
-                            .clickable { onDisablePrivacy() }
+                            .clickableWithFeedback { onDisablePrivacy() }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {

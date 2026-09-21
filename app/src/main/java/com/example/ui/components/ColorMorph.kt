@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.ui.theme.clickableWithFeedback
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -165,7 +166,9 @@ fun ColorMorphSwatch(
     modifier = modifier
       .size(morphSize)
       .clip(RoundedCornerShape(cornerDp))
-      .clickable(onClick = onClick),
+      // 2026-09-21：原来是默认 clickable —— Material 水波纹 + 无触觉反馈。
+      // 色板是高频点击控件，改为全 App 统一的 iOS 反馈（变淡 + 轻缩 + 轻震动）。
+      .clickableWithFeedback(onClick = onClick),
     contentAlignment = Alignment.Center,
   ) {
     // 旋转/圆角/颜色形变只作用于背景层，勾选图标保持正立
