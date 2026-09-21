@@ -694,7 +694,14 @@ class MainActivity : ComponentActivity() {
                         composable(
                             "reader",
                             enterTransition = {
-                                EnterTransition.None
+                                // 2026-09-21：原来是 EnterTransition.None —— 打开书籍时
+                                // 页面瞬间跳出来，是全局最生硬的一处转场。
+                                // 改为 iOS 的 push 转场：新页面自右侧滑入并淡入。
+                                // 只滑 1/3 屏宽而非整屏，配合旧页面淡出，既有方向感又不拖沓。
+                                slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> fullWidth / 3 },
+                                    animationSpec = tween(280, easing = com.example.ui.theme.IosMotion.EaseOut)
+                                ) + fadeIn(tween(200))
                             },
                             exitTransition = { fadeOut(tween(220)) },
                             popEnterTransition = {
