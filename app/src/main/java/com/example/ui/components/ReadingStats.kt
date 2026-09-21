@@ -1,11 +1,48 @@
 package com.example.ui.components
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.example.data.ReadingRecord
 import com.example.data.ReadingSession
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+/**
+ * 跨天/跨周自动更新的“今天”。
+ *
+ * 2026-09-21 修复：此前各处一律用 `remember { Calendar.getInstance() }`（无 key），
+ * 只在首次组合时算一次。后果是：App 长时间不重启跨过午夜后，
+ * “本周阅读明细”的周一~周日区间、今天的高亮下标全部停在旧的一天；
+ * 跨周后也不会滚动到新的一周 —— 即“这周过了不会重置”。
+ *
+ * 这里把“今天”提升为可观察状态，每分钟比对一次年月日，变化即刷新，
+ * 所有基于它的周区间/日区间计算随之自动重算。
+ */
+@Composable
+fun rememberTodayCalendar(): Calendar {
+    var today by remember { mutableStateOf(Calendar.getInstance()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            val now = Calendar.getInstance()
+            val cur = today
+            // 跨年也要重算（DAY_OF_YEAR 单独比会在闰年尾/年初出错）
+            if (now.get(Calendar.YEAR) != cur.get(Calendar.YEAR) ||
+                now.get(Calendar.DAY_OF_YEAR) != cur.get(Calendar.DAY_OF_YEAR)
+            ) {
+                today = now
+            }
+        }
+    }
+    return today
+}
 
 // ---------------- 纯聚合工具（统计页共用，全部查询时动态计算） ----------------
 

@@ -3,9 +3,12 @@ package com.example.ui.theme
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +29,7 @@ val BaseSecondaryColors = listOf(
     Color(0xFFF97316)  // 4: 橙
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -40,12 +44,14 @@ fun MyApplicationTheme(
     val targetSecondary = BaseSecondaryColors.getOrElse(colorSecondaryIndex) { BaseSecondaryColors[2] }
     val primaryColor by animateColorAsState(
         targetValue = targetPrimary,
-        animationSpec = tween(durationMillis = colorTransitionMs),
+        // 2026-09-21：换主题色是“全界面换肤”，线性补间的中段变化太平均，
+        // 观感偏钝。改用 iOS easeOut：起步快、尾部缓，收尾更干净。
+        animationSpec = tween(durationMillis = colorTransitionMs, easing = IosMotion.EaseOut),
         label = "themePrimary"
     )
     val secondaryColor by animateColorAsState(
         targetValue = targetSecondary,
-        animationSpec = tween(durationMillis = colorTransitionMs),
+        animationSpec = tween(durationMillis = colorTransitionMs, easing = IosMotion.EaseOut),
         label = "themeSecondary"
     )
 
@@ -73,7 +79,13 @@ fun MyApplicationTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+        typography = Typography
+    ) {
+        // 2026-09-21：Android 滚动容器默认带“边缘发光”（overscroll glow），
+        // iOS 的 UIScrollView 没有这个效果（它用回弹而非光晕），这是滚动时
+        // 一眼能看出的安卓味来源。全局关掉后，长列表/书架的滚动观感明显接近 iOS。
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+            content()
+        }
+    }
 }

@@ -12,8 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -43,14 +41,17 @@ fun Modifier.clickableWithFeedback(
         label = "click_scale"
     )
 
-    // Glow opacity
-    val glowAlphaState = animateFloatAsState(
-        targetValue = if (isPressed) 0.25f else 0f,
+    // 2026-09-21 修复：按压高亮原本是 drawWithContent 叠一层 **白色矩形**（alpha 0.25）。
+    // 在深色卡片 / 毛玻璃上按下会闪出一块白斑，在彩色内容上则整体泛白 —— 廉价且脏，
+    // 是全局最不像 iOS 的一处交互。iOS 的按压反馈是「整体变淡」（dim 到 0.7），
+    // 只改透明度、不改变任何颜色关系，对任意底色都成立。
+    val dimState = animateFloatAsState(
+        targetValue = if (isPressed) 0.7f else 1f,
         animationSpec = tween(
-            durationMillis = if (isPressed) 100 else 200,
+            durationMillis = if (isPressed) 100 else 180,
             easing = EaseOut
         ),
-        label = "click_glow"
+        label = "click_dim"
     )
 
     // Haptic tick on press。
@@ -66,16 +67,7 @@ fun Modifier.clickableWithFeedback(
         .graphicsLayer {
             scaleX = scaleState.value
             scaleY = scaleState.value
-        }
-        .drawWithContent {
-            drawContent()
-            val glow = glowAlphaState.value
-            if (glow > 0f) {
-                drawRect(
-                    color = Color.White.copy(alpha = glow),
-                    size = size
-                )
-            }
+            alpha = dimState.value
         }
         .clickable(
             interactionSource = interactionSource,

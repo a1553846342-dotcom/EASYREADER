@@ -51,6 +51,7 @@ import com.example.ui.components.ReadingTrendCard
 import com.example.ui.components.WeeklyReadingChart
 import com.example.ui.components.dailySeries
 import com.example.ui.components.dateStrOf
+import com.example.ui.components.rememberTodayCalendar
 import com.example.ui.components.daysReadBetween
 import com.example.ui.components.formatReadDuration
 import com.example.ui.components.formatSessionTime
@@ -196,12 +197,14 @@ LazyColumn(
                     }
 
                     item(key = "stats_weekly") {
-                        val todayIdx = remember {
-                            val cal = java.util.Calendar.getInstance()
-                            (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+                        // 2026-09-21 修复：原来两处都是无 key 的 remember，只在首次组合算一次 ——
+                        // 跨过午夜/跨周后不刷新，“这周过了不重置”。改用跨天自动更新的今天。
+                        val todayCal = rememberTodayCalendar()
+                        val todayIdx = remember(todayCal) {
+                            (todayCal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
                         }
-                        val weekDates = remember {
-                            weekDatesOf(todayCalendar()).map { dateStrOf(it) }
+                        val weekDates = remember(todayCal) {
+                            weekDatesOf(todayCal).map { dateStrOf(it) }
                         }
                         // 2026-09-21 修复：原实现在本周无任何阅读记录时，把「历史累计总时长」
                         // 整个塞进“今天”那一格（表现为“今天读了 197 分钟，但我根本没看”），

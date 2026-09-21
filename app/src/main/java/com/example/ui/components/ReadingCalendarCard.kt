@@ -166,7 +166,10 @@ private fun MonthGrid(
     month: Int,
     onDayClick: (String) -> Unit
 ) {
-    val todayStr = remember { dateStrOf(todayCalendar()) }
+    // 2026-09-21：改用跨天自动更新的“今天”，否则 App 跨过午夜后
+    // 今日高亮仍停在上一次启动的那一天。
+    val todayCal = rememberTodayCalendar()
+    val todayStr = remember(todayCal) { dateStrOf(todayCal) }
     val first = remember(year, month) {
         Calendar.getInstance().apply {
             set(year, month, 1, 0, 0, 0)
@@ -304,7 +307,10 @@ private fun YearHeatmap(
     year: Int,
     onDayClick: (String) -> Unit
 ) {
-    val todayStr = remember { dateStrOf(todayCalendar()) }
+    // 2026-09-21：改用跨天自动更新的“今天”，否则 App 跨过午夜后
+    // 今日高亮仍停在上一次启动的那一天。
+    val todayCal = rememberTodayCalendar()
+    val todayStr = remember(todayCal) { dateStrOf(todayCal) }
     val cellGap = 3.dp
     val minCell = 16.dp          // 手机上保证可点、视觉舒坦的最小边长
     val weekdayLabelWidth = 20.dp
