@@ -463,18 +463,28 @@ class MangaPageTranslator(
         }
     }
 
-    /** YOLO 气泡分割（模型随 APK 内置，总能用）。 */
+    /**
+     * YOLO 气泡分割（2026-09-21：模型由 APK 内置改为按需下载）。
+     *
+     * 模型文件由 [TranslateModelManager.ensureDownloaded] 在首次开启翻译时下载到
+     * filesDir/manga_translate_models/，与 det/rec 同批、同一进度条。
+     * 这里只读本地文件；若尚未下载则返回 null（调用方会看到「模型未就绪」，
+     * 正常流程下不会发生，因为下载是翻译的前置步骤）。
+     */
     private fun bubbleDetector(): BubbleDetector? {
         synchronized(engineLock) {
             if (bubbleRef != null) return bubbleRef
             bubbleRef = runCatching {
-                val length = runCatching {
-                    appContext.assets.open("mt/manga-bubble-seg-yolo26n.onnx").use { it.available().toLong() }
-                }.getOrDefault(0L)
-                BubbleDetector(
-                    modelProvider = { appContext.assets.open("mt/manga-bubble-seg-yolo26n.onnx") },
-                    modelLength = length,
-                )
+                val f = TranslateModelManager.bubbleFile(appContext)
+                if (!f.isFile || f.length() < TranslateModelManager.bubbleModel.minBytes) {
+                    // 尚未下载：交给调用方走「先下载模型」流程，不在此处抛异常
+                    null
+                } else {
+                    BubbleDetector(
+                        modelProvider = { f.inputStream() },
+                        modelLength = f.length(),
+                    )
+                }
             }.getOrNull()
             return bubbleRef
         }

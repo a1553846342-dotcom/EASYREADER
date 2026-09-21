@@ -110,6 +110,11 @@ android {
     }
   }
   packaging {
+    // 2026-09-21 瘦身：YOLO 气泡分割模型（4.0MB，压缩后约 2.3MB）不再打进 APK。
+    // 实现方式：把文件从 app/src/main/assets/mt/ 移到仓库根的 models/ —— 它仍在 git 里
+    // （jsDelivr CDN 需要），但不在任何 assets sourceSet 中，因此不会打进 APK。
+    // （AGP 的 packaging {} 没有 assets 块，无法用 excludes 排除，故采用移目录方案。）
+    // 运行时首次开启漫画翻译时与 det/rec 同批下载，源见 TranslateModelManager.bubbleModel。
     jniLibs {
       // ⚠️ 本值实测结论（2026-09-21）：**必须为 true**。
       //

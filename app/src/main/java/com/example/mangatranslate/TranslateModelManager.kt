@@ -48,6 +48,29 @@ object TranslateModelManager {
         label = "文字识别模型",
     )
 
+    /**
+     * YOLO26n-seg 气泡分割模型（2026-09-21：由 APK 内置改为按需下载）。
+     *
+     * 原随 APK assets 打包（4.0MB，压缩后约 2.3MB）。该模型没有官方公开下载源
+     * （作者仅随 APK 分发），但 MIT License 允许再分发，因此托管到本仓库并用
+     * jsDelivr CDN 分发，与 det/rec 一样走「首次使用时下载」。
+     * 三源容灾：jsDelivr（国内可达性最好）→ GitHub raw → GitHub Release 直链。
+     */
+    val bubbleModel = ModelSpec(
+        fileName = "mt_yolo_bubble.onnx",
+        urls = listOf(
+            // 1) jsDelivr CDN（国内可达性最好）。注意用 @main 分支：模型文件为了不被
+            //    打进 APK 已从 assets/mt/ 移到仓库根 models/，v1.0.7 tag 里没有它。
+            "https://cdn.jsdelivr.net/gh/a1553846342-dotcom/EASYREADER@main/models/manga-bubble-seg-yolo26n.onnx",
+            // 2) GitHub raw 兜底
+            "https://raw.githubusercontent.com/a1553846342-dotcom/EASYREADER/main/models/manga-bubble-seg-yolo26n.onnx",
+            // 3) GitHub Release 直链兜底（已作为 v1.0.7 asset 上传，与 tag 绑定最稳）
+            "https://github.com/a1553846342-dotcom/EASYREADER/releases/download/v1.0.7/manga-bubble-seg-yolo26n.onnx",
+        ),
+        minBytes = 4_000_000L,
+        label = "气泡分割模型",
+    )
+
     sealed interface DownloadState {
         data object NotDownloaded : DownloadState
         data class Downloading(val which: String, val progress: Float) : DownloadState
@@ -71,16 +94,20 @@ object TranslateModelManager {
 
     fun detFile(context: Context): File = File(modelDir(context), detModel.fileName)
     fun recFile(context: Context): File = File(modelDir(context), recModel.fileName)
+    fun bubbleFile(context: Context): File = File(modelDir(context), bubbleModel.fileName)
 
     fun isReady(context: Context): Boolean =
-        detFile(context).isFileAndBig(detModel.minBytes) && recFile(context).isReadySize(recModel.minBytes)
+        detFile(context).isFileAndBig(detModel.minBytes) &&
+            recFile(context).isReadySize(recModel.minBytes) &&
+            bubbleFile(context).isFileAndBig(bubbleModel.minBytes)
 
     private fun File.isFileAndBig(min: Long): Boolean = isFile && length() >= min
     private fun File.isReadySize(min: Long): Boolean = isFileAndBig(min)
 
     fun totalBytes(context: Context): Long =
         (detFile(context).takeIf { it.isFile }?.length() ?: 0L) +
-            (recFile(context).takeIf { it.isFile }?.length() ?: 0L)
+            (recFile(context).takeIf { it.isFile }?.length() ?: 0L) +
+            (bubbleFile(context).takeIf { it.isFile }?.length() ?: 0L)
 
     /**
      * 下载缺失模型（已就位则跳过）。进度以两模型合计汇报。
@@ -96,9 +123,9 @@ object TranslateModelManager {
                 _state.value = DownloadState.Ready
                 return@withContext null
             }
-            val totalMin = (detModel.minBytes + recModel.minBytes).toFloat()
+            val totalMin = (detModel.minBytes + recModel.minBytes + bubbleModel.minBytes).toFloat()
             var doneBytes = 0L
-            for (spec in listOf(detModel, recModel)) {
+            for (spec in listOf(detModel, recModel, bubbleModel)) {
                 val target = File(modelDir(appContext), spec.fileName)
                 if (target.isFileAndBig(spec.minBytes)) {
                     doneBytes += target.length()

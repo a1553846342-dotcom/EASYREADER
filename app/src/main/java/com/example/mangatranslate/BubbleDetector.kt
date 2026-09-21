@@ -26,8 +26,10 @@ import kotlin.math.roundToInt
  * 端到端导出图：单类 bubble，输出 [1,300,38]（x1,y1,x2,y2,conf,classId,32 mask 系数）
  * + [1,32,368,368] mask 原型；候选选择已嵌入图内，此处仅做置信度过滤、
  * mask 轮廓重建（扫描线采样成多边形）与类内 NMS 去重。
- * 模型（11.8MB）随 APK assets 内置——它没有公开下载源（作者仅随 APK 分发），
- * MIT License 允许再分发。
+ * 模型获取方式（2026-09-21 变更）：原先随 APK assets 内置；现改为首次开启翻译时
+ * 与 det/rec 模型同批按需下载（见 [TranslateModelManager.bubbleModel]）。
+ * 该模型没有官方公开下载源（作者仅随 APK 分发），但 MIT License 允许再分发，
+ * 因此托管到本仓库由 jsDelivr CDN 分发。
  */
 class BubbleDetector(private val modelProvider: () -> InputStream, private val modelLength: Long) {
 
