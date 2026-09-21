@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example.ui
 
 
@@ -3305,7 +3307,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                             },
 
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.animateItemPlacement().fillMaxWidth()
 
                         ) {
 
@@ -3762,6 +3764,8 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                                     modifier = Modifier
 
+                                        .animateItemPlacement()
+
                                         .fillMaxWidth()
 
                                         .padding(vertical = 4.dp)
@@ -3852,6 +3856,8 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
                             Row(
 
                                 modifier = Modifier
+
+                                    .animateItemPlacement()
 
                                     .fillMaxWidth()
 

@@ -61,6 +61,7 @@ import java.io.File
 import java.util.Locale
 import androidx.compose.foundation.layout.widthIn
 import com.example.ui.adaptive.AdaptiveSpec
+import com.example.ui.design.DesignTokens
 
 /** 四类书籍封面目录（漫画/EPUB/FB2/MOBI 解析产物）。 */
 private val COVER_DIRS = listOf("comic_covers", "epub_covers", "fb2_covers", "mobi_covers")
@@ -399,7 +400,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
             ) {
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = DesignTokens.SpacePage),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -424,7 +425,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
                 modifier = Modifier
-                .widthIn(max = AdaptiveSpec.pageContentMaxWidth).fillMaxSize().padding(horizontal = 16.dp),
+                .widthIn(max = AdaptiveSpec.pageContentMaxWidth).fillMaxSize().padding(horizontal = DesignTokens.SpacePage),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
                 ) {

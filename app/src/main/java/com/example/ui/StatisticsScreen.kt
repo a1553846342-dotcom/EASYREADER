@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.widthIn
 import com.example.ui.adaptive.AdaptiveSpec
+import com.example.ui.design.DesignTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,7 +138,7 @@ LazyColumn(
                 .widthIn(max = AdaptiveSpec.pageContentMaxWidth)
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = DesignTokens.SpacePage),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 // 底部避让放进 contentPadding：contentPadding 区不做裁剪，
                 // 卡片滚动到 tab 栏背后时玻璃背景/内容照常渲染（与其他页一致）。

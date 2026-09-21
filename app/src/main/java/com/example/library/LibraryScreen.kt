@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example.library
 
 import androidx.compose.foundation.background
@@ -144,6 +146,7 @@ import com.example.ui.source.ZLibraryLoginDialog
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.widthIn
 import com.example.ui.adaptive.AdaptiveSpec
+import com.example.ui.design.DesignTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -501,7 +504,7 @@ fun LibraryScreen(
                     .imePadding()
             ) {
                 // 一体化搜索组件：书源入口整合进搜索框左侧（任务书「删除独立书源区域+搜索框重新设计」）
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Column(modifier = Modifier.padding(horizontal = DesignTokens.SpacePage)) {
                     UnifiedSearchField(
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
@@ -638,10 +641,12 @@ fun LibraryScreen(
                     Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(
-                            // 多设备一致：手机2列 / 中屏3列 / 宽屏4列，避免平板上两列被拉伸过宽
-                            when {
-                                androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 840 -> 4
-                                androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600 -> 3
+                            // 多设备一致：手机2列 / 中屏3列 / 宽屏4列，避免平板上两列被拉伸过宽。
+                            // 改用全 App 统一断点体系 AdaptiveSpec（此前此处自行判断 screenWidthDp，
+                            // 与 AdaptiveSpec.rememberWindowWidthClass 的 600/840 断点重复定义）。
+                            when (com.example.ui.adaptive.rememberWindowWidthClass()) {
+                                com.example.ui.adaptive.WindowWidthClass.EXPANDED -> 4
+                                com.example.ui.adaptive.WindowWidthClass.MEDIUM -> 3
                                 else -> 2
                             }
                         ),
@@ -1160,10 +1165,12 @@ private fun UnifiedSearchField(
     searchFocused: Boolean = false,
 ) {
     val focusManager = LocalFocusManager.current
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val fieldTextColor = if (isDark) Color.White else Color.DarkGray
-    val placeholderColor = if (isDark) Color.LightGray.copy(alpha = 0.6f) else Color.Gray
-    val dividerColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.12f)
+    // C2：原先硬编码 Color.White / DarkGray / Gray，并用 isSystemInDarkTheme() 判断，
+    // 与 App 自己的 autoNightMode 主题开关不同步（用户在 App 内开夜间模式，搜索框仍是浅色）。
+    // 改走 MaterialTheme 语义色，自动跟随 App 主题。
+    val fieldTextColor = MaterialTheme.colorScheme.onSurface
+    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant
     val sourceTint = MaterialTheme.colorScheme.onSurface
     // 聚焦态视觉反馈：主题强调色描边 + 微高亮（此前聚焦唯一反馈是历史面板弹出，
     // 违反搜索组件基本状态反馈规范）
@@ -1668,6 +1675,7 @@ private fun SourceSectionLabel(text: String) {
 private fun SourceOptionItem(
     source: BookSource,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1723,7 +1731,7 @@ private fun SourceOptionItem(
         colors = ListItemDefaults.colors(
             containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
         ),
-        modifier = Modifier
+        modifier = modifier
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -2081,13 +2089,14 @@ fun LibraryBookCard(
     imageLoader: ImageLoader,
     coverHeaders: Map<String, String> = emptyMap(),
     comicMode: Boolean = false,
+    modifier: Modifier = Modifier,
     onStartDownload: () -> Unit,
     onPauseDownload: () -> Unit,
     onResumeDownload: () -> Unit,
     onCancelDownload: () -> Unit
 ) {
     GlassCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -2404,6 +2413,7 @@ private fun StaggeredComicCard(
     coverHeaders: Map<String, String>,
     sourceName: String,
     novel: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     // 固定比例：不再依赖图片解码结果，卡片测量高度全程不变
@@ -2442,7 +2452,7 @@ private fun StaggeredComicCard(
         ).firstOrNull() ?: if (novel) "小说" else "漫画"
     }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = pressScale
@@ -2753,7 +2763,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxSize
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
             ) {
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = DesignTokens.SpacePage),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = MintPrimary, modifier = Modifier.size(20.dp))
