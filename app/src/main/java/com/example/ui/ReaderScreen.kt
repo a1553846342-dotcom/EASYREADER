@@ -1047,7 +1047,7 @@ fun ReaderScreen(
 
         targetValue = if (transitionStarted) 1f else 0f,
 
-        animationSpec = tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = tween(420, easing = com.example.ui.theme.IosMotion.EaseOut),
 
         label = "readerContentAlpha"
 
@@ -1057,7 +1057,10 @@ fun ReaderScreen(
 
         targetValue = if (transitionStarted) 0.06f else 1f,
 
-        animationSpec = tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        // 2026-09-21：原来 900ms —— 打开书籍后封面要近 1 秒才淡干净，等待感很重，
+        // 且与内容(420ms)、背景(380ms)的节奏完全打架。缩到 480ms：
+        // 内容先到位，封面稍后收尾，形成层次又不拖沓。
+        animationSpec = tween(480, easing = com.example.ui.theme.IosMotion.EaseOut),
 
         label = "readerCoverAlpha"
 
@@ -1067,7 +1070,7 @@ fun ReaderScreen(
 
         targetValue = if (transitionStarted) 1f else 0f,
 
-        animationSpec = tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = tween(380, easing = com.example.ui.theme.IosMotion.EaseOut),
 
         label = "readerBgAlpha"
 
@@ -1117,7 +1120,7 @@ fun ReaderScreen(
 
                                 boundsTransform = { _, _ ->
 
-                                    tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                                    tween(420, easing = com.example.ui.theme.IosMotion.EaseOut)
 
                                 }
 
