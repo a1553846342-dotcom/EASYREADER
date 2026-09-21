@@ -517,7 +517,10 @@ private fun DayCoverCard(
                 color = Color.Black.copy(alpha = 0.38f)
             ) {
                 Text(
-                    text = "${(record.durationSeconds / 60).coerceAtLeast(1)}分",
+                    // 2026-09-21：原来 (seconds / 60).coerceAtLeast(1) 会把 20 秒
+                    // 显示成“1分”——与“没读却 197 分钟”同源的虚报。改用统一格式化，
+                    // 不足 1 分钟就显示秒。
+                    text = formatShortDuration(record.durationSeconds),
                     fontSize = 9.sp,
                     color = Color.White,
                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
@@ -603,7 +606,7 @@ private fun DayCoverCard(
                 Column {
                     Text("阅读日期：${record.dateStr}")
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("时长：${(record.durationSeconds / 60).coerceAtLeast(1)} 分钟")
+                    Text("时长：${formatShortDuration(record.durationSeconds)}")
                     if (book == null && recordBook == null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
