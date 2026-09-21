@@ -2,6 +2,93 @@
 
 All notable changes to Ciallo 阅读 are documented in this file.
 
+## \[1.0.7] — 2026-09-21（第十六轮：前端深度审查 + 苹果感设计体系）
+
+> 纯前端与交互层整改，共 12 次提交。书源 / 下载 / 解析 / 翻译等外部行为未改动。
+
+### 🐛 数据统计：两处凭空造数
+
+- **"没看书却显示今天阅读 197 分钟"**：`StatisticsScreen` 在本周无任何阅读记录时，
+  把**历史累计总时长**整个塞进"今天"那一格，并把书架第一本书凭空当成今天读的书。
+  删除该兜底分支——没有记录就是 0，空状态交给图表自己呈现
+- **不足 1 分钟显示为"1 分"**：`(seconds / 60).coerceAtLeast(1)` 把 20 秒显示成 1 分。
+  改用统一 `formatShortDuration`（不足 1 分显示秒 / 1 小时内显示分 / 超过显示时+分）
+
+### 🐛 "这周过了不重置"
+
+真因不是数据，是 Compose 状态：`todayIdx` 与 `weekDates` 用了**无 key 的 `remember {}`**，
+只在首次组合计算一次，跨午夜 / 跨周永不刷新。新增 `rememberTodayCalendar()` 把"今天"
+提升为可观察状态（每分钟比对年月日，跨年也比对）；日历今日高亮同病同修。
+
+### ✨ 年视图日历重写
+
+原「12 行 × 31 列」矩阵在手机上每格仅约 9.5dp 宽却要塞 8sp 日期数字，横轴标签互相挤压，
+格子是 9.5×20 的长方形。改为 GitHub 贡献图布局：
+
+- 列 = 周（约 53 列）、行 = 星期（7 行，周一起始）
+- 格子 `size(cell)` 强制正方形，手机最小 16dp，宽屏自动放大铺满
+- 横轴改月份标签（放不下就不画，宁缺毋滥），左侧星期只标一/三/五/日
+- 窄屏横向滚动，**打开时自动滚到"今天"所在周**，按星期行错峰淡入
+
+上线后报"全是空白"，复盘为三因叠加：空格底色 `surfaceVariant(0.35)` 在浅色下与卡片同色；
+**`cellGap` 只参与计算却从未加进布局**（格子零间距）；热力最低档 alpha 仅 0.2。
+均已修，并把图例与格子取值抽成共用常量（原图例写死的值与实际不同步）。
+
+### ✨ 清理垃圾动画
+
+原先全程零动画（转圈 → 静态占比条 → 换文字 → Toast）。改为完整动画链：
+文件飞入粒子、占比条生长、释放量数字滚动、打勾 + 释放量弹簧弹出、
+行 `animateContentSize()` 收缩、吉祥物完成反馈。
+
+### 🔒 隐私模式
+
+- **改密码只输一次就生效** → 手滑输错 6 位会永久锁死自己的隐私分类（项目无找回机制）。
+  改为与首次设置同规格的二次确认
+- **密码错误时圆点抖动是坏的**：`animateFloatAsState` 补间到 1 就停，`offsetX` 由
+  `shake > 0.5f` 二值判断 → 圆点从 -8 跳到 +8 后**永久停在 +8 回不了正**。
+  改为 `Animatable` 三次递减摆动后归零
+- 设置页隐私开关 `checked` 硬编码 `false` → 点了开关不动、只弹窗。改为乐观选中 + 失败回弹
+
+安全部分（PIN 加盐 SHA-256、常数时间比较、关闭需验证）复查正确，未改动。
+
+### 🎨 苹果感：系统性改造
+
+- **排版**：`Type.kt` 重写为 SF Pro 规格。原先整个 `Typography` 只定义 `bodyLarge`
+  一个槽位，其余 14 个全落 Material 默认值，且 26sp 行高会被 443 处只写 `fontSize`
+  的 `Text` 继承（小字号配大行高、中文行距虚高）。补全全套层级，**字号越大字距越紧**
+  （34sp → -0.4，11sp → +0.06），正文行高约 1.45 倍
+- **动效**：新增 `IosMotion`（临界阻尼弹簧 + iOS 缓动 + 时长档位）。弹窗 0.92 起跳弹簧、
+  底部面板软弹簧、主题色切换 easeOut
+- **按压反馈**：由 `drawWithContent` 叠白色矩形（深色卡 / 毛玻璃上按下**闪白斑**）
+  改为 iOS 的整体变淡；新增 `clickableRowFeedback` 供列表行使用（只变背景不变尺寸）
+- **滚动**：全局关闭安卓边缘发光（`LocalOverscrollConfiguration provides null`）
+- **转场**：阅读页进入由 `EnterTransition.None` 改为 iOS push；打开书籍转场节奏统一
+  （内容 420 / 封面 480 / 背景 380，原为 420 / 900 / 380）
+- **分组标题**：设置页改为 13sp 半粗次级色（原 14sp Bold 主色，与行标题抢视觉重心）
+
+### ⚡ 列表动画与性能
+
+- 目录 / 搜索 / 书签 / 漫画目录 / 隐私分类补 `key`（此前 `animateItemPlacement`
+  有动画却没 key，只能拿下标当身份，重排会错位）
+- **书架瀑布流重排动画解锁**：用双向 import 别名消除
+  `lazy.items` 与 `staggeredgrid.items` 的同名歧义
+- 顺带发现一处被掩盖的错配：瀑布流里的 `items(4, key=...)` 实际匹配的是
+  `LazyListScope` 的 `items(count)` 重载，而 `LazyStaggeredGridScope` 只有 `items(List)`
+
+### 🧩 跨品牌适配
+
+- `fontScale` 全局钳制 `[0.85, 1.15]`
+- `LocalAppBottomInset` 单一事实来源替换各页硬编码底部间距
+- 设计令牌 `DesignTokens.SpacePage` 与 `rememberWindowWidthClass()` 接入
+- `configChanges` 补 `smallestScreenSize|density|fontScale|uiMode`；`windowSoftInputMode="adjustResize"`
+- `AppSwitch` 接收的 `modifier` 此前从未向下传递（静默丢弃），已修复
+
+### 📦 APK 瘦身
+
+debug 与 release 统一只打 arm64 —— 原先只有 release 是纯 arm64，debug 永远额外打包
+一份 x86_64（onnxruntime 约 38MB），这是 debug 62MB / release 23MB 的全部落差。
+需在 x86_64 模拟器跑 ONNX 时显式加 `-PincludeX86`（ARM 翻译层执行 onnxruntime 会 SIGSEGV）。
+
 ## \[Unreleased] — 2026-08-30（六轮补：用户回归反馈修复）
 
 ### 🐛 用户实测反馈三项修复

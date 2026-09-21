@@ -19,7 +19,7 @@ Kotlin · Jetpack Compose (Material 3) · MVVM · 单 Activity
 [提交 Issue](https://github.com/a1553846342-dotcom/EASYREADER/issues)
 
 ![Android](https://img.shields.io/badge/Android-API%2024%2B-green)
-![Release](https://img.shields.io/badge/Release-v1.0.6-orange)
+![Release](https://img.shields.io/badge/Release-v1.0.7-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-MVVM-blue)
 ![UI](https://img.shields.io/badge/UI-Compose%20M3-8A2BE2)
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey)
@@ -35,7 +35,7 @@ Android 端小说 / 漫画阅读器，内置多书源在线聚合搜索与下载
 | 项目                     | 内容                                                                  |
 | ---------------------- | ------------------------------------------------------------------- |
 | 一句话简介                  | 支持本地 TXT/EPUB/MOBI/AZW3/漫画导入、自定义书源、在线书库聚合搜索与多格式下载的安卓阅读器兼资源下载器       |
-| 当前版本                   | 1.0.5                                                               |
+| 当前版本                   | 1.0.7                                                               |
 | 开发状态                   | 个人项目 · 活跃开发中                                                        |
 | 最低系统                   | Android 7.0（API 24）                                                 |
 | compileSdk / targetSdk | 35                                                                  |
@@ -524,6 +524,41 @@ Release 包仅含 arm64 ONNX 库，x86\_64 模拟器经 ARM 转译运行 ONNX �
 ## 更新日志摘要
 
 逐项变更的完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+**v1.0.7（2026-09-21）— 前端深度审查 + 苹果感设计体系**
+
+本轮为纯前端与交互层整改（书源 / 下载 / 解析 / 翻译等外部行为未改动）。
+
+**跨品牌适配**（不同品牌手机"不如自己手机好看 / 对齐"的三个根因）：
+
+- **字体缩放失控**：443 处硬编码字号、全局零钳制 → 全局 `fontScale` 钳制到 `[0.85, 1.15]`，一处改动 443 处同时获救
+- **底部安全区靠"猜"**：底部 Tab 栏缺少导航栏避让，各页硬编码 96/104/120dp → 建立 `LocalAppBottomInset` 单一事实来源，删除全部魔法数字（三键导航机型不再被压栏）
+- **设计令牌是摆设**：`DesignTokens` 零引用、`AdaptiveSpec` 零调用 → 页面外边距与书架列数接入统一令牌与断点
+- 补 `configChanges` 缺失项（折叠屏开合不再重建 Activity 丢阅读进度）与 `adjustResize`
+
+**年视图日历重写**：原「12 行 × 31 列」在手机上每格仅约 9.5dp、横轴标签挤压看不清、格子是长方形。改为 GitHub 贡献图布局（列 = 周、行 = 星期）：正方形格子、横轴月份标签、自动定位到今天、按行错峰淡入。
+
+**清理垃圾动画**：原先全程零动画（只有转圈 + Toast），改为完整动画链——文件飞入粒子、占比条生长、数字滚动、打勾弹簧弹出、行收缩消失、吉祥物反馈。
+
+**数据统计修复**（两处凭空造数）：
+
+- 本周无任何阅读记录时，把**历史累计总时长**整个塞进"今天"那一格（表现为"没看却显示 197 分钟"）→ 删除兜底，没有记录就是 0
+- 不足 1 分钟被显示成"1 分" → 改用统一时长格式化
+- "这周过了不重置"：`todayIdx` / `weekDates` 用了无 key 的 `remember`，只在首次组合算一次 → 改为跨天自动刷新
+
+**隐私模式**：改密码由"一次输入即生效"改为二次确认（原手滑输错 6 位会永久锁死）；修复密码错误时圆点偏移后不回正（注释声称的"抖动"实际是永久偏移）；设置页开关不再点了没反应。
+
+**苹果感（系统性改造，非逐页贴皮）**：
+
+- 排版：补全 SF Pro 规格层级（原先 `Typography` 只定义 1 个槽位），字号越大字距越紧
+- 动效：新增 iOS 弹簧规格，弹窗 / 底部面板 / 主题色切换统一走 iOS 曲线
+- 按压反馈：由"叠白色矩形"（深色卡上会闪白斑）改为 iOS 的整体变淡；新增列表行专用反馈（只变背景不变尺寸）
+- 关闭安卓滚动边缘发光（iOS 用回弹而非光晕）
+- 阅读页进入转场从"完全没有动画"改为 iOS push；打开书籍转场节奏统一（封面 900ms → 480ms）
+
+**列表动画**：目录 / 搜索 / 书签 / 漫画目录 / 书架瀑布流补齐重排动画与元素 key（此前有动画却没 key，重排会错位）。
+
+**APK 瘦身**：debug 与 release 统一只打 arm64 —— 原先 debug 永远额外打包一份 x86_64 原生库，这正是 debug 62MB / release 23MB 的全部落差。需要在 x86_64 模拟器跑 ONNX 时加 `-PincludeX86`。
 
 **v1.0.6（2026-09-08）— 串珠快速翻页（整页刚体）+ 长按全页触发**
 
