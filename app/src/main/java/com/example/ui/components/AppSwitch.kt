@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.ui.theme.MintPrimary
@@ -21,9 +22,15 @@ fun AppSwitch(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SquishyToggleSwitch(
-        color = MintPrimary,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-    )
+    // 2026-09-21 修复：modifier 此前接收后从未向下传递 —— 调用方传入的尺寸/间距
+    // 修饰会被静默丢弃（目前 13 处调用恰好都没传，所以还没暴露，但迟早踩坑）。
+    // SquishyToggleSwitch 本身不接受 modifier，用 Box 承接；
+    // propagateMinConstraints 保证外部给的最小尺寸仍能传到开关上。
+    Box(modifier = modifier, propagateMinConstraints = true) {
+        SquishyToggleSwitch(
+            color = MintPrimary,
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
 }
