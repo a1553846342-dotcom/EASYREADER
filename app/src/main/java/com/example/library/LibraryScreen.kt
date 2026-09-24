@@ -142,7 +142,6 @@ import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.source.isNovelSource
 import com.example.ui.components.GlassCard
-import com.example.ui.glasskit.GlassKitCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
@@ -587,18 +586,23 @@ fun LibraryScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 
+                // 面板显隐条件（玻璃外观与动画均保持原有实现，只做了两处不改视觉的提速：
+                // 动画时长 320/280 → 200/180；聚焦期间禁用网格的 animateItemPlacement）
+                val historyPanelVisible =
+                    searchFieldFocused && searchQuery.isBlank() && searchHistory.isNotEmpty()
+
                 // 搜索历史：点击搜索框获得焦点、输入为空且历史非空时，以“窗帘”动画展开/收起
-                AnimatedVisibility(
-                    visible = searchFieldFocused && searchQuery.isBlank() && searchHistory.isNotEmpty(),
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = historyPanelVisible,
                     enter = expandVertically(
-                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                        animationSpec = tween(200, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
                     ) + fadeIn(
-                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                        animationSpec = tween(200, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
                     ),
                     exit = shrinkVertically(
-                        animationSpec = tween(280, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                        animationSpec = tween(180, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     ) + fadeOut(
-                        animationSpec = tween(240, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                        animationSpec = tween(160, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     )
                 ) {
                     SearchHistoryPanel(
@@ -698,7 +702,11 @@ fun LibraryScreen(
                                         // 2026-09-21：书架瀑布流重排动画（此前因 items 同名
                                         // 导致 receiver 歧义一直没做）。折叠/展开分组、
                                         // 删除书籍后，其余卡片平滑归位而不是瞬间跳排。
-                                        modifier = Modifier.animateItemPlacement(),
+                                        // 输入法弹出/收起时 IME insets 动画会持续改变网格高度，
+                                        // 若此时保留 animateItemPlacement，每个可见卡片都会跟着做
+                                        // 位移动画（几十个动画器同时跑）→ 掉帧。聚焦期间直接跳位。
+                                        modifier = if (searchFieldFocused) Modifier
+                                        else Modifier.animateItemPlacement(),
                                         onClick = {
                                             if (bookSource != null && bookSource.isNovelSource &&
                                                 !bookSource.capabilities.supportOnlineText
@@ -889,7 +897,9 @@ fun LibraryScreen(
                             LibraryBookCard(
                                 book = book,
                                 downloadState = st,
-                                modifier = Modifier.animateItemPlacement(),
+                                // 同上：输入法动画期间不做卡片位移动画，避免几十个动画器并发
+                                modifier = if (searchFieldFocused) Modifier
+                                else Modifier.animateItemPlacement(),
                                 imageLoader = imageLoader,
                                 coverHeaders = rememberCoverHeaders(book, availableSources),
                                 comicMode = currentSource?.capabilities?.supportComic == true ||
@@ -1361,6 +1371,7 @@ private fun SearchHistoryPanel(
     modifier: Modifier = Modifier
 ) {
     val error = MaterialTheme.colorScheme.error
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
     var editing by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
@@ -1388,9 +1399,13 @@ private fun SearchHistoryPanel(
     // 因此不会再出现"被切掉半截的胶囊"（此前固定高度 + clipToBounds 的病根）。
     val items = history.take(10)
 
-    // 列表大卡：只有这一层玻璃（blur + lens），**不开**按压高光（会和滚动抢按压）。
-    // 卡内的胶囊一律是 primary 平涂，不再各自做玻璃或渐变。
-    GlassKitCard(modifier = modifier.fillMaxWidth()) {
+    // 搜索历史玻璃卡：沿用项目原有的 GlassCard（surface 62% + 圆角 22），
+    // 不改用书源页那套 GlassKit —— 本页的玻璃外观保持原样。
+    GlassCard(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        tint = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+    ) {
         Column(
             modifier = Modifier
                 // 点空白退出编辑态（子胶囊会先消费点击，不会误触）
@@ -1398,7 +1413,7 @@ private fun SearchHistoryPanel(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { editing = false }
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1406,9 +1421,10 @@ private fun SearchHistoryPanel(
             ) {
                 Text(
                     text = "搜索历史",
-                    fontSize = 15.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = onSurfaceVariant,
+                    letterSpacing = 0.48.sp, // 0.04em × 12sp
                     modifier = Modifier.weight(1f)
                 )
                 // 危险色清空：小垃圾桶 +「清空」文字，点击先弹确认
@@ -1423,7 +1439,7 @@ private fun SearchHistoryPanel(
                         imageVector = Icons.Default.Delete,
                         contentDescription = null,
                         tint = error,
-                        modifier = Modifier.size(12.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(

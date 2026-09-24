@@ -89,6 +89,15 @@ object GlassTokens {
     val IconRadius = 10.dp
     /** 玻璃模糊半径。 */
     val Blur = 16.dp
+    /**
+     * 轻量档模糊（用于"正在做尺寸/显隐动画"的卡片）。
+     *
+     * 展开/收起动画期间卡片每帧尺寸都在变，`drawBackdrop` 每帧都要重跑一遍
+     * blur + vibrancy + lens 三个 shader（lens 是逐像素 SDF 的 RuntimeShader，最贵），
+     * 与输入法动画撞在同一帧就是掉帧的根源。动画期间降到只有 blur(8)，
+     * 静止后再切回完整效果 —— 静止态的观感才需要折射。
+     */
+    val BlurLightweight = 8.dp
     /** 折射作用宽度（克制）。 */
     val LensHeight = 14.dp
     /** 折射强度（过大会变成哈哈镜）。 */
@@ -308,6 +317,13 @@ fun GlassKitCard(
     shape: CornerBasedShape = GlassCardShape,
     onClick: (() -> Unit)? = null,
     interactiveHighlight: Boolean = false,
+    /**
+     * 轻量档：**只跑 blur(8)**，去掉 vibrancy 与 lens。
+     *
+     * 用于卡片正在做显隐/尺寸动画的那些帧 —— 此时每帧都要重跑 shader，
+     * 而动画期的折射没人看得清，静止后自动切回完整效果。
+     */
+    lightweight: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val kitBackdrop = LocalGlassKitBackdrop.current
@@ -354,14 +370,19 @@ fun GlassKitCard(
             backdrop = backdrop!!,
             shape = { shape },
             effects = {
-                vibrancy()
-                blur(GlassTokens.Blur.toPx())
-                if (!reduce) {
-                    lens(
-                        refractionHeight = GlassTokens.LensHeight.toPx(),
-                        refractionAmount = GlassTokens.LensAmount.toPx(),
-                        depthEffect = true
-                    )
+                if (lightweight) {
+                    // 动画中的帧：一个 shader 就够（lens 与 vibrancy 静止后再回来）
+                    blur(GlassTokens.BlurLightweight.toPx())
+                } else {
+                    vibrancy()
+                    blur(GlassTokens.Blur.toPx())
+                    if (!reduce) {
+                        lens(
+                            refractionHeight = GlassTokens.LensHeight.toPx(),
+                            refractionAmount = GlassTokens.LensAmount.toPx(),
+                            depthEffect = true
+                        )
+                    }
                 }
             },
             highlight = { Highlight.Default },
