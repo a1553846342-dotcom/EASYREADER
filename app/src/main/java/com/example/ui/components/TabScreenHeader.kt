@@ -97,9 +97,11 @@ fun TabScreenHeader(
     val innerV by animateDpAsState(if (collapsed) 7.dp else 12.dp, tween(220), label = "hdrInnerV")
     val titleSize by animateFloatAsState(if (collapsed) 19f else 24f, tween(220), label = "hdrTitle")
     val subAlpha by animateFloatAsState(if (collapsed) 0f else 1f, tween(180), label = "hdrSubAlpha")
-    // 17dp 会裁掉中文 12sp 的字形底边（CJK 默认行高 ≈1.47em ≈17.6sp）；
-    // 显式 lineHeight 14sp 收紧段落盒 + 槽位 18dp 留出余量
-    val subH by animateDpAsState(if (collapsed) 0.dp else 18.dp, tween(220), label = "hdrSubH")
+    // 副标题槽位：12sp 系统字体的自然行高约 17.6~19sp（厂商字体 metrics 不同），
+    // 18dp 会把英文降部（如 Y / & 的下缘）裁掉。放大到 20dp 并去掉硬编码
+    // lineHeight（原 14sp 比字体自然高度还小，段落盒自身就会截断字形）。
+    // 切换到打包 Noto 字体后 metrics 稳定，但槽位仍留余量以容纳 fallback 字体。
+    val subH by animateDpAsState(if (collapsed) 0.dp else 20.dp, tween(220), label = "hdrSubH")
 
     GlassCard(
         modifier = modifier
@@ -124,12 +126,13 @@ fun TabScreenHeader(
                         color = titleColor,
                         fontFamily = AppFonts.Serif
                     )
-                    // 副标题用高度+透明度双通道收起：收起态不占布局空间
+                    // 副标题用高度+透明度双通道收起：收起态不占布局空间。
+                    // 不设 lineHeight：让段落盒用字体自然行高，避免硬编码值小于
+                    // 字体实际高度时截断字形（"LIBRARY & SEARCH" 下半被裁的根因）。
                     if (subtitle != null) {
                         Text(
                             text = subtitle,
                             fontSize = 12.sp,
-                            lineHeight = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = titleColor.copy(alpha = 0.75f),
                             letterSpacing = 1.5.sp,

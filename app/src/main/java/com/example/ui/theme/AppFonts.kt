@@ -1,8 +1,8 @@
 package com.example.ui.theme
 
-import androidx.annotation.FontRes
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import com.example.R
 
 /**
@@ -40,65 +40,67 @@ import com.example.R
 object AppFonts {
 
     // ------------------------------------------------------------------
-    // 一、界面字族（UI chrome）：保持系统通用族，本次不改
+    // 〇、打包字体装配（内部，必须最先声明：下面的公开字族都引用它们）
     // ------------------------------------------------------------------
 
-    /** 界面默认体（正文、按钮、列表等一切 chrome）。当前 = `FontFamily.Default`。 */
-    val Default: FontFamily = FontFamily.Default
+    /** 界面 / 阅读共用的 Noto Sans SC（Normal + Bold 两个槽位指向同一文件）。 */
+    private val uiSans: FontFamily = runCatching {
+        require(R.font.noto_sans_sc_regular != 0) { "font resource stripped" }
+        FontFamily(
+            Font(resId = R.font.noto_sans_sc_regular, weight = FontWeight.Normal),
+            // 子集无独立 Bold 文件：注册同文件到 Bold 槽位，粗体走合成加粗
+            Font(resId = R.font.noto_sans_sc_regular, weight = FontWeight.Bold)
+        )
+    }.getOrDefault(FontFamily.SansSerif)
 
-    /** 衬线体：书籍标题、封面上的书名、年报大字等装饰性排版。当前 = `FontFamily.Serif`。 */
-    val Serif: FontFamily = FontFamily.Serif
+    /** 界面 / 阅读共用的 Noto Serif SC（Normal + Bold）。 */
+    private val uiSerif: FontFamily = runCatching {
+        require(R.font.noto_serif_sc_regular != 0) { "font resource stripped" }
+        FontFamily(
+            Font(resId = R.font.noto_serif_sc_regular, weight = FontWeight.Normal),
+            Font(resId = R.font.noto_serif_sc_regular, weight = FontWeight.Bold)
+        )
+    }.getOrDefault(FontFamily.Serif)
 
-    /** 黑体 / 无衬线：需要更"硬"的现代感时用。当前 = `FontFamily.SansSerif`。 */
-    val SansSerif: FontFamily = FontFamily.SansSerif
+    // ------------------------------------------------------------------
+    // 一、界面字族（UI chrome）：2026-09-24 起同样使用打包字体
+    // ------------------------------------------------------------------
+    //
+    // 背景：v1.1.0 之前界面文字走 `FontFamily.Default` 等系统通用族，会解析到
+    // 各厂商自己的字体（HarmonyOS Sans / MiSans / OneUI Sans…），字形、字重、
+    // 基线全部不同 —— 实机对比确认「同一页面两台手机字体不一样」正是源于此。
+    //
+    // 现在界面字族与阅读正文字族共用 `res/font/` 里的 Noto CJK 子集：
+    //  - 跨机型字形完全一致；
+    //  - 子集未覆盖的生僻字 / emoji 由 Android 的 Typeface fallback 链补齐，
+    //    不会出现豆腐块；
+    //  - Noto 子集只有 Regular 一个字重文件，Bold / SemiBold / Medium 通过
+    //    注册同文件的 Bold 槽位走**合成粗体**（faux bold），字重观感略轻于
+    //    厂商真粗体，属于统一字形的代价。
+    //
+    // 注意：**不要**在业务代码里重新出现 `FontFamily.XXX` 字面量，一律走这里。
 
-    /** 等宽体：JSON 书源示例、代码、对齐要求高的数值。当前 = `FontFamily.Monospace`。 */
+    /** 界面默认体（正文、按钮、列表等一切 chrome）= Noto Sans SC。 */
+    val Default: FontFamily = uiSans
+
+    /** 衬线体：书籍标题、封面书名、四 Tab 页大标题 = Noto Serif SC。 */
+    val Serif: FontFamily = uiSerif
+
+    /** 黑体 / 无衬线 = Noto Sans SC（与 [Default] 同族）。 */
+    val SansSerif: FontFamily = uiSans
+
+    /** 等宽体：JSON 书源示例、代码、对齐要求高的数值。保持系统等宽族（跨机型差异小、省体积）。 */
     val Monospace: FontFamily = FontFamily.Monospace
 
     // ------------------------------------------------------------------
-    // 二、阅读正文字族：随 APK 分发的 Noto CJK 子集
+    // 二、阅读正文字族：与界面同源的 Noto CJK 子集
     // ------------------------------------------------------------------
 
-    /**
-     * 阅读用衬线体：`res/font/noto_serif_sc_regular.otf`（Noto Serif SC Regular 子集）。
-     *
-     * 加载失败时退回 [FontFamily.Serif]，保证不会崩溃或空白。
-     */
-    val ReadingSerif: FontFamily = bundledFontFamily(
-        resId = R.font.noto_serif_sc_regular,
-        fallback = FontFamily.Serif
-    )
+    /** 阅读用衬线体：`res/font/noto_serif_sc_regular.otf`。加载失败退回系统衬线族。 */
+    val ReadingSerif: FontFamily = uiSerif
 
-    /**
-     * 阅读用黑体：`res/font/noto_sans_sc_regular.otf`（Noto Sans SC Regular 子集）。
-     *
-     * 加载失败时退回 [FontFamily.SansSerif]，保证不会崩溃或空白。
-     */
-    val ReadingSansSerif: FontFamily = bundledFontFamily(
-        resId = R.font.noto_sans_sc_regular,
-        fallback = FontFamily.SansSerif
-    )
-
-    /**
-     * 用打包字体构造 [FontFamily]，并带**兜底**。
-     *
-     * 兜底覆盖两类失败：
-     *  1. 资源 id 为 0（资源被裁剪 / 未打进该 flavor）—— 直接退回通用族；
-     *  2. 构造过程中抛出的任何异常 —— 捕获后退回通用族。
-     *
-     * 说明：`Font(resId = ...)` 本身只是持有 id，真正的 Typeface 解析发生在
-     * Compose 排版阶段（AndroidFontLoader → `ResourcesCompat.getFont`）。
-     * 字体文件由构建期校验过的 pyftsubset 产物生成，解析失败概率极低；
-     * 这里再补一层静态校验，确保任何异常都不会污染到阅读页。
-     *
-     * @param resId `res/font/` 下打包字体的资源 id
-     * @param fallback 任何异常情况下退回的通用字族
-     */
-    private fun bundledFontFamily(@FontRes resId: Int, fallback: FontFamily): FontFamily =
-        runCatching {
-            require(resId != 0) { "font resource id is 0, resource may be stripped" }
-            FontFamily(Font(resId = resId))
-        }.getOrDefault(fallback)
+    /** 阅读用黑体：`res/font/noto_sans_sc_regular.otf`。加载失败退回系统无衬线族。 */
+    val ReadingSansSerif: FontFamily = uiSans
 
     // ------------------------------------------------------------------
     // 三、阅读器「字体」设置档位表

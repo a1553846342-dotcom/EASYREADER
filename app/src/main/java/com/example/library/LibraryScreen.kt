@@ -1153,7 +1153,10 @@ private fun LibraryCollapsingHeader(
     val collapse = ((f0 - 0.6f) / 0.4f).coerceIn(0f, 1f)
     val titleSize = 24f - 5f * compact
     val subAlpha = (1f - f0 / 0.3f).coerceIn(0f, 1f)
-    val subH = (17 * subAlpha).dp
+    // 副标题槽位 20dp：12sp 字体自然行高约 17.6~19sp，17dp 会把英文降部
+    // （"LIBRARY & SEARCH" 的 Y / & 下缘）裁掉 —— 厂商字体 descent 越大裁得越狠。
+    // 槽位放大后配合 clipToBounds 只在折叠收起时裁切。
+    val subH = (20 * subAlpha).dp
     val outerV = (10 * (1f - collapse) * (1f - collapse)).dp
     val innerV = (12 - 8 * compact).dp
 
