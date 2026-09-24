@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    // WindowInsets.imeAnimationTarget 仍标记为实验性 API（用它的目标值替代逐帧 ime 值）
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class
+)
 
 package com.example.library
 
@@ -142,6 +146,7 @@ import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.source.isNovelSource
 import com.example.ui.components.GlassCard
+import com.example.ui.glasskit.GlassKitCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
@@ -322,17 +327,25 @@ fun LibraryScreen(
         }
     }
     val searchFocusedNow by rememberUpdatedState(headerForceCollapse)
-    val headerCollapseFraction by remember(headerCollapsePx) {
-        derivedStateOf {
-            if (searchFocusedNow) return@derivedStateOf 1f
+    // ⚠️ 刻意**不用** derivedStateOf 在页面体里读取滚动状态：那样「滚动」或「聚焦折叠动画」
+    // 的每一帧都会重组整个 LibraryScreen（3000+ 行），这是搜索弹/收键盘以及滚动卡顿的
+    // 最大单项来源。改成 lambda 交给头部组件，状态读取发生在它内部，
+    // 重组范围就收缩到头部那一小块。
+    val headerFractionSource: () -> Float = {
+        if (searchFocusedNow) {
+            1f
+        } else {
             val gridIdx = staggeredGridState.firstVisibleItemIndex
             val listIdx = listState.firstVisibleItemIndex
-            if (gridIdx > 0 || listIdx > 0) return@derivedStateOf 1f
-            val off = max(
-                staggeredGridState.firstVisibleItemScrollOffset,
-                listState.firstVisibleItemScrollOffset
-            )
-            (off / headerCollapsePx).coerceIn(0f, 1f)
+            if (gridIdx > 0 || listIdx > 0) {
+                1f
+            } else {
+                val off = max(
+                    staggeredGridState.firstVisibleItemScrollOffset,
+                    listState.firstVisibleItemScrollOffset
+                )
+                (off / headerCollapsePx).coerceIn(0f, 1f)
+            }
         }
     }
 
@@ -490,15 +503,11 @@ fun LibraryScreen(
             ) {
     // 滚动渐进折叠头部（书库强化版）：fraction 连续驱动副标题淡出→标题缩小→整卡高度归零，
     // 完全收起后零垂直占用；回顶或搜索失焦后按同一路径平滑恢复。
-    // 搜索聚焦是状态跳变（非滚动连续量），用 260ms 补间过渡避免头部一帧内归零的硬切
-    val headerFractionRaw = headerCollapseFraction
-    val headerFraction by animateFloatAsState(
-        targetValue = headerFractionRaw,
-        animationSpec = if (searchFieldFocused || headerFractionRaw == 1f) tween(260) else tween(120),
-        label = "libHeaderFraction",
-    )
+    // 折叠补间与「读取滚动状态」都下沉到 LibraryCollapsingHeader 内部，
+    // 这样动画的每一帧只重组头部，不再牵动整个页面。
     LibraryCollapsingHeader(
-        fraction = headerFraction,
+        fractionSource = headerFractionSource,
+        focusDriven = searchFieldFocused,
         modifier = Modifier.statusBarsPadding(),
         title = "书库",
         subtitle = "LIBRARY & SEARCH",
@@ -539,8 +548,13 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(0.dp)
-                    // 根因修复：键盘弹出时压缩本布局而非覆盖（此前无 imePadding，结果网格被键盘遮住约 40% 屏高）
-                    .imePadding()
+                    // ── 键盘避让：用 imeAnimationTarget（动画的**目标值**）而不是 ime（逐帧插值）──
+                    // ime 在输入法升起/收起的 ~250ms 里逐帧变化，于是下方内容（检索图书插图、
+                    // 瀑布流网格）每帧都要重新测量与布局 —— 这正是"点搜索框弹键盘卡、点空白收
+                    // 键盘也卡"的根因：卡的不是玻璃，是每帧重排。
+                    // 目标值只在动画开始/结束各变一次，**最终布局与 imePadding 完全一致**
+                    // （视觉零差异），代价仅是不再跟随键盘做逐帧位移。
+                    .windowInsetsPadding(WindowInsets.imeAnimationTarget)
             ) {
                 // 一体化搜索组件：书源入口整合进搜索框左侧（任务书「删除独立书源区域+搜索框重新设计」）
                 Column(modifier = Modifier.padding(horizontal = DesignTokens.SpacePage)) {
@@ -590,23 +604,33 @@ fun LibraryScreen(
                 // 动画时长 320/280 → 200/180；聚焦期间禁用网格的 animateItemPlacement）
                 val historyPanelVisible =
                     searchFieldFocused && searchQuery.isBlank() && searchHistory.isNotEmpty()
+                var historyPanelSettled by remember { mutableStateOf(false) }
+                LaunchedEffect(historyPanelVisible) {
+                    if (historyPanelVisible) {
+                        kotlinx.coroutines.delay(330)
+                        historyPanelSettled = true
+                    } else {
+                        historyPanelSettled = false
+                    }
+                }
 
                 // 搜索历史：点击搜索框获得焦点、输入为空且历史非空时，以“窗帘”动画展开/收起
                 androidx.compose.animation.AnimatedVisibility(
                     visible = historyPanelVisible,
                     enter = expandVertically(
-                        animationSpec = tween(200, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
                     ) + fadeIn(
-                        animationSpec = tween(200, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+                        animationSpec = tween(320, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
                     ),
                     exit = shrinkVertically(
-                        animationSpec = tween(180, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                        animationSpec = tween(280, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     ) + fadeOut(
-                        animationSpec = tween(160, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
+                        animationSpec = tween(240, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     )
                 ) {
                     SearchHistoryPanel(
                         history = searchHistory,
+                        lightweight = !historyPanelSettled,
                         onPick = { q ->
                             searchQuery = q
                             performSearch(q)
@@ -1099,7 +1123,15 @@ fun LibraryScreen(
  */
 @Composable
 private fun LibraryCollapsingHeader(
-    fraction: Float,
+    /**
+     * 折叠目标值的**来源**（不在页面体里求值）。
+     *
+     * 传 lambda 而不是 Float：滚动位置、聚焦状态这些 State 的读取发生在
+     * **本组件内部**，于是它们的每一帧变化只让头部重组，不会重组整个 LibraryScreen。
+     */
+    fractionSource: () -> Float,
+    /** 目标来自搜索聚焦（状态跳变）：用 260ms 补间，否则用 120ms（滚动驱动）。 */
+    focusDriven: Boolean = false,
     modifier: Modifier = Modifier,
     title: String = "书库",
     subtitle: String? = null,
@@ -1107,6 +1139,12 @@ private fun LibraryCollapsingHeader(
     leading: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null
 ) {
+    val target = fractionSource()
+    val fraction by animateFloatAsState(
+        targetValue = target,
+        animationSpec = if (focusDriven || target == 1f) tween(260) else tween(120),
+        label = "libHeaderFraction",
+    )
     val f0 = fraction.coerceIn(0f, 1f)
     // 三段式：0→0.5 内容紧凑化；0.4→0.8 整卡淡出；0.6→1 压高归零——
     // 淡出先于压高完成，避免压高裁切把标题/图标拦腰截断的"半截字"伪影
@@ -1368,10 +1406,11 @@ private fun SearchHistoryPanel(
     onPick: (String) -> Unit,
     onDelete: (String) -> Unit,
     onClearAll: () -> Unit,
+    /** 展开/收起动画进行中：玻璃只跑 blur，不跑折射（见 GlassTokens.BlurLightweight）。 */
+    lightweight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val error = MaterialTheme.colorScheme.error
-    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
     var editing by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
@@ -1399,12 +1438,11 @@ private fun SearchHistoryPanel(
     // 因此不会再出现"被切掉半截的胶囊"（此前固定高度 + clipToBounds 的病根）。
     val items = history.take(10)
 
-    // 搜索历史玻璃卡：沿用项目原有的 GlassCard（surface 62% + 圆角 22），
-    // 不改用书源页那套 GlassKit —— 本页的玻璃外观保持原样。
-    GlassCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        tint = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+    // 上一版的搜索历史卡：GlassKit（背板库实时采样 + 连续曲率 + 边缘折射）。
+    // 卡内一律平涂，不再各自做玻璃或渐变。
+    GlassKitCard(
+        modifier = modifier.fillMaxWidth(),
+        lightweight = lightweight
     ) {
         Column(
             modifier = Modifier
@@ -1413,7 +1451,7 @@ private fun SearchHistoryPanel(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { editing = false }
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(16.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1421,10 +1459,9 @@ private fun SearchHistoryPanel(
             ) {
                 Text(
                     text = "搜索历史",
-                    fontSize = 12.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = onSurfaceVariant,
-                    letterSpacing = 0.48.sp, // 0.04em × 12sp
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
                 // 危险色清空：小垃圾桶 +「清空」文字，点击先弹确认
@@ -1439,7 +1476,7 @@ private fun SearchHistoryPanel(
                         imageVector = Icons.Default.Delete,
                         contentDescription = null,
                         tint = error,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
