@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.trishiraj.shadowglow.consistentShadow
 import me.trishiraj.shadowglow.shadowGlow
 import dev.liquidglass.compose.GlassHighlight
 import dev.liquidglass.compose.GlassRefraction
@@ -170,7 +171,7 @@ fun AppActionButton(
     Box(
         modifier = when (variant) {
             AppButtonVariant.Primary -> pressModifier
-                .shadow(
+                .consistentShadow(
                     elevation = shadowElevation,
                     shape = shape,
                     ambientColor = colors.primary.copy(alpha = 0.35f),

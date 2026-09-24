@@ -202,8 +202,8 @@ data class AniListTitleEntity(
 )
 
 @Database(
-    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class, ReadingSession::class, com.example.download.DownloadTaskEntity::class, AniListTitleEntity::class],
-    version = 8,
+    entities = [Book::class, Chapter::class, Bookmark::class, Highlight::class, CategoryEntity::class, ReadingRecord::class, ReadingSession::class, com.example.download.DownloadTaskEntity::class, AniListTitleEntity::class, com.example.data.favorite.FavoriteEntity::class, com.example.data.favorite.ComicProgressEntity::class, com.example.data.favorite.ChapterReadEntity::class, com.example.data.favorite.FavoriteCategoryEntity::class],
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(com.example.download.DownloadTypeConverters::class)
@@ -211,6 +211,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun downloadTaskDao(): com.example.download.DownloadTaskDao
     abstract fun anilistDao(): AniListDao
+    abstract fun favoriteDao(): com.example.data.favorite.FavoriteDao
 
     companion object {
         @Volatile
@@ -276,6 +277,115 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * v8 -> v9（「我喜欢的」在线收藏 + 阅读进度三张表）：
+         *
+         * 三张数据与下载完全解耦——同一 (sourceId, comicId) 可以 仅下载 / 仅喜欢 /
+         * 两者都有；取消喜欢、删除下载都不影响 comic_progress 与 comic_chapter_read。
+         * 旧数据无需搬运（此前没有在线收藏概念），只做建表，存量书籍零影响。
+         */
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorites` (" +
+                        "`sourceId` TEXT NOT NULL, " +
+                        "`comicId` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`author` TEXT NOT NULL, " +
+                        "`coverUrl` TEXT, " +
+                        "`localThumbPath` TEXT, " +
+                        "`serialStatus` TEXT NOT NULL, " +
+                        "`latestChapterId` TEXT, " +
+                        "`latestChapterTitle` TEXT, " +
+                        "`latestChapterUpdateAt` INTEGER NOT NULL, " +
+                        "`lastCheckedAt` INTEGER NOT NULL, " +
+                        "`sourceAlive` INTEGER NOT NULL, " +
+                        "`categoryName` TEXT NOT NULL, " +
+                        "`favoritedAt` INTEGER NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`sourceId`, `comicId`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_favorites_categoryName` ON `favorites` (`categoryName`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_favorites_favoritedAt` ON `favorites` (`favoritedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_favorites_lastCheckedAt` ON `favorites` (`lastCheckedAt`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `comic_progress` (" +
+                        "`sourceId` TEXT NOT NULL, " +
+                        "`comicId` TEXT NOT NULL, " +
+                        "`lastChapterId` TEXT, " +
+                        "`lastChapterIndex` INTEGER NOT NULL, " +
+                        "`lastPageIndex` INTEGER NOT NULL, " +
+                        "`lastPageCount` INTEGER NOT NULL, " +
+                        "`lastReadAt` INTEGER NOT NULL, " +
+                        "`seenTopChapterId` TEXT, " +
+                        "`seenChapterCount` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`sourceId`, `comicId`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_comic_progress_lastReadAt` ON `comic_progress` (`lastReadAt`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `comic_chapter_read` (" +
+                        "`sourceId` TEXT NOT NULL, " +
+                        "`comicId` TEXT NOT NULL, " +
+                        "`chapterId` TEXT NOT NULL, " +
+                        "`status` INTEGER NOT NULL, " +
+                        "`pageIndex` INTEGER NOT NULL, " +
+                        "`pageCount` INTEGER NOT NULL, " +
+                        "`chapterIndex` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`sourceId`, `comicId`, `chapterId`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_comic_chapter_read_sourceId_comicId` " +
+                        "ON `comic_chapter_read` (`sourceId`, `comicId`)"
+                )
+            }
+        }
+
+        /**
+         * v9 -> v10：books 增加来源标识两列（sourceId / comicId），
+         * 让「我的书架」里的书能反查到「我喜欢的」的在线条目 —— 书架卡片才能显示
+         * 右下角小心形、批量操作才能判断「这本有没有来源、能不能喜欢」。
+         * 存量本地导入书两列为空（无来源 → 不可喜欢，阅读进度不受影响）。
+         */
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN sourceId TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN comicId TEXT")
+            }
+        }
+
+        /**
+         * v10 -> v11：「我喜欢的」拥有自己的分类表（与书架 categories 彻底分开）。
+         * 升级时把收藏里已经用过的分类名搬进新表，用户原有的分组不会丢。
+         */
+        val MIGRATION_10_11 = object : androidx.room.migration.Migration(10, 11) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorite_categories` (" +
+                        "`name` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`name`))"
+                )
+                var order = 0
+                val cursor = db.query("SELECT DISTINCT categoryName FROM favorites")
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(0)
+                    if (!name.isNullOrBlank()) {
+                        db.execSQL(
+                            "INSERT OR IGNORE INTO favorite_categories (name, sortOrder, createdAt) VALUES (?, ?, ?)",
+                            arrayOf(name, order++, System.currentTimeMillis())
+                        )
+                    }
+                }
+                cursor.close()
+                db.execSQL(
+                    "INSERT OR IGNORE INTO favorite_categories (name, sortOrder, createdAt) VALUES (?, ?, ?)",
+                    arrayOf("默认", order, System.currentTimeMillis())
+                )
+            }
+        }
+
+        /**
          * 第十轮：AniList 多语言标题库改为 APK 内置（assets/anilist_titles.tsv.gz，
          * 2.7 万行 / 4950 部热门作品），首次打开主库时一次性导入——用户零拉取、
          * 离线可用；运行时同步调度器已移除。
@@ -299,7 +409,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_reader.db"
                 )
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+                    )
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

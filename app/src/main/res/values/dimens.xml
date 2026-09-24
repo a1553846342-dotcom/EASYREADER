@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    全 App 自适应宽度规范（自适应体系的资源化出口）。
+
+    背景：此前断点数值只存在于 ui/adaptive/AdaptiveSpec.kt 的 Kotlin 常量里，
+    想按屏幕形态调参必须改代码。现在四个关键宽度落进 res/dimen：
+      adaptive_dialog_max_width            居中弹窗最大宽
+      adaptive_sheet_max_width             底部面板最大宽（竖屏/窄窗）
+      adaptive_sheet_max_width_landscape   底部面板最大宽（横屏）
+      adaptive_page_max_width              全屏滚动页内容最大宽
+
+    覆盖方式：把本文件复制到 values-sw600dp/、values-sw840dp/ 等限定符目录
+    （与 AdaptiveSpec.rememberWindowWidthClass 的 600/840 断点一致）并改数值。
+    本目录与两个 sw 目录当前数值完全一致——本轮五形态实测没有需要改数值的
+    问题（见 docs/adaptive-screen-audit.md），这里只建立机制、不改变观感。
+
+    ⚠️ 同步纪律：AdaptiveSpec 常量是非组合上下文（Modifier 工厂）的编译期兜底，
+    两条路径的数值必须保持一致；改任一侧时另一侧要同步。
+-->
+<resources>
+    <dimen name="adaptive_dialog_max_width">560dp</dimen>
+    <dimen name="adaptive_sheet_max_width">560dp</dimen>
+    <dimen name="adaptive_sheet_max_width_landscape">840dp</dimen>
+    <dimen name="adaptive_page_max_width">720dp</dimen>
+</resources>

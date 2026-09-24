@@ -463,22 +463,32 @@ fun JunoSlider(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startX = down.position.x
                     dragging = true
-                    // 按下即把进度同步到手指位置，保证 1:1
-                    if (currentWidth > 0) {
-                        onValueChange((startX / currentWidth).coerceIn(0f, 1f))
-                    }
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
-                            break
-                        }
-                        change.consume()
+                    // ⚠️ 健壮性：无论手势以何种方式结束（正常抬手 / 指针被父级消费掉 /
+                    //    拖出流外 / 节点被移出组合导致协程取消），都必须把 dragging
+                    //    归位。旧写法只在 while 循环正常 break 后复位，一旦协程在
+                    //    awaitPointerEvent 挂起时被取消，「拖动中」的 thumb 会永远
+                    //    显示、滑块永远停在拖动态。
+                    try {
+                        // 按下即把进度同步到手指位置，保证 1:1
                         if (currentWidth > 0) {
-                            onValueChange((change.position.x / currentWidth).coerceIn(0f, 1f))
+                            onValueChange((startX / currentWidth).coerceIn(0f, 1f))
                         }
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                break
+                            }
+                            change.consume()
+                            if (currentWidth > 0) {
+                                onValueChange((change.position.x / currentWidth).coerceIn(0f, 1f))
+                            }
+                        }
+                    } finally {
+                        // 协程已取消时 suspend 的写状态也会抛 CancellationException，
+                        // 这里用非挂起的状态写保证复位语义不被吞掉
+                        dragging = false
                     }
-                    dragging = false
                 }
             }
             // 可访问性：向读屏暴露当前进度与百分比

@@ -28,6 +28,7 @@ import com.example.ui.components.AppActionButton
 import com.example.ui.components.AppButtonSize
 import com.example.ui.components.AppButtonVariant
 import com.example.ui.theme.MintPrimary
+import me.trishiraj.shadowglow.consistentShadow
 
 data class OnboardingPage(
     val title: String,
@@ -149,10 +150,11 @@ fun OnboardingScreen(
                     Card(
                         modifier = Modifier
                             .size(200.dp)
-                            .testTag("onboarding_illustration_card_${pageIndex}"),
+                            .testTag("onboarding_illustration_card_${pageIndex}")
+                            .consistentShadow(4.dp, RoundedCornerShape(24.dp)),
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize(),

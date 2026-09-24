@@ -16,6 +16,186 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val downloadManager = com.example.download.DownloadManager(application)
     val repository = BookRepository(application, database.bookDao())
 
+    /* ══════════════ 「我喜欢的」在线收藏（三态解耦） ══════════════
+     * 收藏 / 阅读进度 / 下载 三张数据互不耦合：
+     * - 取消喜欢不影响下载与阅读进度；
+     * - 删除下载不影响喜欢与阅读进度；
+     * - 没有来源信息的本地书不能被喜欢（入口置灰并说明原因）。
+     * 书源实例由 MainActivity 注入（SourceManager 归 LibraryViewModel 持有）。
+     */
+    var comicSourceProvider: (suspend (String) -> com.example.source.ComicSource?)? = null
+
+    val favoriteRepository = com.example.data.favorite.FavoriteRepository(
+        dao = database.favoriteDao(),
+        comicSourceOf = { sourceId -> comicSourceProvider?.invoke(sourceId) },
+        scope = viewModelScope,
+    )
+
+    /** 收藏列表（Room Flow） */
+    val favorites: StateFlow<List<com.example.data.favorite.FavoriteEntity>> = favoriteRepository.favorites
+
+    /** 收藏主键集合："sourceId::comicId" —— 书架卡片右下角小心形用 */
+    val favoriteKeys: StateFlow<Set<String>> = favoriteRepository.favoriteKeys
+
+    /**
+     * 收藏 + 进度 + 已下载章节数的聚合流：书架「我喜欢的」栏直接消费。
+     * 已下载话数用 sourceId/comicId 反查本地 books（一个已下载章节 = 一本本地漫画）。
+     */
+    val favoriteItems: StateFlow<List<com.example.data.favorite.FavoriteItem>> =
+        combine(favorites, favoriteRepository.progressByKey, repository.allBooks) { favs, progressMap, books ->
+            val key = { s: String, c: String -> com.example.data.favorite.favoriteKey(s, c) }
+            val downloadedByKey = books
+                .filter { it.isComic && !it.sourceId.isNullOrBlank() && !it.comicId.isNullOrBlank() }
+                .groupBy { key(it.sourceId!!, it.comicId!!) }
+            favs.map { fav ->
+                com.example.data.favorite.FavoriteItem(
+                    favorite = fav,
+                    progress = progressMap[key(fav.sourceId, fav.comicId)],
+                    downloadedChapters = downloadedByKey[key(fav.sourceId, fav.comicId)]?.size ?: 0,
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun toggleFavorite(
+        book: com.example.source.SearchBook,
+        next: Boolean,
+        category: String = com.example.data.favorite.FAV_DEFAULT_CATEGORY,
+        chapters: List<com.example.source.ComicChapter> = emptyList(),
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (next) favoriteRepository.add(book, category, chapters)
+            else favoriteRepository.remove(book.sourceId, book.id)
+        }
+    }
+
+    /* ───────── 「我喜欢的」的分类（与书架分类完全独立） ───────── */
+
+    val favoriteCategories: StateFlow<List<com.example.data.favorite.FavoriteCategoryEntity>> =
+        favoriteRepository.favoriteCategories
+
+    fun addFavoriteCategory(name: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.addFavoriteCategory(name)
+        }
+    }
+
+    fun renameFavoriteCategory(oldName: String, newName: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.renameFavoriteCategory(oldName, newName)
+        }
+    }
+
+    fun deleteFavoriteCategory(name: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.deleteFavoriteCategory(name)
+        }
+    }
+
+    fun moveFavoritesToCategory(keys: List<String>, category: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.moveToCategory(keys, category)
+        }
+    }
+
+    fun removeFavorites(keys: List<String>) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.removeByKeys(keys)
+        }
+    }
+
+    /* ───────── 阅读进度：翻页防抖保存，退出/进后台强制保存 ───────── */
+
+    private var progressSaveJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * 保存漫画阅读进度。翻页时调用（自动防抖 400ms），退出阅读器 /
+     * 进入后台时用 force = true 立刻落库。
+     * 与是否收藏、是否下载完全无关 —— 没收藏的漫画同样记录已读状态。
+     */
+    fun saveComicProgress(
+        sourceId: String,
+        comicId: String,
+        chapterId: String,
+        chapterIndex: Int,
+        pageIndex: Int,
+        pageCount: Int,
+        force: Boolean = false,
+    ) {
+        if (sourceId.isBlank() || comicId.isBlank() || chapterId.isBlank()) return
+        progressSaveJob?.cancel()
+        val write: suspend () -> Unit = {
+            favoriteRepository.saveProgress(
+                sourceId = sourceId,
+                comicId = comicId,
+                chapterId = chapterId,
+                chapterIndex = chapterIndex,
+                pageIndex = pageIndex,
+                pageCount = pageCount,
+            )
+        }
+        if (force) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { write() }
+        } else {
+            progressSaveJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.delay(400)
+                write()
+            }
+        }
+    }
+
+    /** 进入章节列表时记录"已见"快照（之后新增的章节显示「新」）。 */
+    fun markComicSeen(sourceId: String, comicId: String, chapters: List<com.example.source.ComicChapter>) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.markSeen(sourceId, comicId, chapters)
+        }
+    }
+
+    /** 手动标记某章已读/未读（长按章节）。 */
+    fun markComicChapterRead(
+        sourceId: String,
+        comicId: String,
+        chapterId: String,
+        chapterIndex: Int,
+        read: Boolean,
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.markChapter(sourceId, comicId, chapterId, chapterIndex, read)
+        }
+    }
+
+    /** 「将以上全部标记为已读」。 */
+    fun markComicChaptersReadUpTo(sourceId: String, comicId: String, maxIndex: Int) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.markChaptersReadUpTo(sourceId, comicId, maxIndex)
+        }
+    }
+
+    /**
+     * 换源迁移：把收藏 / 进度 / 已读状态按「阅读序号」搬到新源的这本上。
+     * 只有用户显式确认了候选来源才调用（见 [com.example.ui.favorite.SourceMigrateSheet]）。
+     */
+    fun migrateComic(
+        fromSourceId: String,
+        fromComicId: String,
+        toSourceId: String,
+        toComicId: String,
+        newChapters: List<com.example.source.ComicChapter> = emptyList(),
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.migrateByOrder(
+                from = com.example.data.favorite.ComicKey(fromSourceId, fromComicId),
+                to = com.example.data.favorite.ComicKey(toSourceId, toComicId),
+                newChapters = newChapters,
+            )
+        }
+    }
+
+    fun checkFavoriteUpdates(force: Boolean = false) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            favoriteRepository.checkUpdates(force)
+        }
+    }
+
     /* ── 隐私模式（第七轮第 6.4/6.5 条） ── */
     val privacy = PrivacyManager(application)
 
@@ -550,6 +730,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setIncognitoBrowsing(enabled: Boolean) {
         _incognitoBrowsingEnabled.value = enabled
         prefs.incognitoBrowsingEnabled = enabled
+    }
+
+    /* ── 「我喜欢的」密码保护（与书架受保护分类同一套 PIN） ── */
+
+    private val _favoritesProtected = MutableStateFlow(prefs.favoritesProtected)
+    val favoritesProtected: StateFlow<Boolean> = _favoritesProtected.asStateFlow()
+
+    fun setFavoritesProtected(enabled: Boolean) {
+        _favoritesProtected.value = enabled
+        prefs.favoritesProtected = enabled
     }
 
     fun recordTime(seconds: Long, title: String? = null) {

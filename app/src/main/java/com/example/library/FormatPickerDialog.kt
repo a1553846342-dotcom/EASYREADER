@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +35,7 @@ import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.iridescentBorder
 import com.example.ui.components.rememberIridescentColors
 import dev.chrisbanes.haze.HazeState
+import me.trishiraj.shadowglow.consistentShadow
 import com.example.ui.adaptive.AdaptiveSpec
 
 /**
@@ -92,7 +92,10 @@ fun FormatPickerDialog(
                         scaleY = panelScale
                         alpha = panelAlpha
                     }
-                    .shadow(28.dp, RoundedCornerShape(24.dp), clip = false)
+                    // 原：.shadow(28.dp, RoundedCornerShape(24.dp), clip = false)
+                    // consistentShadow 内部 .clip(shape) 与紧接着的 .clip(RoundedCornerShape(24.dp)) 同形，
+                    // 净效果等价（该面板内容本就全在 24dp 圆角内）。
+                    .consistentShadow(28.dp, RoundedCornerShape(24.dp))
                     .clip(RoundedCornerShape(24.dp))
                     .background(
                         Brush.verticalGradient(

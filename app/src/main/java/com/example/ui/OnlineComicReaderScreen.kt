@@ -62,6 +62,13 @@ fun OnlineComicReaderScreen(
     onJumpToChapter: ((Int) -> Unit)? = null,
     onPrevChapter: (() -> Unit)? = null,
     onNextChapter: (() -> Unit)? = null,
+    /**
+     * 翻页回调（章节内页序号 0 起）：在线阅读同样记录阅读进度 ——
+     * 未收藏、未下载的漫画也照常置灰已读章节。调用方做防抖。
+     */
+    onPageChanged: (pageIndex: Int, totalPages: Int) -> Unit = { _, _ -> },
+    /** 起始页：「继续阅读 · 第12话 · 第8页」精确回到上次位置 */
+    initialPage: Int = 0,
 ) {
     // 在线阅读计时：只在 App 前台 + 屏幕亮着时累计
     ReadingTimerEffect(
@@ -144,7 +151,7 @@ fun OnlineComicReaderScreen(
                     title = bookTitle ?: title,
                     chapterTitle = title,
                     bookKey = bookKey,
-                    initialPage = 0,
+                    initialPage = initialPage,
                     toc = chapters,
                     currentChapterIndex = currentChapterIndex,
                     onJumpToChapter = onJumpToChapter,
@@ -153,6 +160,7 @@ fun OnlineComicReaderScreen(
                     chapterNavLabel = "章",
                     remoteImageLoader = imageLoader,
                     onExit = onBack,
+                    onPageChanged = { raw, _ -> onPageChanged(raw.coerceAtLeast(0), pages.size) },
                 )
             }
         }

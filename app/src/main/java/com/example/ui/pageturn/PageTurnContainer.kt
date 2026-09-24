@@ -40,11 +40,22 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
+import me.trishiraj.shadowglow.consistentShadow
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+
+/**
+ * 卷页背面镜像内容的可见度。
+ *
+ * 旧值 0.42f 叠在 100% 不透明纸基上 → 文字几乎看不见，用户反馈"跟没渲染一样"。
+ * 现在纸基本身已经半透，这一层再拉到 0.88f：背面看起来是真印着字
+ * （纸浆把墨迹透过来那种质感），而不是一块空纸板上飘着鬼影。
+ * 纸张色调与柱面明暗仍叠在它**上面**，所以纸面的温润质感和柱面立体感不受影响。
+ */
+private const val BACKSIDE_CONTENT_ALPHA = 0.88f
 
 enum class PageTurnType(val id: Int, val title: String, val description: String) {
     SIMULATE(0, "仿真3D卷页", "真实书本折角弯曲与纸张阴影"),
@@ -72,8 +83,17 @@ fun PageTurnContainer(
     onLongPressCenter: (() -> Unit)? = null,
     /** 菜单（顶/底栏）打开时不再响应点击翻页/切章，避免“想关菜单却切了章”。 */
     menuVisible: Boolean = false,
+    /**
+     * 卷页纸张的底色：应传入阅读区当页背景色（ReaderScreen 的 `bgColor`）。
+     *
+     * 此前函数体内写死 `0xFFF5F0E6`（米色铜版纸），夜间 / OLED 黑色主题下
+     * 翻出来的纸背面还是米黄色，夜里一眼假。现在由它经 [rememberPaperPalette]
+     * 推导出整套纸面 / 厚度高光 / 描边色。
+     */
+    paperColor: Color = Color(0xFFF5F0E6),
     modifier: Modifier = Modifier
 ) {
+    val paper = rememberPaperPalette(paperColor)
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
@@ -323,12 +343,14 @@ fun PageTurnContainer(
                     shape = RoundedCornerShape(24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
                     tonalElevation = 8.dp,
-                    shadowElevation = 6.dp,
+                    shadowElevation = 0.dp,
                     border = androidx.compose.foundation.BorderStroke(
                         width = if (isCharged) 2.dp else 1.dp,
                         color = if (isCharged) MintGold else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .consistentShadow(6.dp, RoundedCornerShape(24.dp))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -390,6 +412,7 @@ fun PageTurnContainer(
                         touchDownY = touchDownY,
                         widthPx = widthPx,
                         heightPx = heightPx,
+                        paper = paper,
                         currentContent = currentContent,
                         nextContent = nextContent,
                         prevContent = prevContent
@@ -439,6 +462,7 @@ private fun Simulate3DCurlLayout(
     touchDownY: Float,
     widthPx: Float,
     heightPx: Float,
+    paper: PaperPalette,
     currentContent: @Composable () -> Unit,
     nextContent: @Composable () -> Unit,
     prevContent: @Composable () -> Unit
@@ -630,6 +654,7 @@ private fun Simulate3DCurlLayout(
                     heightPx = heightPx,
                     isCorner = isTopCorner || isBottomCorner,
                     bulgeSign = -1,
+                    paper = paper,
                     content = currentContent
                 )
             }
@@ -747,6 +772,7 @@ private fun Simulate3DCurlLayout(
                     heightPx = heightPx,
                     isCorner = isTopCorner || isBottomCorner,
                     bulgeSign = +1,
+                    paper = paper,
                     content = prevContent
                 )
             }
@@ -769,6 +795,7 @@ private fun CurlFlapBackside(
     heightPx: Float,
     isCorner: Boolean,
     bulgeSign: Int,
+    paper: PaperPalette,
     content: @Composable () -> Unit
 ) {
     val flapPath = buildFlapPath(
@@ -801,9 +828,13 @@ private fun CurlFlapBackside(
             .fillMaxSize()
             .clip(flapShape)
     ) {
-        // Opaque matte paper base
+        // Translucent paper base — 真实纸张是透光的。
+        // 此前这里铺的是 100% 不透明的米色底，底下那页一点都透不出来，
+        // 再叠上仅有 0.42f alpha 的镜像内容，观感就是"一块奶油色板 + 若有若无的鬼影字"。
+        // 现在留 ~7%~10% 让下一页透出，同时镜像内容的 alpha 也大幅提上来（见下）。
+        // 纸色不再写死 0xFFF5F0E6，改用阅读主题推导的 [PaperPalette.face]。
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(Color(0xFFF5F0E6))
+            drawRect(paper.face.copy(alpha = paper.baseAlpha))
         }
 
         // Backside shows the page content mirrored across the fold (real paper feel)
@@ -811,7 +842,7 @@ private fun CurlFlapBackside(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    alpha = 0.42f
+                    alpha = BACKSIDE_CONTENT_ALPHA
                     transformOrigin = mirrorPivot
                     scaleX = -1f
                 }
@@ -825,7 +856,7 @@ private fun CurlFlapBackside(
 
         // Paper tint + cylinder shading + moving-edge thickness
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(Color(0xFFF5F0E6).copy(alpha = 0.16f))
+            drawRect(paper.face.copy(alpha = 0.15f))
 
             val shadeStart = midPoint(foldTop, foldBottom)
             val shadeEnd = midPoint(touchTop, touchBottom)
@@ -863,6 +894,7 @@ private fun CurlFlapBackside(
             }
 
             // Paper thickness along the moving edge
+            // 高光/描边同样换成主题推导色：夜里不再出现米黄色纸边。
             val touchMidX = touchX + bulgeSign * arcOffset * 0.5f
             val touchEdgePath = Path().apply {
                 moveTo(touchTop.x, 0f)
@@ -871,12 +903,12 @@ private fun CurlFlapBackside(
             }
             drawPath(
                 path = touchEdgePath,
-                color = Color(0xFFFDF8EC).copy(alpha = 0.92f),
+                color = paper.edgeHighlight.copy(alpha = 0.92f),
                 style = Stroke(width = 2.4f)
             )
             drawPath(
                 path = touchEdgePath,
-                color = Color(0xFFB9AB90).copy(alpha = 0.16f),
+                color = paper.edgeStroke.copy(alpha = 0.20f),
                 style = Stroke(width = 0.9f)
             )
         }

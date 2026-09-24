@@ -18,6 +18,23 @@ captures/
 # Mimosa 安全工具本地状态
 .mimosa/
 
+# 会话/调试过程文件（AI 与 adb 调试产物，一律不入库）
+# 说明：这类文件此前散落了 150+ 个在仓库根与 docs/ 下，已统一清理。
+_*.txt
+_*.log
+_*.png
+_review/
+docs/**/*.log
+docs/**/gc.txt
+docs/**/imports*.txt
+docs/**/locate.txt
+docs/**/pm.txt
+docs/**/pref.txt
+docs/**/vm.txt
+
+# WorkBuddy 工作区数据（memory / 会话元数据，不属于项目源码）
+.workbuddy/
+
 # 开发验证截图（adb 调试产物；仅保留 README 使用的 shot*.jpg / demo*.gif）
 app/*.png
 docs/screenshots/*

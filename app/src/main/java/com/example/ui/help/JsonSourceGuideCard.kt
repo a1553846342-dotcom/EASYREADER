@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintPrimary
+import com.example.ui.theme.AppFonts
 
 @Composable
 fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
@@ -79,7 +80,7 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
     "imageSelector": "@css:div.reader img@data-src"
   }
 }""",
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = AppFonts.Monospace,
                     fontSize = 11.sp,
                     color = Color(0xFFD4D4D4),
                     lineHeight = 16.sp
@@ -118,7 +119,7 @@ fun JsonSourceGuideCard(modifier: Modifier = Modifier) {
                 ) {
                     Text(
                         text = field,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = AppFonts.Monospace,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,

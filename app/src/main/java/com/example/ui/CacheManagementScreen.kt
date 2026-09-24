@@ -39,6 +39,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import me.trishiraj.shadowglow.consistentShadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size as ComposeSize
 import androidx.compose.ui.graphics.Color
@@ -762,7 +763,13 @@ private fun CleanSuccessBadge(freedText: String) {
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        shadowElevation = 12.dp
+        shadowElevation = 0.dp,
+        modifier = Modifier.consistentShadow(
+            elevation = 12.dp,
+            shape = RoundedCornerShape(24.dp),
+            ambientColor = Color.Black.copy(alpha = 0.12f),
+            spotColor = Color.Black.copy(alpha = 0.16f)
+        )
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 30.dp, vertical = 22.dp),

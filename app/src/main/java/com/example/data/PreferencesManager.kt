@@ -86,6 +86,20 @@ class PreferencesManager(context: Context) {
         get() = prefs.getFloat("blue_light_alpha", 0.15f)
         set(value) = prefs.edit().putFloat("blue_light_alpha", value).apply()
 
+    /**
+     * 在线漫画：仅在 Wi-Fi（或不限量网络）下预加载后续页。
+     * 默认 false = 移动网络也预加载；开启后省流量，但弱网首次翻页会等一下。
+     * 只影响"提前下载还没看到的页"，当前页始终会加载。
+     */
+    var preloadWifiOnly: Boolean
+        get() = prefs.getBoolean("preload_wifi_only", false)
+        set(value) = prefs.edit().putBoolean("preload_wifi_only", value).apply()
+
+    /** 书架多选/拖拽的「再次长按可拖动」提示已展示次数（最多 3 次，之后不再打扰）。 */
+    var shelfDragHintShown: Int
+        get() = prefs.getInt("shelf_drag_hint_shown", 0)
+        set(value) = prefs.edit().putInt("shelf_drag_hint_shown", value.coerceIn(0, 3)).apply()
+
     var keepScreenOn: Boolean
         get() = prefs.getBoolean("keep_screen_on", true)
         set(value) = prefs.edit().putBoolean("keep_screen_on", value).apply()
@@ -114,6 +128,11 @@ class PreferencesManager(context: Context) {
     var incognitoBrowsingEnabled: Boolean
         get() = prefs.getBoolean("incognito_browsing_enabled", false)
         set(value) = prefs.edit().putBoolean("incognito_browsing_enabled", value).apply()
+
+    /** 「我喜欢的」密码保护开关：开启后进入该板块需先验证隐私 PIN（持久化） */
+    var favoritesProtected: Boolean
+        get() = prefs.getBoolean("favorites_protected", false)
+        set(value) = prefs.edit().putBoolean("favorites_protected", value).apply()
 
     /** 第十一轮第 6 条：多语言搜索开关（开启后搜索词自动扩展各语言标题变体；默认开启，持久化） */
     var multiLanguageSearch: Boolean

@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MintPrimary
 import com.example.ui.mascot.MascotMood
 import com.example.ui.mascot.mascotMoodOf
+import me.trishiraj.shadowglow.consistentShadow
 
 @Composable
 fun MascotEmptyState(
@@ -115,12 +116,13 @@ fun MascotEmptyState(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .testTag(testTagPrefix),
+            .testTag(testTagPrefix)
+            .consistentShadow(2.dp, RoundedCornerShape(24.dp)),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier

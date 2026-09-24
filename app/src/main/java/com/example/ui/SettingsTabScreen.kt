@@ -114,6 +114,9 @@ fun SettingsTabScreen(
     /* ── 第九轮：全局无痕浏览开关（在线/不受保护分类的阅读也可不计统计） ── */
     incognitoBrowsingEnabled: Boolean = false,
     onSetIncognitoBrowsing: (Boolean) -> Unit = {},
+    /* ── 「我喜欢的」密码保护（与受保护分类同一套 PIN） ── */
+    favoritesProtected: Boolean = false,
+    onSetFavoritesProtected: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -971,6 +974,41 @@ LazyColumn(
                                 )
                             }
 
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // 在线漫画预加载策略：开启后移动网络不提前下载后面的页（省流量）
+                            var preloadWifiOnly by remember { mutableStateOf(prefs.preloadWifiOnly) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Filled.Wifi, contentDescription = null, tint = MintPrimary)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text("仅 Wi-Fi 预加载漫画", fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            "开启后移动网络不会提前下载后面的页，更省流量",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                AppSwitch(
+                                    checked = preloadWifiOnly,
+                                    onCheckedChange = {
+                                        preloadWifiOnly = it
+                                        prefs.preloadWifiOnly = it
+                                    }
+                                )
+                            }
+
                             if (blueLightFilter) {
                                 Spacer(modifier = Modifier.height(10.dp))
                                 // 静止态也可读：当前强度常驻显示（与遮罩强度行同款式）
@@ -1323,6 +1361,8 @@ LazyColumn(
             onToggleProtected = { cat, protected -> onToggleCategoryProtected(cat, protected) },
             onToggleIncognito = { enabled -> onSetIncognitoBrowsing(enabled) },
             incognitoBrowsingEnabled = incognitoBrowsingEnabled,
+            favoritesProtected = favoritesProtected,
+            onToggleFavoritesProtected = { onSetFavoritesProtected(it) },
             onChangePin = { showChangePin = true },
             onDisablePrivacy = {
                 // 第九轮修复③：不再先收起管理窗——验证层覆盖其上，

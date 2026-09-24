@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -26,6 +25,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.adaptive.adaptiveDialogWidth
 import com.example.ui.adaptive.adaptiveSheetWidth
+import me.trishiraj.shadowglow.consistentShadow
 
 /** 亚克力立牌面板：品牌色 tint + 镜面光束 + 顶棱聚光 + 颗粒噪点 + 水晶棱镜描边 + 倒角高光 + 双层阴影。 */
 @Composable
@@ -38,13 +38,13 @@ fun Modifier.acrylicPanel(
     val prismColors = rememberCrystalPrismColors()
     val surface = MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha)
     return this
-        .shadow(
+        .consistentShadow(
             elevation = 32.dp,
             shape = shape,
             ambientColor = primary.copy(alpha = 0.14f),
             spotColor = primary.copy(alpha = 0.18f)
         )
-        .shadow(
+        .consistentShadow(
             elevation = 8.dp,
             shape = shape,
             ambientColor = Color.Black.copy(alpha = 0.18f),

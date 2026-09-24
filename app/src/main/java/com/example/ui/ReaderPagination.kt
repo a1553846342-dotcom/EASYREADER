@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.ui.theme.AppFonts
 
 /**
  * ANR-free pagination layer backed by real text layout.
@@ -96,7 +97,7 @@ fun rememberChapterPages(
         heightPx = heightPx,
         fontSizePx = fontSizePx,
         lineHeightPx = lineHeightPx,
-        fontFamily = bodyStyle.fontFamily ?: FontFamily.Default,
+        fontFamily = bodyStyle.fontFamily ?: AppFonts.Default,
         includeFontPadding = false,
         titleReservePx = titleReservePx
     )

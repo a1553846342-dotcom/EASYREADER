@@ -23,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -37,10 +36,12 @@ import coil.compose.AsyncImage
 import com.example.data.Book
 import com.example.data.ReadingRecord
 import com.example.ui.components.AcrylicDialog
+import com.example.ui.feedback.LocalReduceMotion
 import com.example.ui.theme.MintGold
 import com.example.ui.theme.MintPrimary
 import com.example.ui.theme.MintSecondary
 import com.example.ui.theme.MintSecondary
+import me.trishiraj.shadowglow.consistentShadow
 import kotlinx.coroutines.delay
 
 /**
@@ -76,6 +77,9 @@ fun WeeklyReadingChart(
     val chartSecondary = MaterialTheme.colorScheme.secondary
     // 本周峰值日（阅读时长最长的一天）：金色强调，让"重点"第一眼可见
     val lowQuality = LocalRenderQuality.current == RenderQuality.LOW
+    // 系统「动画缩放」被关掉 / 开启减少动态效果时也要跳过生长动画：
+    // 否则用户眼里动画根本不播，柱子却要等 320+400ms 才定格，看着像"卡了一下"。
+    val reduceMotion = LocalReduceMotion.current
     val peakDayIdx = remember(minutesPerDay) {
         minutesPerDay.indices
             .maxByOrNull { minutesPerDay[it] }
@@ -85,9 +89,9 @@ fun WeeklyReadingChart(
     // Staggered entrance animation factors for 7 bars
     val barAnimatables = remember { List(7) { Animatable(0f) } }
 
-    LaunchedEffect(minutesPerDay, lowQuality) {
-        if (lowQuality) {
-            // 流畅档：跳过生长动画，直接定格终态
+    LaunchedEffect(minutesPerDay, lowQuality, reduceMotion) {
+        if (lowQuality || reduceMotion) {
+            // 流畅档 / 系统关掉动画：跳过生长动画，直接定格终态
             barAnimatables.forEachIndexed { _, animatable -> animatable.snapTo(1f) }
             return@LaunchedEffect
         }
@@ -272,7 +276,7 @@ fun WeeklyReadingChart(
                                         .fillMaxHeight(animatedFraction.coerceAtLeast(0.04f))
                                         .then(
                                             if (isSelected) {
-                                                Modifier.shadow(
+                                                Modifier.consistentShadow(
                                                     elevation = 6.dp,
                                                     shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp),
                                                     ambientColor = chartPrimary.copy(alpha = 0.30f),

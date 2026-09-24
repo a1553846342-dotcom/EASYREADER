@@ -588,6 +588,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         prefs.searchHistory = updated
     }
 
+    /** 单条删除搜索历史（搜索历史卡长按编辑态的 × 按钮使用）。 */
+    fun removeSearchHistory(query: String) {
+        val updated = _searchHistory.value.filter { it != query }
+        _searchHistory.value = updated
+        prefs.searchHistory = updated
+    }
+
     fun clearSearchHistory() {
         _searchHistory.value = emptyList()
         prefs.searchHistory = emptyList()

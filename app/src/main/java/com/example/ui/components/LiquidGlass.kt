@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -12,6 +13,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.BlendMode
@@ -24,7 +28,6 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -50,6 +53,59 @@ import com.kashif_e.backdrop.shadow.Shadow
  * 页面内容卡（GlassCard）用它做与底部 Tab 栏完全同源的真实内容模糊。
  */
 val LocalGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
+ * 是否具备实时 RenderEffect 模糊能力。
+ *
+ * Android 12（API 31）才引入 `RenderEffect`；KMPLiquidGlass 在更低版本上
+ * 会把 blur / colorControls / vibrancy / lens **全部静默 no-op**
+ * （见 `backdrop/.../platform/PlatformEffects.kt` 的 `PlatformCapabilities`），
+ * 结果是 backdrop 以「未模糊的原始内容」直接透出——玻璃卡看起来像一块
+ * 透明玻璃叠了张清晰底图，毛玻璃质感完全丢失。
+ *
+ * 因此所有玻璃调用点都必须经此判断走降级路径。
+ */
+val supportsRealtimeBlur: Boolean
+    get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+/** 降级时给半透明基底额外加厚的 alpha（弥补没有真实模糊带来的「太透」）。 */
+private const val GLASS_FALLBACK_ALPHA_BOOST = 0.20f
+
+/**
+ * 无 RenderEffect 能力时的毛玻璃降级：
+ * 「加厚的半透明基底 + 柔和透光渐变 + 噪点纹理」近似磨砂介质，
+ * 观感是「更实一点的磨砂面板」，绝不是透明 / 消失。
+ */
+private fun Modifier.frostedGlassFallback(shape: Shape, surfaceColor: Color): Modifier = this
+    .background(
+        surfaceColor.copy(alpha = (surfaceColor.alpha + GLASS_FALLBACK_ALPHA_BOOST).coerceAtMost(1f)),
+        shape
+    )
+    .drawWithContent {
+        // ① 全域介质渐变：左上受光提亮 → 右下轻微压暗，替代真实模糊的漫反射观感
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.12f),
+                    Color.Transparent,
+                    Color.Transparent,
+                    Color.Black.copy(alpha = 0.05f)
+                )
+            )
+        )
+        // ② 顶部受光带：磨砂玻璃上沿的亮边
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0.14f), Color.Transparent),
+                startY = 0f,
+                endY = size.height * 0.22f
+            ),
+            topLeft = Offset.Zero,
+            size = Size(size.width, size.height * 0.22f)
+        )
+        drawContent()
+    }
+    .filmGrain(alpha = 0.05f)
 
 /**
  * 静态背景的预烘焙模糊 backdrop（由 MainActivity 提供）。
@@ -132,7 +188,7 @@ fun GlassDialogWindowEffect(
         window?.setDimAmount(0.12f)
 
         val decorView = activity?.window?.decorView
-        if (decorView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (decorView != null && supportsRealtimeBlur) {
             decorView.setRenderEffect(
                 android.graphics.RenderEffect.createBlurEffect(
                     blurRadiusPx,
@@ -140,6 +196,13 @@ fun GlassDialogWindowEffect(
                     android.graphics.Shader.TileMode.CLAMP
                 )
             )
+        } else if (decorView != null) {
+            // ── 跨机型降级（API < 31 无 RenderEffect）──────────────────
+            // 宿主窗口无法实时模糊，弹窗背后的内容会以清晰原样透出，
+            // 玻璃面板不再有「磨砂」层次。把窗口变暗量从轻压 0.12 提高
+            // 到 0.42，用「暗化 + 弹窗本体加厚基底」近似毛玻璃层次，
+            // 观感是明显的磨砂弹窗而不是透明的清晰玻璃。
+            window?.setDimAmount(0.42f)
         }
         onDispose {
             decorView?.setRenderEffect(null)
@@ -160,7 +223,14 @@ fun Modifier.liquidGlass(
     saturation: Float = 1.30f,
     refractionHeight: Dp = 16.dp,
     refractionAmount: Dp = 28.dp
-): Modifier = drawBackdrop(
+): Modifier =
+    // ── 跨机型降级（API < 31 无 RenderEffect）──────────────────────────
+    // KMPLiquidGlass 的 blur 在低版本静默 no-op，backdrop 会以未模糊的
+    // 原始内容透出（= 清晰玻璃，毛玻璃质感丢失）。降级为「加厚半透明
+    // 基底 + 柔和透光渐变 + 噪点」，观感接近磨砂而不是消失。
+    if (!supportsRealtimeBlur) {
+        frostedGlassFallback(shape = shape, surfaceColor = surfaceColor)
+    } else drawBackdrop(
     backdrop = backdrop,
     shape = { shape },
     effects = {
@@ -240,7 +310,11 @@ fun Modifier.liquidGlassStatic(
     shape: Shape,
     surfaceColor: Color,
     blurRadiusPx: Float
-): Modifier = drawBackdrop(
+): Modifier =
+    // ── 跨机型降级（API < 31 无 RenderEffect）：同 [liquidGlass] ──
+    if (!supportsRealtimeBlur) {
+        frostedGlassFallback(shape = shape, surfaceColor = surfaceColor)
+    } else drawBackdrop(
     backdrop = backdrop,
     shape = { shape },
     effects = {

@@ -1,5 +1,6 @@
 package com.example.ui.adaptive
 
+import androidx.annotation.DimenRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -13,8 +14,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.R
 
 /**
  * 全 App 统一的多设备自适应宽度规范（第十四轮 UI 一致性整改）。
@@ -27,6 +31,19 @@ import androidx.compose.ui.unit.dp
  * 不引入 material3-window-size-class 依赖：MainActivity 已声明
  * configChanges 包含 orientation|screenSize，旋转不重建，LocalConfiguration
  * 实时反映当前窗口，BoxWithConstraints/Configuration 两条路径都能用。
+ *
+ * ══ 第十五轮（多形态屏幕体检）补充 ══
+ *
+ * 数值真源下沉到 res/dimen（values/dimens.xml + values-sw600dp/ + values-sw840dp/）：
+ * [rememberAdaptiveSizing] 在组合期按当前 configuration 读取，sw 限定符目录可以
+ * 按形态覆盖，不再需要改 Kotlin。[AdaptiveSpec] 常量保留两用：
+ *  1) 非组合上下文（如 [adaptiveDialogWidth] 这类 Modifier 工厂）的编译期兜底；
+ *  2) 资源缺失（理论上不会）时的回退值。
+ * 两条路径数值必须一致，见 dimens.xml 顶部的同步纪律注释。
+ *
+ * 体检结论（详见 docs/adaptive-screen-audit.md）：五种形态（小屏 360dp / 基准
+ * 393dp / 平板 960dp / 横屏 914dp / 分屏近似 411dp）实测断点数值本身无需调整，
+ * 本轮只补机制与页面级容器助手，不改变任何观感。
  */
 
 @Immutable
@@ -59,6 +76,48 @@ object AdaptiveSpec {
     val pageContentMaxWidth: Dp = 720.dp
 }
 
+/** 四个关键宽度的运行时快照（资源真源 + 常量兜底），见 [rememberAdaptiveSizing]。 */
+@Immutable
+data class AdaptiveSizing(
+    val dialogMaxWidth: Dp,
+    val sheetMaxWidth: Dp,
+    val sheetMaxWidthLandscape: Dp,
+    val pageContentMaxWidth: Dp,
+)
+
+/**
+ * 组合期读取当前窗口适用的自适应宽度表。
+ *
+ * 数值来自 res/dimen（可被 values-sw600dp/、values-sw840dp/ 覆盖）；
+ * 读取失败时回退 [AdaptiveSpec] 同名常量，保证永不抛异常。
+ * 以 configuration 为 key 记忆：折叠屏开合/分屏/旋转（configChanges 不重建）
+ * 时 configuration 变化 → 自动重算。
+ */
+@Composable
+fun rememberAdaptiveSizing(): AdaptiveSizing {
+    val configuration = LocalConfiguration.current
+    val resources = LocalContext.current.resources
+    val density = LocalDensity.current.density
+    return remember(configuration) {
+        fun dimen(@DimenRes id: Int, fallback: Dp): Dp = runCatching {
+            Dp(resources.getDimension(id) / density)
+        }.getOrDefault(fallback)
+
+        AdaptiveSizing(
+            dialogMaxWidth = dimen(R.dimen.adaptive_dialog_max_width, AdaptiveSpec.dialogMaxWidth),
+            sheetMaxWidth = dimen(R.dimen.adaptive_sheet_max_width, AdaptiveSpec.sheetMaxWidth),
+            sheetMaxWidthLandscape = dimen(
+                R.dimen.adaptive_sheet_max_width_landscape,
+                AdaptiveSpec.sheetMaxWidthLandscape,
+            ),
+            pageContentMaxWidth = dimen(
+                R.dimen.adaptive_page_max_width,
+                AdaptiveSpec.pageContentMaxWidth,
+            ),
+        )
+    }
+}
+
 /** 弹窗内容宽：保留调用方比例宽的手机观感，平板/横屏钳到 560dp 居中。 */
 fun Modifier.adaptiveDialogWidth(fraction: Float = 0.86f): Modifier =
     fillMaxWidth(fraction).widthIn(max = AdaptiveSpec.dialogMaxWidth)
@@ -68,9 +127,19 @@ fun Modifier.adaptiveDialogWidth(fraction: Float = 0.86f): Modifier =
 fun Modifier.adaptiveSheetWidth(): Modifier {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val max = if (landscape) AdaptiveSpec.sheetMaxWidthLandscape else AdaptiveSpec.sheetMaxWidth
+    val sizing = rememberAdaptiveSizing()
+    val max = if (landscape) sizing.sheetMaxWidthLandscape else sizing.sheetMaxWidth
     return widthIn(max = max).fillMaxWidth()
 }
+
+/**
+ * 页面内容宽（第十五轮新增）：给全屏滚动页/页头等内容级容器钳制最大宽度，
+ * 须挂在居中宿主（`Box(contentAlignment = Alignment.TopCenter)` 或
+ * [AdaptivePageContent]）内使用。设置/统计/缓存管理三页已内联同款写法，
+ * 此助手供后续页面与整改统一引用（如 TabScreenHeader 宽屏对齐内容）。
+ */
+fun Modifier.adaptivePageWidth(): Modifier =
+    widthIn(max = AdaptiveSpec.pageContentMaxWidth).fillMaxWidth()
 
 /**
  * M3 ModalBottomSheet 内容宿主：sheet 窗口本身全宽，此包装让内容在宽屏设备上

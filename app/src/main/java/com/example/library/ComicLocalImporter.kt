@@ -206,7 +206,10 @@ object ComicLocalImporter {
                 filePath = comicDir.absolutePath,
                 coverUri = coverFile.absolutePath,
                 totalChapters = pageFiles.size,
-                contentType = "COMIC"
+                contentType = "COMIC",
+                // 记录来源：让书架里的这本书能反查到「我喜欢的」在线条目
+                sourceId = book.sourceId.ifBlank { null },
+                comicId = book.id.ifBlank { null },
             )
             val bookId = bookDao.insertBook(newBook).toInt()
             bookDao.insertChapters(

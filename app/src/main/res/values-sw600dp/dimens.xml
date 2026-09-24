@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    sw600dp（≥600dp：折叠屏展开 / 小平板，WindowWidthClass ≥ MEDIUM）覆盖点。
+    数值与 values/dimens.xml 一致——实测无需差异化，此文件是留给
+    「中屏想收紧/放宽某个宽度」时的覆盖入口，避免临时建目录。
+-->
+<resources>
+    <dimen name="adaptive_dialog_max_width">560dp</dimen>
+    <dimen name="adaptive_sheet_max_width">560dp</dimen>
+    <dimen name="adaptive_sheet_max_width_landscape">840dp</dimen>
+    <dimen name="adaptive_page_max_width">720dp</dimen>
+</resources>

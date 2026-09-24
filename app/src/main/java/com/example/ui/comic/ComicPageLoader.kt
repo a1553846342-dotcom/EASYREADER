@@ -626,6 +626,22 @@ class ComicPageLoader(
     )
 
     /**
+     * 「仅 Wi-Fi 预加载」开关（在线阅读省流量）：开启后非 Wi-Fi 网络下不预取
+     * 在线页（[ComicPageRef.Remote]）；本地页不受影响，始终预取。
+     * 当前页本身永远会加载 —— 这里只限制"提前下载还没看到的页"。
+     */
+    private val appPrefs by lazy { com.example.data.PreferencesManager(context) }
+
+    private fun wifiConnectedOrUnmetered(): Boolean {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return true
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return true
+        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
+    /**
      * 批量预加载（整窗一次调用，5.5 修复）。旧 API 按单页逐次调用时，每次调用的
      * "批次外取消"会立即取消同窗口其它槽位刚入队的任务——双页模式只有下一跨的
      * 最后一个槽位真正预载、后退翻页几乎从不预载（"本地书偶现加载圈"根因之一）。
@@ -640,21 +656,26 @@ class ComicPageLoader(
      */
     fun preloadWindow(entries: List<WindowEntry>, tone: ComicImagePipeline.Toning) {
         if (entries.isEmpty()) return
-        ensureWindowCapacity(entries, tone)
-        cacheDbg { "window keys=${entries.joinToString { it.cacheKey }}" }
+        // 仅 Wi-Fi 预加载：非 Wi-Fi 且是计费网络时，跳过在线页的提前下载
+        val effective = if (appPrefs.preloadWifiOnly && !wifiConnectedOrUnmetered()) {
+            entries.filter { it.ref !is ComicPageRef.Remote }
+        } else entries
+        if (effective.isEmpty()) return
+        ensureWindowCapacity(effective, tone)
+        cacheDbg { "window keys=${effective.joinToString { it.cacheKey }}" }
         synchronized(pinnedLock) {
             windowKeys.clear()
-            entries.forEach { windowKeys.add(it.cacheKey) }
+            effective.forEach { windowKeys.add(it.cacheKey) }
             // 离窗解除：仅保留仍属窗口的旧驻留项，随后按优先级序重建（超限丢尾部）
             val oldPinned = HashMap(pinned)
             pinned.clear()
-            entries.forEach { e ->
+            effective.forEach { e ->
                 (cache.get(e.cacheKey) ?: oldPinned[e.cacheKey])?.let { pinned[e.cacheKey] = it }
             }
             rebuildPinnedInPriorityOrder()
         }
-        val batchKeys = HashSet<String>(entries.size)
-        entries.forEach { e ->
+        val batchKeys = HashSet<String>(effective.size)
+        effective.forEach { e ->
             batchKeys.add(e.cacheKey)
             val probeHit = cachedOrPinned(e.cacheKey)
             cacheDbg { "probe key=${e.ref.id} hit=${probeHit != null}" }

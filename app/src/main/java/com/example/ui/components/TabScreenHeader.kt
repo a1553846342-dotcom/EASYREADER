@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.AppFonts
 
 /**
  * 滚动联动折叠头部——四个 Tab 页（书库/书架/统计/设置）共享。
@@ -121,7 +122,7 @@ fun TabScreenHeader(
                         fontSize = titleSize.sp,
                         fontWeight = FontWeight.Bold,
                         color = titleColor,
-                        fontFamily = FontFamily.Serif
+                        fontFamily = AppFonts.Serif
                     )
                     // 副标题用高度+透明度双通道收起：收起态不占布局空间
                     if (subtitle != null) {

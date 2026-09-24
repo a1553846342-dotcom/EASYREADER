@@ -58,6 +58,8 @@ import com.example.R
 import androidx.compose.ui.layout.ContentScale
 
 import androidx.compose.ui.draw.shadow
+import me.trishiraj.shadowglow.consistentShadow
+
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -188,6 +190,8 @@ import com.example.ui.mascot.MascotSpriteSheet
 import com.example.ui.components.AppSwitch
 
 import com.example.ui.theme.MintPrimary
+
+import com.example.ui.theme.AppFonts
 
 import com.example.ui.components.AppIconButton
 
@@ -931,18 +935,11 @@ fun ReaderScreen(
         }
     }
 
-    val selectedFontFamily = when (fontFamilyIndex) {
-
-        1 -> FontFamily.Serif
-
-        2 -> FontFamily.SansSerif
-
-        3 -> FontFamily.Monospace
-
-        4 -> customTypeface?.let { FontFamily(it) } ?: FontFamily.Default
-
-        else -> FontFamily.Default
-
+    // 字体族统一走 AppFonts（theme 层唯一出口），不再在本文件硬编码通用字族：
+    // 那些字面量会解析到各厂商系统字体（MIUI→MiSans、HarmonyOS→HarmonyOS Sans…），
+    // 是"同一份设计稿不同机型长得不一样"的一条主因。收敛后换字体只改 AppFonts 一处。
+    val selectedFontFamily = remember(fontFamilyIndex, customTypeface) {
+        AppFonts.readingFontFamily(fontFamilyIndex, customTypeface?.let { FontFamily(it) })
     }
 
 
@@ -1174,9 +1171,23 @@ fun ReaderScreen(
 
             val density = LocalDensity.current
 
-            val navBarsBottomPx = WindowInsets.navigationBars.getBottom(density)
+            // 安全区：stateBars/navigationBars 与 displayCutout(挖孔/刘海) 取**较大值**。
+            // 多数竖屏机型上 statusBars 已经把顶部刘海算进去，两者相等 → 什么都不变；
+            // 但横屏（刘海移到侧边）或底部挖孔的机型上 cutout 可能比系统栏更大，
+            // 只取系统栏会让正文滑到挖孔底下被裁掉。取 max 保证「只会更安全，不会更小」。
+            val cutoutInsets = WindowInsets.displayCutout
+            val statusBarsInsets = WindowInsets.statusBars
+            val navigationBarsInsets = WindowInsets.navigationBars
 
-            val statusBarsTopPx = WindowInsets.statusBars.getTop(density)
+            val navBarsBottomPx = maxOf(
+                navigationBarsInsets.getBottom(density),
+                cutoutInsets.getBottom(density)
+            )
+
+            val statusBarsTopPx = maxOf(
+                statusBarsInsets.getTop(density),
+                cutoutInsets.getTop(density)
+            )
 
 
 
@@ -2169,7 +2180,11 @@ fun ReaderScreen(
                                                 if (pagesList.size >= 2) scrubberVisible = true
                                             },
 
-                                            menuVisible = showBars
+                                            menuVisible = showBars,
+
+                                            // 卷页背面的纸：跟随阅读主题（夜间/OLED 下自动变深），
+                                            // 修掉"翻页背面永远是米黄色不透明纯色"的老问题。
+                                            paperColor = bgColor
 
                                         )
 
@@ -2205,8 +2220,10 @@ fun ReaderScreen(
 
                                             onLongPressCenter = {
                                                 if (pagesList.size >= 2) scrubberVisible = true
-                                            }
+                                            },
 
+                                            // 卷页背面的纸：跟随阅读主题，纸面/厚度高光/描边一并自适应。
+                                            paperColor = bgColor
                                         )
 
                                     }
@@ -2270,9 +2287,10 @@ fun ReaderScreen(
 
                                         color = MintPrimary.copy(alpha = 0.92f),
 
-                                        shadowElevation = 6.dp,
+                                        shadowElevation = 0.dp,
 
                                         modifier = Modifier.padding(16.dp)
+                                            .consistentShadow(6.dp, RoundedCornerShape(16.dp))
 
                                     ) {
 
@@ -2449,13 +2467,15 @@ fun ReaderScreen(
 
                                     .padding(16.dp)
 
-                                    .fillMaxWidth(),
+                                    .fillMaxWidth()
+
+                                    .consistentShadow(8.dp, RoundedCornerShape(20.dp)),
 
                                 shape = RoundedCornerShape(20.dp),
 
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
 
-                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
 
                             ) {
 
@@ -2585,10 +2605,11 @@ fun ReaderScreen(
                                         scope.launch { scrollState.scrollTo(offset) }
                                     }
                                     showReturnChip = false
-                                },
+                                }
+                                    .consistentShadow(6.dp, RoundedCornerShape(20.dp)),
                                 shape = RoundedCornerShape(20.dp),
                                 color = MintPrimary,
-                                shadowElevation = 6.dp
+                                shadowElevation = 0.dp
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -2635,7 +2656,9 @@ fun ReaderScreen(
 
                 color = MintPrimary.copy(alpha = 0.9f),
 
-                shadowElevation = 4.dp
+                shadowElevation = 0.dp,
+
+                modifier = Modifier.consistentShadow(4.dp, RoundedCornerShape(20.dp))
 
             ) {
 
@@ -2685,9 +2708,10 @@ fun ReaderScreen(
 
                 border = androidx.compose.foundation.BorderStroke(1.dp, MintPrimary.copy(alpha = 0.5f)),
 
-                shadowElevation = 4.dp,
+                shadowElevation = 0.dp,
 
                 modifier = Modifier.size(44.dp)
+                    .consistentShadow(4.dp, CircleShape)
 
             ) {
 
@@ -3550,12 +3574,10 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
                             exit = shrinkVertically() + fadeOut()
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                listOf(
-                                    Triple(0, "默认字体", FontFamily.Default),
-                                    Triple(1, "衬线体", FontFamily.Serif),
-                                    Triple(2, "黑体", FontFamily.SansSerif),
-                                    Triple(3, "等宽体", FontFamily.Monospace)
-                                ).forEach { (idx, name, family) ->
+                                // 字体档位表由 AppFonts 提供（id 与 prefs.fontFamilyIndex 一一对应，勿重排）；
+                                // 「自定义字体」档在下方单独渲染（要带「+导入」按钮）。
+                                AppFonts.readingFontFamilies()
+                                    .forEach { (idx, name, family) ->
                                     ReaderFontOptionRow(
                                         name = name,
                                         sample = "永字八法，安静阅读 Aa 123",
@@ -3568,7 +3590,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
                                 ReaderFontOptionRow(
                                     name = "自定义字体",
                                     sample = if (customLoaded) "已导入字体效果预览 Aa" else "选择 TTF 文件后可在此预览",
-                                    family = customTypeface?.let { FontFamily(it) } ?: FontFamily.Default,
+                                    family = customTypeface?.let { FontFamily(it) } ?: AppFonts.Default,
                                     selected = fontFamilyIndex == 4 && customLoaded,
                                     onClick = {
                                         if (customLoaded) {
@@ -3971,7 +3993,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                 .fillMaxWidth()
 
-                .shadow(12.dp, RoundedCornerShape(16.dp))
+                .consistentShadow(12.dp, RoundedCornerShape(16.dp))
 
                 .border(2.dp, MintPrimary.copy(alpha = glowAlpha), RoundedCornerShape(16.dp)),
 
@@ -4107,7 +4129,7 @@ Column(modifier = Modifier.widthIn(max = AdaptiveSpec.sheetMaxWidth).fillMaxWidt
 
                     .padding(end = 120.dp, bottom = 160.dp)
 
-                    .shadow(8.dp, RoundedCornerShape(16.dp))
+                    .consistentShadow(8.dp, RoundedCornerShape(16.dp))
 
             ) {
 

@@ -38,9 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.produceState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import kotlinx.coroutines.launch
 import androidx.core.view.WindowCompat
 import dev.liquidglass.compose.liquidGlassProvider
 import dev.liquidglass.compose.rememberLiquidGlassProviderState
@@ -52,6 +55,7 @@ import com.example.ui.components.readCardTweaks
 import com.example.ui.components.AppBottomTabBar
 import com.example.ui.components.AppTabItem
 import com.example.ui.components.rememberTabBarCollapseState
+import com.example.ui.components.showAppSnackbar
 import com.kashif_e.backdrop.backdrops.rememberLayerBackdrop
 import com.kashif_e.backdrop.backdrops.layerBackdrop
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -65,6 +69,13 @@ import coil.compose.rememberAsyncImagePainter
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
+
+/** 跨路由传递「继续阅读」的起始页（章节页 → 在线阅读器）。 */
+private object ComicJumpState {
+    var startPage: Int = 0
+    /** 最近一次翻到的页（退出阅读器时强制保存用） */
+    var lastPage: Int = -1
+}
 val LocalNavAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -127,6 +138,15 @@ class MainActivity : ComponentActivity() {
         // 见 AppDatabase.bundledAniListDb），用户零拉取、离线可用；
         // 运行时同步调度器已移除。
         enableEdgeToEdge()
+        // ── B2 关掉 OEM 的导航栏对比度强制（Android 10+）──────────────────
+        // 边缘到边之后，部分 ROM（尤其开了"导航栏对比度"策略的三星 OneUI、
+        // 部分 ColorOS）会在透明导航栏上再糊一层 ~20% 灰的黑纱，
+        // 导致同一个界面在不同机型上出现"底部一条脏边"的观感差异。
+        // App 自己已经在 Compose 侧解决了对比度（背景不透明就不会压字），
+        // 所以这里明确告诉系统别来插一脚。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            runCatching { window.isNavigationBarContrastEnforced = false }
+        }
         setContent {
             val viewModel: MainViewModel = viewModel()
             val libraryViewModel: com.example.library.LibraryViewModel = viewModel()
@@ -190,7 +210,16 @@ class MainActivity : ComponentActivity() {
                 // 直接撑爆这些容器 → 这就是「在自己手机上正常、别人手机上错位」的主因。
                 // 这里把 fontScale 夹到 [0.85, 1.15]：放大不再撑爆布局，
                 // 缩小也保留下限不至于看不清。
-                // 注：阅读器正文字号由 ReaderScreen 自管，不受此影响。
+                //
+                // ⚠️ 覆盖面澄清（勘误）：这个 CompositionLocalProvider 挂在**根**上，
+                // 因此覆盖全部界面 —— **包括阅读页**。阅读页正文用的是 `fontSize.sp`，
+                // sp 的解析同样走 LocalDensity.fontScale，所以阅读正文字号也会被夹住；
+                // 「阅读页字号独立、不受系统字体缩放影响」指的是它有自己的
+                // prefs.fontSize 设置项（用户可在阅读器里单独调到 12~40sp），
+                // 而不是说它绕过了这个钳制。
+                // 换算公式：实际正文 px = prefs.fontSize.sp × 系统 density × clamp(系统 fontScale)。
+                // 维持现状不动：放开钳制会让大量写死高度的容器被撑爆（见上方排查结论），
+                // 属于系统性返工，不适合在本次跨机型整改里顺手改。
                 val systemDensity = LocalDensity.current
                 val clampedDensity = remember(systemDensity) {
                     Density(
@@ -290,10 +319,16 @@ class MainActivity : ComponentActivity() {
                             CompositionLocalProvider(
                                 LocalAppBackgroundActive provides bgActive,
                                 LocalAppBottomInset provides (navBarBottom + 92.dp + 8.dp),
+                                // 底栏被隐藏时（书架多选 / 拖拽）只让开系统导航栏：
+                                // 否则操作栏与放置坞会在底部凭空空出 92dp。
+                                com.example.ui.theme.LocalAppBottomInsetNoTabBar provides (navBarBottom + 8.dp),
                                 LocalBackgroundTone provides bgTone,
                                 LocalGlassBackdrop provides (bgBackdrop.takeIf { glassEnabled }),
                                 com.example.ui.components.LocalRenderQuality provides renderQuality,
-                                LocalCardTweaks provides cardTweaks.value
+                                LocalCardTweaks provides cardTweaks.value,
+                                // 「我喜欢的」交互：动效与触觉统一开关（系统"减少动态效果"自动降级）
+                                com.example.ui.feedback.LocalReduceMotion provides com.example.ui.feedback.systemReduceMotion(),
+                                com.example.ui.feedback.LocalHapticsEnabled provides true,
                             ) {
                         val navController = rememberNavController()
                         // 启动时用持久化配置初始化背景（设置页改动会通过 AppBackgroundController 实时更新）
@@ -356,6 +391,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     var selectedTab by rememberSaveable { mutableIntStateOf(1) }
+                    /* 书架当前分类：必须放在**这层**（HomeScreen 之外）。
+                       打开书籍是 navigate 到另一个目的地，HomeScreen 会整体离开组合，
+                       状态放它里面就会被重置成「默认」——用户看到的就是
+                       「进书里看一眼再退出，分类跳回默认了」。 */
+                    var shelfCategory by rememberSaveable { mutableStateOf(com.example.data.DEFAULT_CATEGORY) }
 
                     SharedTransitionLayout { CompositionLocalProvider(LocalSharedTransitionScope provides this) { NavHost(
                         navController = navController,
@@ -421,11 +461,53 @@ class MainActivity : ComponentActivity() {
                             val mainImportMessage by viewModel.importStatusMessage.collectAsState()
                             val snackbarHostState = remember { SnackbarHostState() }
 
+                            /* ── 「我喜欢的」：书源注入 + 收藏数据 ── */
+                            LaunchedEffect(Unit) {
+                                viewModel.comicSourceProvider = { id ->
+                                    libraryViewModel.sourceManager.availableSources.value
+                                        .firstOrNull { it.id == id } as? com.example.source.ComicSource
+                                }
+                            }
+                            val favoriteItems by viewModel.favoriteItems.collectAsState()
+                            val favoriteKeys by viewModel.favoriteKeys.collectAsState()
+                            val favoriteCategoryEntities by viewModel.favoriteCategories.collectAsState()
+                            val favoriteCategories = remember(favoriteCategoryEntities) {
+                                favoriteCategoryEntities.map { it.name }
+                            }
+                            val homeScope = rememberCoroutineScope()
+
+                            /**
+                             * 删除下载的"撤销窗口"：先软删除（立刻从界面移除，DB 与文件都还在），
+                             * 8 秒后仍未撤销才真正删除 —— 撤销窗口内文件绝不会被删掉。
+                             */
+                            var pendingDeleteBooks by remember {
+                                mutableStateOf<List<com.example.data.Book>>(emptyList())
+                            }
+                            val visibleBooks = remember(books, pendingDeleteBooks) {
+                                val ids = pendingDeleteBooks.map { it.id }.toHashSet()
+                                books.filter { it.id !in ids }
+                            }
+                            fun showUndo(message: String, undo: () -> Unit) {
+                                homeScope.launch {
+                                    // ⚠️ 这是**成功 + 撤销**提示，不是错误。
+                                    // 走 TOAST 语义，否则会被渲染成红色「操作出错」卡 ——
+                                    // 用户原话：「操作总是出错，问题是操作根本没有出错」。
+                                    val result = snackbarHostState.showAppSnackbar(
+                                        message = message,
+                                        kind = com.example.ui.components.AppSnackKind.TOAST,
+                                        actionLabel = "撤销",
+                                        duration = SnackbarDuration.Long,
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) undo()
+                                }
+                            }
+
                             LaunchedEffect(libraryErrorMessage) {
                                 libraryErrorMessage?.let {
-                                    snackbarHostState.showSnackbar(
+                                    snackbarHostState.showAppSnackbar(
                                         message = it,
-                                        duration = SnackbarDuration.Short
+                                        kind = com.example.ui.components.AppSnackKind.ERROR,
+                                        duration = SnackbarDuration.Short,
                                     )
                                 }
                             }
@@ -433,9 +515,10 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(mainImportMessage) {
                                 mainImportMessage?.let {
                                     if (it.contains("失败") || it.contains("出错")) {
-                                        snackbarHostState.showSnackbar(
+                                        snackbarHostState.showAppSnackbar(
                                             message = it,
-                                            duration = SnackbarDuration.Short
+                                            kind = com.example.ui.components.AppSnackKind.ERROR,
+                                            duration = SnackbarDuration.Short,
                                         )
                                     }
                                 }
@@ -462,10 +545,25 @@ class MainActivity : ComponentActivity() {
                                         // A2：原先固定 60dp，三键导航机型会被 Tab 栏+导航栏一起盖住
                                         modifier = Modifier.padding(bottom = LocalAppBottomInset.current)
                                     ) { data ->
-                                        com.example.ui.components.AppErrorSnackbar(
-                                            message = data.visuals.message,
-                                            onDismissClick = { data.dismiss() }
-                                        )
+                                        // ⚠️ 按语义挑皮肤，不能一律渲染成红色错误卡：
+                                        // 「已移动 2 本到『悬疑』」曾经顶着「操作出错」弹出来，
+                                        // 而操作其实是成功的。
+                                        val kind = (data.visuals as? com.example.ui.components.AppSnackbarVisuals)
+                                            ?.kind ?: com.example.ui.components.AppSnackKind.ERROR
+                                        when (kind) {
+                                            com.example.ui.components.AppSnackKind.ERROR ->
+                                                com.example.ui.components.AppErrorSnackbar(
+                                                    message = data.visuals.message,
+                                                    onDismissClick = { data.dismiss() },
+                                                )
+                                            com.example.ui.components.AppSnackKind.TOAST ->
+                                                com.example.ui.components.AppToastSnackbar(
+                                                    message = data.visuals.message,
+                                                    actionLabel = data.visuals.actionLabel,
+                                                    onActionClick = { data.performAction() },
+                                                    onDismissClick = { data.dismiss() },
+                                                )
+                                        }
                                     }
                                 },
                             ) { innerPadding ->
@@ -479,13 +577,16 @@ class MainActivity : ComponentActivity() {
                                     AnimatedContent(
                                         targetState = selectedTab,
                                         transitionSpec = {
-                                            if (targetState > initialState) {
-                                                (slideInHorizontally { width -> width / 3 } + fadeIn(tween(250)))
-                                                    .togetherWith(slideOutHorizontally { width -> -width / 3 } + fadeOut(tween(200)))
-                                            } else {
-                                                (slideInHorizontally { width -> -width / 3 } + fadeIn(tween(250)))
-                                                    .togetherWith(slideOutHorizontally { width -> width / 3 } + fadeOut(tween(200)))
-                                            }
+                                            // Material 3 的 fade-through：出场先走（90ms），
+                                            // 入场等 90ms 再淡入（210ms）。
+                                            // 关键收益：**两页永远不会同时可见**，因此不会出现
+                                            // 「两张半透明页面叠在一起发灰」的中间帧
+                                            // （旧实现是横向各滑 1/3 屏 + 交叉淡化，中间帧必然重影）。
+                                            fadeIn(
+                                                animationSpec = tween(durationMillis = 210, delayMillis = 90),
+                                            ).togetherWith(
+                                                fadeOut(animationSpec = tween(durationMillis = 90)),
+                                            )
                                         },
                                         label = "TabSwitch"
                                     ) { tab ->
@@ -502,6 +603,11 @@ class MainActivity : ComponentActivity() {
                                                         selectedCategoryForImport = "全部"
                                                         fileLauncher.launch("*/*")
                                                     },
+                                                    /* 搜索结果卡片上的 ♡：直接收进「我喜欢的」 */
+                                                    favoriteKeys = favoriteKeys,
+                                                    onToggleFavorite = { book, next ->
+                                                        viewModel.toggleFavorite(book, next)
+                                                    },
                                                     onOpenComic = { book ->
                                                         libraryViewModel.openComic(book)
                                                         navController.navigate("comic_chapters")
@@ -509,8 +615,10 @@ class MainActivity : ComponentActivity() {
                                                     extraBottomPadding = LocalAppBottomInset.current
                                                 )
                                             1 -> HomeScreen(
-                                                books = books,
+                                                books = visibleBooks,
                                                 categories = categories,
+                                                shelfCategory = shelfCategory,
+                                                onShelfCategoryChange = { shelfCategory = it },
                                                 onBookClick = { book ->
                                                     viewModel.selectBook(book)
                                                     if (book.isComic) {
@@ -559,6 +667,94 @@ class MainActivity : ComponentActivity() {
                                                 onToggleCategoryProtected = { cat, protected ->
                                                     viewModel.setCategoryProtected(cat.id, protected)
                                                 },
+                                                /* ── 「我喜欢的」栏 ── */
+                                                favoriteItems = favoriteItems,
+                                                favoriteKeys = favoriteKeys,
+                                                onOpenFavorite = { item ->
+                                                    libraryViewModel.openComic(
+                                                        com.example.source.SearchBook(
+                                                            id = item.favorite.comicId,
+                                                            sourceId = item.favorite.sourceId,
+                                                            title = item.favorite.title,
+                                                            author = item.favorite.author,
+                                                            cover = item.favorite.coverUrl,
+                                                        )
+                                                    )
+                                                    navController.navigate("comic_chapters")
+                                                },
+                                                onCheckFavoriteUpdates = { viewModel.checkFavoriteUpdates(false) },
+                                                onMoveFavoritesToCategory = { keys, cat ->
+                                                    viewModel.moveFavoritesToCategory(keys, cat)
+                                                },
+                                                onRemoveFavorites = { keys -> viewModel.removeFavorites(keys) },
+                                                onFavoriteSelectedBooks = { selected ->
+                                                    val withSource = selected.filter {
+                                                        !it.sourceId.isNullOrBlank() && !it.comicId.isNullOrBlank()
+                                                    }
+                                                    withSource.forEach {
+                                                        viewModel.toggleFavorite(
+                                                            com.example.source.SearchBook(
+                                                                id = it.comicId!!,
+                                                                sourceId = it.sourceId!!,
+                                                                title = it.title,
+                                                                author = it.author,
+                                                                cover = it.coverUri,
+                                                            ),
+                                                            true,
+                                                        )
+                                                    }
+                                                     withSource.size to (selected.size - withSource.size)
+                                                 },
+                                                 onFavoriteSelectedBooksToCategory = { selected, cat ->
+                                                     val withSource = selected.filter {
+                                                         !it.sourceId.isNullOrBlank() && !it.comicId.isNullOrBlank()
+                                                     }
+                                                     withSource.forEach {
+                                                         viewModel.toggleFavorite(
+                                                             com.example.source.SearchBook(
+                                                                 id = it.comicId!!,
+                                                                 sourceId = it.sourceId!!,
+                                                                 title = it.title,
+                                                                 author = it.author,
+                                                                 cover = it.coverUri,
+                                                             ),
+                                                             true,
+                                                             cat,
+                                                         )
+                                                     }
+                                                     withSource.size to (selected.size - withSource.size)
+                                                 },
+                                                onDeleteDownloads = { list ->
+                                                    val bytes = list.sumOf {
+                                                        runCatching { java.io.File(it.filePath).length() }.getOrDefault(0L)
+                                                    }
+                                                    val mb = bytes / 1024f / 1024f
+                                                    pendingDeleteBooks = list
+                                                    homeScope.launch {
+                                                        kotlinx.coroutines.delay(8000)
+                                                        if (pendingDeleteBooks == list) {
+                                                            list.forEach { viewModel.deleteBook(it) }
+                                                            pendingDeleteBooks = emptyList()
+                                                        }
+                                                    }
+                                                    showUndo(
+                                                        "已删除 ${list.size} 本，释放 %.1f MB（阅读进度保留）".format(mb)
+                                                    ) { pendingDeleteBooks = emptyList() }
+                                                },
+                                                onShowUndo = { message, undo -> showUndo(message, undo) },
+                                                onMarkFinished = { book ->
+                                                    viewModel.updateProgress(book.id, book.totalChapters, 0, true)
+                                                },
+                                                /* 「我喜欢的」的分类：与书架分类完全独立 */
+                                                favoriteCategories = favoriteCategories,
+                                                /* 隐私：与受保护分类同一套 PIN */
+                                                favoritesProtected = viewModel.favoritesProtected.collectAsState().value,
+                                                onVerifyPrivacyPin = { pin -> viewModel.verifyPrivacyPin(pin) },
+                                                onAddFavoriteCategory = { viewModel.addFavoriteCategory(it) },
+                                                onRenameFavoriteCategory = { old, new ->
+                                                    viewModel.renameFavoriteCategory(old, new)
+                                                },
+                                                onDeleteFavoriteCategory = { viewModel.deleteFavoriteCategory(it) },
                                             )
                                             2 -> {
                                                 var dailyGoalState by remember { mutableIntStateOf(viewModel.prefs.dailyGoalMinutes) }
@@ -629,21 +825,35 @@ class MainActivity : ComponentActivity() {
                                                     viewModel.setCategoryProtected(cat.id, protected)
                                                 },
                                                 incognitoBrowsingEnabled = viewModel.incognitoBrowsingEnabled.collectAsState().value,
+
                                                 onSetIncognitoBrowsing = { viewModel.setIncognitoBrowsing(it) },
+
+                                                favoritesProtected = viewModel.favoritesProtected.collectAsState().value,
+                                                onSetFavoritesProtected = { viewModel.setFavoritesProtected(it) },
                                             )
                                         }
                                     }
                                 }
                             }
                             }
-                            AppBottomTabBar(
-                                items = tabItems,
-                                selectedIndex = selectedTab,
-                                onTabSelected = { selectedTab = it },
-                                collapseState = tabBarCollapseState,
-                                backdrop = tabBackdrop.takeIf { renderQuality.realtimeGlass },
-                                modifier = Modifier.align(Alignment.BottomCenter)
-                            )
+                            // 底部 Tab 栏：多选态下被悬浮操作栏"替换"（弹簧滑出）
+                            val tabBarVisible by com.example.ui.shelf.ShelfChrome.tabBarVisible.collectAsState()
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = tabBarVisible,
+                                enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }) +
+                                    fadeIn(tween(220)),
+                                exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }) +
+                                    fadeOut(tween(180)),
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                            ) {
+                                AppBottomTabBar(
+                                    items = tabItems,
+                                    selectedIndex = selectedTab,
+                                    onTabSelected = { selectedTab = it },
+                                    collapseState = tabBarCollapseState,
+                                    backdrop = tabBackdrop.takeIf { renderQuality.realtimeGlass },
+                                )
+                            }
                             }
                         }
  }
@@ -687,7 +897,11 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setCategoryProtected(cat.id, protected)
                                 },
                                 incognitoBrowsingEnabled = viewModel.incognitoBrowsingEnabled.collectAsState().value,
+
                                 onSetIncognitoBrowsing = { viewModel.setIncognitoBrowsing(it) },
+
+                                favoritesProtected = viewModel.favoritesProtected.collectAsState().value,
+                                onSetFavoritesProtected = { viewModel.setFavoritesProtected(it) },
                             )
                         }
 
@@ -831,6 +1045,98 @@ class MainActivity : ComponentActivity() {
                             val comicIsTextMode by libraryViewModel.comicIsTextMode.collectAsState()
                             val comicContext = androidx.compose.ui.platform.LocalContext.current
 
+                            /* ── 「我喜欢的」与阅读进度（与是否下载无关） ── */
+                            val comicSourceId = comicBook?.sourceId ?: ""
+                            val comicId = comicBook?.id ?: ""
+                            val chapterReadEntities by remember(comicSourceId, comicId) {
+                                viewModel.favoriteRepository.chapterStatesFlow(comicSourceId, comicId)
+                            }.collectAsState(emptyList())
+                            val chapterReadStates = remember(chapterReadEntities) {
+                                chapterReadEntities.associateBy { it.chapterId }
+                            }
+                            val comicProgress by remember(comicSourceId, comicId) {
+                                viewModel.favoriteRepository.progressFlow(comicSourceId, comicId)
+                            }.collectAsState(null)
+                            val comicFavoriteKeys by viewModel.favoriteKeys.collectAsState()
+                            val comicFavorite = comicFavoriteKeys.contains("$comicSourceId::$comicId")
+                            val comicCategories by viewModel.allCategories.collectAsState()
+                            val allBooksForChapters by viewModel.allBooks.collectAsState()
+                            // 已下载章节：本地书名形如 "《标题》 · 章节名"
+                            val downloadedChapterIds = remember(comicBook, comicChapters, allBooksForChapters) {
+                                val localTitles = allBooksForChapters.filter { it.isComic }.map { it.title }.toSet()
+                                comicChapters.filter { ch ->
+                                    localTitles.any { it.contains("· ${ch.title}") }
+                                }.map { it.id }.toSet()
+                            }
+                            /** 继续阅读 / 点击章节时的起始页 */
+                            var startPage by rememberSaveable { mutableIntStateOf(0) }
+                            var favoriteCategorySheet by remember { mutableStateOf(false) }
+
+                            /* ── 换源：候选来源 + 迁移确认 ── */
+                            var migrateSheet by remember { mutableStateOf(false) }
+                            var migrateLoading by remember { mutableStateOf(false) }
+                            var migrateTitle by remember { mutableStateOf("") }
+                            var migrateCandidates by remember {
+                                mutableStateOf<List<com.example.ui.favorite.SourceCandidate>>(emptyList())
+                            }
+                            val migrateScope = rememberCoroutineScope()
+
+                            if (migrateSheet) {
+                                com.example.ui.favorite.SourceMigrateSheet(
+                                    title = migrateTitle,
+                                    candidates = migrateCandidates,
+                                    loading = migrateLoading,
+                                    onPick = { candidate ->
+                                        migrateSheet = false
+                                        val target = candidate.book
+                                        migrateScope.launch {
+                                            // 先取新源章节列表（用于按序号映射已读状态），再整体迁移
+                                            val newSource = libraryViewModel.sourceManager.availableSources.value
+                                                .firstOrNull { it.id == candidate.sourceId } as? com.example.source.ComicSource
+                                            val chapters = runCatching {
+                                                when (val r = newSource?.getChapters(target.id)) {
+                                                    is com.example.source.SourceResult.Success -> r.data
+                                                    else -> emptyList<com.example.source.ComicChapter>()
+                                                }
+                                            }.getOrDefault(emptyList())
+                                            viewModel.migrateComic(
+                                                fromSourceId = comicSourceId,
+                                                fromComicId = comicId,
+                                                toSourceId = candidate.sourceId,
+                                                toComicId = target.id,
+                                                newChapters = chapters,
+                                            )
+                                        }
+                                        // 迁移后直接切到新源的这本（页面内刷新，不返回书库）
+                                        libraryViewModel.openComic(target)
+                                        android.widget.Toast.makeText(
+                                            comicContext, "已换到「${candidate.sourceName}」，进度已迁移",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    onDismiss = { migrateSheet = false },
+                                )
+                            }
+
+                            if (favoriteCategorySheet) {
+                                com.example.ui.shelf.CategoryPickerSheet(
+                                    categories = comicCategories.map { it.name },
+                                    title = "加到哪个分类？",
+                                    onPick = { name ->
+                                        comicBook?.let { b ->
+                                            viewModel.toggleFavorite(b, true, name, comicChapters)
+                                        }
+                                        favoriteCategorySheet = false
+                                    },
+                                    onDismiss = { favoriteCategorySheet = false },
+                                    onCreate = { name ->
+                                        viewModel.addCategory(name)
+                                        comicBook?.let { b -> viewModel.toggleFavorite(b, true, name, comicChapters) }
+                                        favoriteCategorySheet = false
+                                    },
+                                )
+                            }
+
                             LaunchedEffect(comicMessage) {
                                 comicMessage?.let {
                                     android.widget.Toast.makeText(comicContext, it, android.widget.Toast.LENGTH_LONG).show()
@@ -864,6 +1170,70 @@ class MainActivity : ComponentActivity() {
                                 onDownloadAll = {
                                     comicChapters.forEach { chapter ->
                                         comicBook?.let { libraryViewModel.downloadComicChapter(it, chapter) }
+                                    }
+                                },
+                                /* ── 喜欢 / 阅读进度（三态解耦） ── */
+                                favorite = comicFavorite,
+                                // 没有来源信息的书不能被喜欢（手动导入的本地文件）
+                                favoriteEnabled = comicSourceId.isNotBlank() && comicId.isNotBlank(),
+                                onToggleFavorite = { next ->
+                                    comicBook?.let { b -> viewModel.toggleFavorite(b, next, chapters = comicChapters) }
+                                },
+                                onFavoriteLongPress = { favoriteCategorySheet = true },
+                                onFavoriteDisabledClick = {
+                                    android.widget.Toast.makeText(
+                                        comicContext, "这本书没有来源信息，无法加入「我喜欢的」",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                chapterStates = chapterReadStates,
+                                downloadedChapterIds = downloadedChapterIds,
+                                progress = comicProgress,
+                                onReadChapterAt = { chapter, page ->
+                                    startPage = page
+                                    ComicJumpState.startPage = page
+                                    if (comicIsTextMode) {
+                                        libraryViewModel.loadChapterText(chapter)
+                                        navController.navigate("novel_reader_online")
+                                    } else {
+                                        libraryViewModel.loadChapterImages(chapter)
+                                        navController.navigate("comic_reader_online")
+                                    }
+                                },
+                                onMarkChapterRead = { chapter, index, read ->
+                                    viewModel.markComicChapterRead(comicSourceId, comicId, chapter.id, index, read)
+                                },
+                                onMarkReadUpTo = { _, index ->
+                                    viewModel.markComicChaptersReadUpTo(comicSourceId, comicId, index)
+                                },
+                                onChangeSource = {
+                                    // 换源：先在各书源里找同一本书，确认后再按章节序号迁移进度
+                                    val b = comicBook
+                                    if (b == null || comicSourceId.isBlank()) {
+                                        android.widget.Toast.makeText(
+                                            comicContext, "这本书没有来源信息，无法换源",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        migrateTitle = b.title
+                                        migrateSheet = true
+                                        migrateLoading = true
+                                        migrateCandidates = emptyList()
+                                        migrateScope.launch {
+                                            migrateCandidates =
+                                                com.example.ui.favorite.ComicSourceMigration.findCandidates(
+                                                    title = b.title,
+                                                    excludeSourceId = comicSourceId,
+                                                    sources = libraryViewModel.sourceManager.availableSources.value
+                                                        .mapNotNull { it as? com.example.source.ComicSource },
+                                                )
+                                            migrateLoading = false
+                                        }
+                                    }
+                                },
+                                onMarkSeen = {
+                                    if (comicSourceId.isNotBlank() && comicId.isNotBlank()) {
+                                        viewModel.markComicSeen(comicSourceId, comicId, comicChapters)
                                     }
                                 },
                                 onPauseDownload = { chapter ->
@@ -919,7 +1289,24 @@ class MainActivity : ComponentActivity() {
                                 onSessionEnd = { session ->
                                     viewModel.addReadingSession(session)
                                 },
-                                onBack = { navController.popBackStack() },
+                                onBack = {
+                                    // 退出阅读器：强制落库一次（防抖窗口里未提交的页码不能丢）
+                                    val ch = activeChapter
+                                    comicBook?.let { b ->
+                                        if (ch != null && ComicJumpState.lastPage >= 0) {
+                                            viewModel.saveComicProgress(
+                                                sourceId = b.sourceId,
+                                                comicId = b.id,
+                                                chapterId = ch.id,
+                                                chapterIndex = comicChaptersList.indexOfFirst { it.id == ch.id },
+                                                pageIndex = ComicJumpState.lastPage,
+                                                pageCount = images.size,
+                                                force = true,
+                                            )
+                                        }
+                                    }
+                                    navController.popBackStack()
+                                },
                                 onRetry = { activeChapter?.let { libraryViewModel.loadChapterImages(it) } },
                                 bookKey = comicBook?.let { "online_${it.sourceId}_${it.id}" },
                                 bookTitle = comicBook?.title,
@@ -927,9 +1314,29 @@ class MainActivity : ComponentActivity() {
                                 currentChapterIndex = activeChapterIdx,
                                 onJumpToChapter = { idx ->
                                     comicChaptersList.getOrNull(idx)?.let { ch ->
-                                        if (ch.id != activeChapter?.id) libraryViewModel.loadChapterImages(ch)
+                                        if (ch.id != activeChapter?.id) {
+                                            ComicJumpState.startPage = 0
+                                            libraryViewModel.loadChapterImages(ch)
+                                        }
                                     }
                                 },
+                                // 翻页即记录进度（防抖 400ms 落库；退出时强制保存一次）
+                                onPageChanged = { page, total ->
+                                    val ch = activeChapter ?: return@OnlineComicReaderScreen
+                                    ComicJumpState.lastPage = page
+                                    val idx = comicChaptersList.indexOfFirst { it.id == ch.id }
+                                    comicBook?.let { b ->
+                                        viewModel.saveComicProgress(
+                                            sourceId = b.sourceId,
+                                            comicId = b.id,
+                                            chapterId = ch.id,
+                                            chapterIndex = idx,
+                                            pageIndex = page,
+                                            pageCount = total,
+                                        )
+                                    }
+                                },
+                                initialPage = ComicJumpState.startPage,
                                 onPrevChapter = prevChapter?.let { ch -> { libraryViewModel.loadChapterImages(ch) } },
                                 onNextChapter = nextChapter?.let { ch -> { libraryViewModel.loadChapterImages(ch) } },
                             )

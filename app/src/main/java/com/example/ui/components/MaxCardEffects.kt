@@ -88,6 +88,16 @@ fun Modifier.chromaFlowEdge(
 }
 
 /**
+ * 珠光光斑的三个色标：与 phase 无关，组合期常量化。
+ * 原实现写在 `drawBehind` 里 → 每帧新建一次 `listOf` + 两次 `Color.copy`（纯浪费）。
+ */
+private val SHIMMER_PEARL_COLORS = listOf(
+    Color.White.copy(alpha = 0.10f),
+    Color.White.copy(alpha = 0.04f),
+    Color.Transparent
+)
+
+/**
  * 珠光微光层：卡面上一块柔和的椭圆渐变光斑缓慢漂移（ShimmerFy 思路）。
  */
 @Composable
@@ -115,11 +125,7 @@ fun Modifier.shimmerPearl(
 
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.10f),
-                    Color.White.copy(alpha = 0.04f),
-                    Color.Transparent
-                ),
+                colors = SHIMMER_PEARL_COLORS,
                 center = Offset(cx, cy),
                 radius = spotR
             ),

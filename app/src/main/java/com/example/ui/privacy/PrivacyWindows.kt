@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Shield
@@ -394,6 +395,9 @@ fun PrivacyManageOverlay(
     /** 第九轮：全局无痕浏览开关——开启后所有阅读（含在线/普通分类）不计入统计 */
     onToggleIncognito: (Boolean) -> Unit = {},
     incognitoBrowsingEnabled: Boolean = false,
+    /** 「我喜欢的」是否也要密码才能看（与受保护分类同一套 PIN） */
+    favoritesProtected: Boolean = false,
+    onToggleFavoritesProtected: (Boolean) -> Unit = {},
     onChangePin: () -> Unit,
     onDisablePrivacy: () -> Unit,
     onDismiss: () -> Unit,
@@ -497,6 +501,45 @@ fun PrivacyManageOverlay(
                     AppSwitch(
                         checked = incognitoBrowsingEnabled,
                         onCheckedChange = { onToggleIncognito(it) }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+
+                /* ── 「我喜欢的」密码保护 ──
+                 * 与分类保护是同一套 PIN：开启后书架页的「我喜欢的」板块
+                 * 必须先验证密码才能显示内容（未解锁时只显示一把锁）。 */
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.35f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Favorite,
+                        contentDescription = null,
+                        tint = if (favoritesProtected) MintPrimary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "「我喜欢的」需要密码",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            if (favoritesProtected) "已开启 · 进入该板块需验证密码"
+                            else "开启后查看收藏要先验证密码",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                        )
+                    }
+                    AppSwitch(
+                        checked = favoritesProtected,
+                        onCheckedChange = { onToggleFavoritesProtected(it) }
                     )
                 }
                 Spacer(Modifier.height(10.dp))

@@ -17,12 +17,20 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 按源 ID 哈希取色 + 首字母生成的圆形源站头像，纯 Compose 绘制。 */
+import androidx.compose.ui.graphics.Shape
+
+/**
+ * 按源 ID 哈希取色 + 首字母生成的源站头像，纯 Compose 绘制。
+ *
+ * @param shape 头像轮廓。**默认 `CircleShape`**，因此所有既有调用点（书库选择器等）
+ *   行为完全不变、零回归；书源管理页按设计规范传 `RoundedCornerShape(12)` 走圆角方形。
+ */
 @Composable
 fun SourceAvatar(
     sourceId: String,
     sourceName: String,
     size: Dp = 32.dp,
+    shape: Shape = CircleShape,
     modifier: Modifier = Modifier
 ) {
     val bg = remember(sourceId) {
@@ -36,9 +44,9 @@ fun SourceAvatar(
     Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(shape)
             .background(bg)
-            .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+            .border(1.dp, Color.White.copy(alpha = 0.85f), shape),
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.material3.Text(

@@ -5,10 +5,6 @@ import android.os.Build
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,7 +24,6 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import me.trishiraj.shadowglow.consistentShadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -314,19 +310,11 @@ fun GlassCard(
     val isMax = quality == RenderQuality.MAX
     val tertiary = MaterialTheme.colorScheme.tertiary
 
-    // A2：极光呼吸相位（薄荷↔金 柔和往复）—— 仅 MAX 创建动画器，
-    // 其余档位用静止状态占位，避免每张卡每帧空转
-    val auroraTransition = rememberInfiniteTransition(label = "auroraCard")
-    val breathSource: State<Float> = if (isMax) {
-        auroraTransition.animateFloat(
-            initialValue = 0f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(3800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-            label = "auroraBreath"
-        )
-    } else {
-        remember { mutableStateOf(0f) }
-    }
-    val auroraBreath by breathSource
+    // A2：极光呼吸相位 —— 【已移除】
+    // 原实现在此为每张卡（含非 MAX 档）创建一个 `rememberInfiniteTransition("auroraCard")`
+    // 并跑一条 3800ms 的无限动画，但产生的 `auroraBreath` 在全工程内**没有任何读取点**
+    // （即渲染结果完全不受它影响）。它唯一的作用是为每张卡片长期挂着一条逐帧协程 +
+    // 一个动画器实例。删除它对像素输出零影响，是纯收益。
 
     // B1/压力形变：触点追踪（按下位置 + 归一化偏移 −1..1）
     var pressPos by remember { mutableStateOf(Offset.Zero) }
@@ -527,7 +515,7 @@ fun GlassCard(
                 if (quality == RenderQuality.LOW) {
                     // 流畅档：单层轻阴影（双层 HWUI 投影是低端机大项），并补一层保持滚动隔离
                     Modifier.graphicsLayer { }
-                        .shadow(
+                        .consistentShadow(
                             elevation = 4.dp,
                             shape = effectiveShape,
                             ambientColor = Color.Black.copy(alpha = 0.08f),
@@ -536,7 +524,7 @@ fun GlassCard(
                 } else {
                     Modifier
                         // Layer 7A: 宽域环境扩散彩色柔光（Atmospheric Bloom）；极致档更浓
-                        .shadow(
+                        .consistentShadow(
                             elevation = pressLift.dp,
                             shape = effectiveShape,
                             ambientColor = primary.copy(alpha = if (quality == RenderQuality.MAX) 0.16f else 0.10f),
@@ -545,7 +533,7 @@ fun GlassCard(
                             )
                         )
                         // Layer 7B: 近距离接触暗部阴影（Ambient Occlusion）
-                        .shadow(
+                        .consistentShadow(
                             elevation = 4.dp,
                             shape = effectiveShape,
                             ambientColor = Color.Black.copy(alpha = 0.08f),

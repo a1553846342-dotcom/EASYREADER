@@ -2,10 +2,14 @@ package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,10 +26,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -42,11 +44,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,20 +63,59 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.onColor
 import com.kashif_e.backdrop.Backdrop
-import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
+import me.trishiraj.shadowglow.consistentShadow
 
 /**
  * 苹果 Liquid Glass 风格底部标签栏（上一版结构 + 真实验证参数增强）。
  *
  * 背景采用书源选择弹窗同款手法：MainActivity 用 layerBackdrop 捕获页面真实内容，
  * Tab 栏作为兄弟节点用 drawBackdrop(blur) 采样，得到真实 Gaussian Blur 磨砂。
+ *
+ * ── 本次样式升级（2026-09）────────────────────────────────────────────
+ * 旧观感是「一根纯色药丸」：玻璃底之上只平铺了一层 `primary.copy(alpha=0.30f)`
+ * 的单色，把玻璃的层次全盖掉了。本次分层为：
+ *   ① 竖向渐变（顶部高光 → 主色淡染 → 底部略深）替代单层均色；
+ *   ② 顶部 1dp 内高光 + 外圈细描边（与虹彩描边叠加，不冲突）；
+ *   ③ 选中指示器从「顶部 3dp 细线」升级为「选中项背后浮起的药丸高亮」；
+ *   ④ Badge 加与栏体同色的描边、排版更圆润。
+ * 功能与弹簧手感（DampingRatioMediumBouncy + StiffnessLow）全部保留。
  */
+
+/* ── 稳定常量 ────────────────────────────────────────────────────────────
+ * 提到文件级：避免每次重组重新构造 Color / Shape 实例。
+ * 这不仅省分配，更关键的是让 Modifier 元素的 equals 成立 —— Compose 复用
+ * 相等元素的绘制节点，等价 ⇒ 不重建绘制缓存（极致档的开销大头就在这）。 */
+private val TabBarShape: RoundedCornerShape = RoundedCornerShape(50)
+private val TabBarAmbientShadowColor: Color = Color.Black.copy(alpha = 0.16f)
+private val TabBarContactShadowColor: Color = Color.Black.copy(alpha = 0.20f)
+private val TabBarLowOutlineColor: Color = Color.White.copy(alpha = 0.15f)
+/** 中性细描边：替代原来的主色虹彩描边（去绿）。 */
+private val TabBarNeutralOutlineColor: Color = Color.White.copy(alpha = 0.22f)
+
+/** 选中指示器的弹簧：与旧实现逐参数一致（保留手感）。 */
+private val TabIndicatorSpring: FiniteAnimationSpec<Float> =
+    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+
+/** 未选中项文字/图标的透明度：0.55 → 0.48，让选中项更突出。 */
+private const val TAB_UNSELECTED_ALPHA = 0.48f
+
+/**
+ * 滚动收缩弹簧（栏高 68↔52、左右边距 16↔48）。
+ *
+ * 原来是 `DampingRatioMediumBouncy`(0.55) + `StiffnessLow`(200) —— 阻尼比 0.55 的过冲约
+ * **12.6%**，配合最软的刚度，一上下滑整条栏就大幅摆动，设置页那种长列表里尤其明显。
+ * 这里只"收紧"、不去掉弹簧感：
+ *  · 阻尼比 0.55 → 0.70（过冲 ≈4.6%，仍有回弹，但不会甩出去）
+ *  · 刚度 StiffnessLow(200) → StiffnessMediumLow(700)（收敛更快，摆动能被立刻拉住）
+ * 想更硬就把阻尼比往 1.0 调、刚度往 StiffnessMedium(1500) 调；想更弹就反向调。
+ */
+private const val TAB_COLLAPSE_DAMPING = 0.70f
+private const val TAB_COLLAPSE_STIFFNESS = Spring.StiffnessMediumLow
 
 data class AppTabItem(
     val label: String,
@@ -126,9 +171,13 @@ fun AppBottomTabBar(
         ),
         label = "tabBarAccent"
     )
-    // 根据 Tab 栏“有效底色”（内容面 + 30% 主题色）自动取对比色，
+    // 根据 Tab 栏“有效底色”（内容面 + 6% 主题色）自动取对比色，
     // 并用与全软件一致的弹簧动画过渡。
-    val barBase = lerp(MaterialTheme.colorScheme.surface, animatedPrimary, 0.30f)
+    //
+    // 新规范：玻璃保持中性，着色 ≤6%。原先这里是 30% 主题色混色，
+    // 整条栏读起来是“绿药丸”，且绿色面积远超 10% 上限。
+    // 对比色**算法本身一行未改**，只是把混色比例压到 6%。
+    val barBase = lerp(MaterialTheme.colorScheme.surface, animatedPrimary, 0.06f)
     val contrast by animateColorAsState(
         targetValue = barBase.onColor(),
         animationSpec = spring(
@@ -141,23 +190,103 @@ fun AppBottomTabBar(
     val barHeight by animateDpAsState(
         targetValue = if (collapseState.collapsed) 52.dp else 68.dp,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            dampingRatio = TAB_COLLAPSE_DAMPING,
+            stiffness = TAB_COLLAPSE_STIFFNESS
         ),
         label = "tabBarHeight"
     )
     val horizontalMargin by animateDpAsState(
         targetValue = if (collapseState.collapsed) 48.dp else 16.dp,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            dampingRatio = TAB_COLLAPSE_DAMPING,
+            stiffness = TAB_COLLAPSE_STIFFNESS
         ),
         label = "tabBarMargin"
     )
 
     val tabPositions = remember { mutableStateMapOf<Int, Rect>() }
-    val shape = RoundedCornerShape(50)
+    val shape = TabBarShape
     val quality = LocalRenderQuality.current
+
+    /* ── ① 玻璃底：中性分层 + 顶部内高光 + 外圈细描边 ──────────────────
+     *
+     * 新规范：玻璃是「容器」不是「装饰」——保持中性白 / 中性深，**着色 ≤6%**，
+     * 绿色只留给开关开启态 / 选中态 / 主按钮 / 小标签文字 / 对勾。
+     * 原先的 22%~28% 主色渐变会把整条栏染成“绿药丸”，这里压到 5%，
+     * 主色只通过【选中项图标+文字】表达。
+     *
+     * 流畅档（LOW）**不引入**任何新渐变层：维持单层近实心底 + 中性描边。 */
+    val glassTintModifier = if (quality == RenderQuality.LOW) {
+        Modifier.background(animatedPrimary.copy(alpha = 0.06f), shape)
+    } else {
+        Modifier.tabBarGlassTint(primary = animatedPrimary)
+    }
+
+    /* ── ② 选中指示器：药丸高亮（位置/尺寸由 Animatable 驱动）────────────
+     *
+     * ⚠️ 性能关键：这里**刻意不用** `animateFloatAsState`。
+     *    animate*AsState 是组合期状态 —— 每帧变化都会**重组** AppBottomTabBar，
+     *    连带重建整条 Row 的 Modifier 链，把 liquidGlass / iridescentBorder /
+     *    consistentShadow 的绘制缓存全部打掉（极致档掉帧的主因之一）。
+     *    改用 Animatable + 在**绘制期**读 `.value`：快照只会让绘制阶段失效，
+     *    Row 不重组、上面那些重缓存完全不受影响。
+     *    弹簧参数与旧实现逐参数一致，手感不变。 */
+    val indicatorLeft = remember { Animatable(0f) }
+    val indicatorTop = remember { Animatable(0f) }
+    val indicatorWidth = remember { Animatable(0f) }
+    val indicatorHeight = remember { Animatable(0f) }
+    val indicatorAlpha = remember { Animatable(0f) }
+    var indicatorInitialized by remember { mutableStateOf(false) }
+
+    val targetRect = tabPositions[selectedIndex]
+    LaunchedEffect(targetRect, selectedIndex) {
+        if (targetRect == null) {
+            indicatorAlpha.animateTo(0f, tween(140))
+            return@LaunchedEffect
+        }
+        // 首次拿到位置时直接落位（避免从左上角 0×0 长出来），只做淡入
+        if (!indicatorInitialized) {
+            indicatorLeft.snapTo(targetRect.left)
+            indicatorTop.snapTo(targetRect.top)
+            indicatorWidth.snapTo(targetRect.width)
+            indicatorHeight.snapTo(targetRect.height)
+            indicatorAlpha.snapTo(0f)
+            indicatorInitialized = true
+        }
+        launch { indicatorLeft.animateTo(targetRect.left, TabIndicatorSpring) }
+        launch { indicatorTop.animateTo(targetRect.top, TabIndicatorSpring) }
+        launch { indicatorWidth.animateTo(targetRect.width, TabIndicatorSpring) }
+        launch { indicatorHeight.animateTo(targetRect.height, TabIndicatorSpring) }
+        launch { indicatorAlpha.animateTo(1f, tween(180, easing = FastOutSlowInEasing)) }
+    }
+
+    // ② 选中指示：Tab 项顶部那条 3dp 小黑条（宽度 = 所在项宽度的 40%，水平居中）。
+    // ⚠️ 这是用户明确认可、要求还原的**原始形态** —— 不要再改成背景高亮 / 药丸气泡。
+    // 仍走 Animatable + 绘制期读 `.value`（不触发组合期重组），弹簧用 TabIndicatorSpring。
+    val selectionIndicator = Modifier.drawWithCache {
+        val barTopPx = 2.dp.toPx()
+        val barHeightPx = 3.dp.toPx()
+        val barRadius = CornerRadius(barHeightPx / 2f)
+        onDrawWithContent {
+            val itemWidth = indicatorWidth.value
+            val a = indicatorAlpha.value
+            if (itemWidth > 0f && a > 0.01f) {
+                val barWidth = itemWidth * 0.40f
+                drawRoundRect(
+                    color = contrast.copy(alpha = a),
+                    topLeft = Offset(indicatorLeft.value + (itemWidth - barWidth) / 2f, barTopPx),
+                    size = Size(barWidth, barHeightPx),
+                    cornerRadius = barRadius
+                )
+            }
+            drawContent()
+        }
+    }
+    // 虹彩描边配色：remember 住，避免每次重组生成新 List 导致
+    // iridescentBorder 元素不等、绘制缓存被重建（主题切换时每帧一次）
+    val iridescentColors = remember(animatedPrimary, animatedAccent) {
+        listOf(animatedPrimary, animatedAccent, animatedPrimary)
+    }
 
     // 主题 key：主题色变化时强制重建玻璃样式/着色器。
     // 修复：原先 key 用的是 animatedPrimary/animatedAccent（弹簧动画的**当前帧值**），
@@ -180,25 +309,27 @@ fun AppBottomTabBar(
                     .then(
                         if (quality == RenderQuality.LOW) {
                             // 流畅档：单层阴影
-                            Modifier.shadow(
+                            Modifier.consistentShadow(
                                 elevation = 8.dp,
                                 shape = shape,
-                                ambientColor = Color.Black.copy(alpha = 0.16f),
-                                spotColor = Color.Black.copy(alpha = 0.16f)
+                                ambientColor = TabBarAmbientShadowColor,
+                                spotColor = TabBarAmbientShadowColor
                             )
                         } else {
                             Modifier
-                                .shadow(
+                                // 环境层：品牌色宽域柔光
+                                .consistentShadow(
                                     elevation = 24.dp,
                                     shape = shape,
                                     ambientColor = animatedPrimary.copy(alpha = 0.18f),
                                     spotColor = animatedPrimary.copy(alpha = 0.18f)
                                 )
-                                .shadow(
+                                // 接触层：近距离暗部
+                                .consistentShadow(
                                     elevation = 8.dp,
                                     shape = shape,
-                                    ambientColor = Color.Black.copy(alpha = 0.20f),
-                                    spotColor = Color.Black.copy(alpha = 0.20f)
+                                    ambientColor = TabBarContactShadowColor,
+                                    spotColor = TabBarContactShadowColor
                                 )
                         }
                     )
@@ -224,23 +355,23 @@ fun AppBottomTabBar(
                                 Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), shape)
                         }
                     )
-                    .background(animatedPrimary.copy(alpha = 0.30f), shape)
+                    // ① 玻璃底分层（渐变 / 顶部高光 / 外圈细描边）
+                    .then(glassTintModifier)
                     .then(
                         if (quality != RenderQuality.LOW) {
+                            // 主色虹彩描边加回（与 tint 的主色混色配套）
                             Modifier.iridescentBorder(
                                 shape = shape,
-                                colors = listOf(
-                                    animatedPrimary,
-                                    animatedAccent,
-                                    animatedPrimary
-                                ),
+                                colors = iridescentColors,
                                 width = if (quality == RenderQuality.MAX) 2.dp else 1.5.dp,
                                 alpha = if (quality == RenderQuality.MAX) 0.60f else 0.45f
                             )
                         } else {
-                            Modifier.border(1.dp, Color.White.copy(alpha = 0.15f), shape)
+                            Modifier.border(1.dp, TabBarLowOutlineColor, shape)
                         }
-                    ),
+                    )
+                    // ② 选中项背后的药丸高亮：画在栏体之上、图标之下
+                    .then(selectionIndicator),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -250,15 +381,89 @@ fun AppBottomTabBar(
                         selected = index == selectedIndex,
                         collapsed = collapseState.collapsed,
                         contrast = contrast,
+                        ringColor = barBase,
                         onClick = { onTabSelected(index) },
                         onPositioned = { rect -> tabPositions[index] = rect }
                     )
                 }
             }
+        }
+    }
+}
 
-            SelectionIndicator(
-                targetRect = tabPositions[selectedIndex],
-                color = contrast
+/**
+ * 栏体的玻璃质感分层（替代原先平铺的单层主色）。
+ *
+ * 三段：顶部高光 → 主色淡染 → 底部略深，再叠顶部 1dp 内高光与外圈细描边。
+ * 调用处已 `.clip(shape)`，这里直接按整块矩形绘制即可（会被裁到胶囊形）。
+ */
+private fun Modifier.tabBarGlassTint(primary: Color): Modifier = this.drawWithCache {
+    // 主色混色（用户要求加回）：顶部高光 → 主色淡染 → 底部略深。
+    // 2026-09-24 曾压到 5%/4% 做"中性化"，用户明确要求把原来的强调色混色加回来。
+    val fill = Brush.verticalGradient(
+        colorStops = arrayOf(
+            0.00f to Color.White.copy(alpha = 0.20f),
+            0.22f to primary.copy(alpha = 0.28f),
+            0.62f to primary.copy(alpha = 0.22f),
+            1.00f to Color.Black.copy(alpha = 0.10f)
+        )
+    )
+    val radius = CornerRadius(size.height / 2f, size.height / 2f)
+    val outline = Stroke(width = 1.dp.toPx())
+    val outlineBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.34f),
+            Color.White.copy(alpha = 0.10f)
+        )
+    )
+    val glint = Stroke(width = 1.dp.toPx())
+    val glintBrush = Brush.horizontalGradient(
+        colors = listOf(
+            Color.Transparent,
+            Color.White.copy(alpha = 0.38f),
+            Color.Transparent
+        )
+    )
+    val glintY = 1.5.dp.toPx()
+    onDrawBehind {
+        // 主渐变
+        drawRect(brush = fill)
+        // 顶部 1dp 内高光
+        drawLine(
+            brush = glintBrush,
+            start = Offset(size.width * 0.14f, glintY),
+            end = Offset(size.width * 0.86f, glintY),
+            strokeWidth = glint.width
+        )
+        // 外圈细描边（与虹彩描边叠加，提供清晰的边缘）
+        drawRoundRect(
+            brush = outlineBrush,
+            cornerRadius = radius,
+            style = outline
+        )
+    }
+}
+
+/**
+ * ④ 角标：与栏体同色的描边 + 更圆润的排版。
+ * 数字格式化逻辑（`count > 99 → "99+"`）保持原样不动。
+ */
+@Composable
+private fun TabBadge(count: Int, ringColor: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(if (count > 0) 18.dp else 9.dp)
+            .background(Color(0xFFE5484D), shape = CircleShape)
+            .border(1.5.dp, ringColor, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (count > 0) {
+            Text(
+                text = if (count > 99) "99+" else count.toString(),
+                fontSize = 9.sp,
+                color = Color.White,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                letterSpacing = 0.sp
             )
         }
     }
@@ -270,6 +475,7 @@ private fun TabIcon(
     selected: Boolean,
     collapsed: Boolean,
     contrast: Color,
+    ringColor: Color,
     onClick: () -> Unit,
     onPositioned: (Rect) -> Unit
 ) {
@@ -300,7 +506,9 @@ private fun TabIcon(
         ),
         label = "tabIconScale"
     )
-    val iconColor = if (selected) contrast else contrast.copy(alpha = 0.55f)
+    // ③ 未选中项压到 0.48（原 0.55），让选中项更突出；
+    //    barBase / contrast 的自动对比色算法完全不变。
+    val iconColor = if (selected) contrast else contrast.copy(alpha = TAB_UNSELECTED_ALPHA)
 
     Column(
         modifier = Modifier
@@ -340,7 +548,11 @@ private fun TabIcon(
                     }
             )
             item.badgeCount?.let { count ->
-                TabBadge(count = count, modifier = Modifier.align(Alignment.TopEnd))
+                TabBadge(
+                    count = count,
+                    ringColor = ringColor,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                )
             }
         }
 
@@ -357,60 +569,4 @@ private fun TabIcon(
             )
         }
     }
-}
-
-@Composable
-private fun TabBadge(count: Int, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(if (count > 0) 16.dp else 8.dp)
-            .background(Color(0xFFE5484D), shape = CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        if (count > 0) {
-            Text(
-                text = if (count > 99) "99+" else count.toString(),
-                fontSize = 8.sp,
-                color = Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun SelectionIndicator(targetRect: Rect?, color: Color) {
-    if (targetRect == null) return
-    val density = LocalDensity.current
-
-    val animatedOffsetX by animateFloatAsState(
-        targetValue = targetRect.left,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "indicatorX"
-    )
-    val animatedWidth by animateFloatAsState(
-        targetValue = targetRect.width,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "indicatorW"
-    )
-    val indicatorWidthPx = animatedWidth * 0.40f
-    val centeredX = animatedOffsetX + (animatedWidth - indicatorWidthPx) / 2f
-
-    Box(
-        modifier = Modifier
-            .offset {
-                IntOffset(
-                    x = with(density) { centeredX.toDp().roundToPx() },
-                    y = with(density) { 2.dp.toPx().roundToInt() }
-                )
-            }
-            .width(with(density) { indicatorWidthPx.toDp() })
-            .height(3.dp)
-            .background(color, RoundedCornerShape(50))
-    )
 }

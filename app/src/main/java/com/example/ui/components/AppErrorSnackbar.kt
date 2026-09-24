@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import me.trishiraj.shadowglow.consistentShadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +56,7 @@ fun AppErrorSnackbar(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .shadow(elevation = 8.dp, shape = RoundedCornerShape(14.dp))
+            .consistentShadow(elevation = 8.dp, shape = RoundedCornerShape(14.dp))
             .border(
                 width = 1.5.dp,
                 color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f),

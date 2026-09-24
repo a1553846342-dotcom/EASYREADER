@@ -56,6 +56,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 /**
+ * 卷页背面「内容的可见度」——pagecurl 引擎内部的换算关系是
+ * `overlayAlpha = 1 - backPageContentAlpha`（overlay 即铺在最上面的纸色）。
+ *
+ * 旧值 0f → overlayAlpha = 1.0 → 背面被一层纯色完全盖死（用户报的那个 bug）。
+ * 取 0.58f：背面保留 42% 的纸感 + 58% 的镜像字，读起来像真透过纸张看到墨迹。
+ * 再高会喧宾夺主（看着像印错了正的），再低又退回"纯色板"。
+ */
+private const val BACK_PAGE_CONTENT_ALPHA = 0.58f
+
+/**
  * C1 pagecurl 引擎容器（SIMULATE 翻页档）。
  *
  * 下拉书签：与 PageTurnContainer（COVER/SLIDE/FADE 档）完全同一套算法——
@@ -77,11 +87,24 @@ fun PageCurlReaderContainer(
     /** 中间区域长按 2s：触发串珠快速翻页（PageScrubberOverlay）。 */
     onLongPressCenter: (() -> Unit)? = null,
     menuVisible: Boolean,
+    /**
+     * 卷页背面的纸色：传阅读区当页背景色（ReaderScreen 的 `bgColor`）。
+     *
+     * 此前这里写死 `Color(0xFFE8E4DC)` 且 `backPageContentAlpha = 0f`——
+     * pagecurl 引擎内部会用 `backPageColor.copy(alpha = 1 - backPageContentAlpha)`
+     * 盖一层，alpha 取 0 就是 **100% 不透明纯色**：背面的镜像内容被完全糊掉，
+     * 用户看到的"仿真翻页背面不真实，渲染成不透明纯色"正是这一行造成的。
+     * 而且它不跟随阅读主题，夜间模式下依然是米黄色纸。
+     */
+    paperColor: Color = Color(0xFFE8E4DC),
     modifier: Modifier = Modifier
 ) {
     val state = rememberPageCurlState(initialCurrent = 1)
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+
+    // 纸面色由阅读主题推导，夜里自动变深，不再出现米黄纸。
+    val paper = rememberPaperPalette(paperColor)
 
     // ── 下拉充能状态（与 PageTurnContainer 同参数）──
     var pullValue by remember { mutableFloatStateOf(0f) }
@@ -93,8 +116,12 @@ fun PageCurlReaderContainer(
     )
 
     val config = PageCurlConfig(
-        backPageColor = Color(0xFFE8E4DC),
-        backPageContentAlpha = 0f,
+        // 纸面改用主题推导色；深色主题下自动变深。
+        backPageColor = paper.face,
+        // 「背面内容的可见度」。pagecurl 内部会铺一层 alpha = 1 - 该值的纸色，
+        // 取 0 就是完全不透明（旧 bug）。0.58f → 纸占 42%、镜像字透出 58%，
+        // 观感接近 iBooks/掌阅：背面确实"印着字"，而不是一块空色板。
+        backPageContentAlpha = BACK_PAGE_CONTENT_ALPHA,
         shadowColor = Color.Black,
         shadowAlpha = 0.25f,
         shadowRadius = 18.dp,

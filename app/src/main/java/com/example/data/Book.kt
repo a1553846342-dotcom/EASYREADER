@@ -29,7 +29,14 @@ data class Book(
     val totalChapters: Int = 0,
     val contentType: String = "NOVEL",
     val addedTime: Long = System.currentTimeMillis(),
-    val lastReadTime: Long = System.currentTimeMillis()
+    val lastReadTime: Long = System.currentTimeMillis(),
+    /**
+     * 来源标识（在线下载入库的书才有）：与 [comicId] 一起构成「我喜欢的」的
+     * 关联键 (sourceId, comicId)。手动导入的本地文件为空 —— 这类书不能被喜欢，
+     * 但阅读进度照常记录。
+     */
+    val sourceId: String? = null,
+    val comicId: String? = null,
 ) {
     val isComic: Boolean
         get() = contentType == "COMIC"

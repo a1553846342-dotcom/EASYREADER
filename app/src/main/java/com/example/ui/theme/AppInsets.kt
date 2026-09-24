@@ -19,3 +19,14 @@ import androidx.compose.ui.unit.dp
  */
 val LocalAppBottomInset: androidx.compose.runtime.ProvidableCompositionLocal<Dp> =
     compositionLocalOf { 0.dp }
+
+/**
+ * 「底栏已被隐藏」场景的底部避让高度（= 系统导航栏 + 视觉间隙，**不含**悬浮 Tab 栏）。
+ *
+ * 什么时候用：书架进入多选态 / 拖拽态时，`ShelfChrome.setTabBarVisible(false)` 会把
+ * 悬浮 Tab 栏整条藏起来，此时若操作栏、放置坞仍按 [LocalAppBottomInset] 让位，
+ * 底部就会凭空多出 92dp 的空白 —— 实测表现为「操作栏悬在半空、放置坞的 chip
+ * 被系统手势条压掉一半」。
+ */
+val LocalAppBottomInsetNoTabBar: androidx.compose.runtime.ProvidableCompositionLocal<Dp> =
+    compositionLocalOf { 0.dp }
