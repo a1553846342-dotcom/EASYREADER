@@ -21,6 +21,17 @@ fun AppSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 轨道尺寸与滑块尺寸。**默认值 = SquishyToggleSwitch 出厂值**，因此既有 13 处
+     * 调用点视觉零回归；书源管理页按该页设计规范传 44×26 / 滑块 20 / 内边距 3。
+     *
+     * ⚠️ 三者必须成套修改：位移量 = containerWidth − circleSize − padding×2，
+     * 任一项单独改动都会让滑块行程对不上轨道（滑出轨道或走不满）。
+     */
+    containerWidth: Int = 60,
+    containerHeight: Int = 32,
+    circleSize: Int = 24,
+    padding: Int = 4,
 ) {
     // 2026-09-21 修复：modifier 此前接收后从未向下传递 —— 调用方传入的尺寸/间距
     // 修饰会被静默丢弃（目前 13 处调用恰好都没传，所以还没暴露，但迟早踩坑）。
@@ -31,6 +42,10 @@ fun AppSwitch(
             color = MintPrimary,
             checked = checked,
             onCheckedChange = onCheckedChange,
+            containerWidth = containerWidth,
+            containerHeight = containerHeight,
+            circleSize = circleSize,
+            padding = padding,
         )
     }
 }

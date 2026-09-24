@@ -6,71 +6,312 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.components.AppButton
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AcrylicDialog
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.GradientActionButton
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppSwitch
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppButtonVariant
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppActionButton
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.AppButtonSize
-import com.example.ui.components.AppIconButton
-import com.example.ui.components.SourceAvatar
-import com.example.ui.components.AppIconButton
+import androidx.core.graphics.ColorUtils
 import com.example.library.LibraryLoginDialog
 import com.example.library.ZLibraryNodeConfig
 import com.example.source.BookSource
-import com.example.source.isNovelSource
 import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.source.SourceViewModel
 import com.example.source.importer.SourceImporter
+import com.example.source.isNovelSource
 import com.example.source.zlibrary.ZLibrarySource
-import com.example.ui.theme.MintPrimary
+import com.example.ui.components.AcrylicDialog
+import com.example.ui.components.AppIconButton
+import com.example.ui.components.AppSwitch
+import com.example.ui.components.GlassCard
+import com.example.ui.components.GradientActionButton
+import com.example.ui.components.LocalGlassBackdrop
+import com.example.ui.components.LocalRenderQuality
+import com.example.ui.components.SourceAvatar
+import com.example.ui.components.liquidGlass
+import com.example.ui.feedback.AppMotion
+import com.example.ui.feedback.LocalReduceMotion
+import com.example.ui.shelf.pressScale
+import com.example.ui.theme.AppFonts
+import com.example.ui.theme.LocalAppBottomInset
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/* ══════════════════════════════════════════════════════════════════════════
+ * 书源管理 · 设计令牌（2026-09-24 重排版）
+ *
+ * 圆角：页面上**只允许三种** —— 玻璃卡 24 / 小元素（头像·图标底）12·10 / 胶囊全圆。
+ *      玻璃卡一律 24，禁止药丸形、禁止 >28。
+ * 间距：页面左右 16、卡片之间 12、卡片内左右 16。
+ * 字号：大标题 28 → 折叠 20；分组标题 14 semi-bold；条目名 15 semi-bold；
+ *      快捷入口名 13；ID / 状态 11；小胶囊 12；导入行 14。
+ * 文字：主文字 onSurface 100%；次要文字（ID / 状态）onSurface **70%**（下限）；
+ *      标签文字 = primary 同色系加深 20%，底 = primary 12%。
+ * 可读：本页是功能页 —— 壁纸先经 sigma≈16 模糊 + 全屏遮罩（亮 50% 白 / 深 52% 黑），
+ *      再叠一层顶部渐变（背景色 85% → 0）保护大标题与返回箭头。
+ *      除大标题外，页面上没有任何文字直接落在壁纸上。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 圆角 ────────────────────────────────────────────────────────────── */
+private val SourceCardRadius = 24.dp          // 玻璃卡（A / B / C）
+private val SourceAvatarRadius = 12.dp        // 书源行头像
+private val SourceIconRadius = 10.dp          // 快捷入口的淡染图标底
+private val SourceImportRadius = 20.dp        // D 导入行（虚线）
+private val PillShape: Shape = RoundedCornerShape(50)
+
+/* ── 规范硬性尺寸 ────────────────────────────────────────────────────── */
+private val SourcePageMargin = 16.dp          // 页面左右边距
+private val SourceCardGap = 12.dp             // 卡片垂直间距
+private val SourceHeaderHeight = 48.dp        // 分组卡头部
+private val SourceRowHeight = 60.dp           // 书源行
+private val SourceAvatarSize = 36.dp          // 行头像
+/** 行分割线的左缩进：卡片内边距 16 + 头像 36 + 头像与文字间距 12 = 64（对齐文字起点）。 */
+private val SourceRowDividerIndent = 64.dp
+private val SourceQuickCardMinHeight = 84.dp  // A 快捷入口卡（minHeight，内容撑开）
+private val SourceQuickIconBox = 40.dp        // A 卡内的淡染圆角方形底
+private val SourceQuickIconSize = 28.dp       // A 卡内的图标
+private val SourceChipHeight = 26.dp          // 「登录 / 节点」小胶囊
+private val SourceExpandRowHeight = 44.dp     // 「展开其余 N 个」
+private val SourceImportRowHeight = 48.dp     // D 导入行
+private val SourceDividerWidth = 0.5.dp       // 细分割线（卡内）
+/** Material3 LargeTopAppBar 展开态高度（用于顶部渐变遮罩的高度计算）。 */
+private val SourceLargeTitleHeight = 152.dp
+/** 页面级壁纸模糊半径（sigma ≈ 16，功能页规格：壁纸只留氛围色、看不出线条）。 */
+private val SourcePageBlurRadius = 16.dp
+
+private const val TITLE_EXPANDED_SP = 28f
+private const val TITLE_COLLAPSED_SP = 20f
+
+/** 漫画组折叠态默认露出前 N 个，其余走「展开其余 N 个」。 */
+private const val COMIC_GROUP_PREVIEW_COUNT = 6
+
+/** 表格数字对齐：`tnum` 让 0-9 等宽，X 由 9 变 10 时后面的文字不会横向抖一下。 */
+private const val NUMERIC_FEATURE = "tnum"
+
+/** 「分组标题」14sp 对应的 0.02em 字距（标题越大字距越小，避免松散）。 */
+private val GROUP_LETTER_SPACING = (14 * 0.02f).sp
+
+/* ── 文字层级（本页唯一入口，禁止各写各的 alpha）───────────────────── */
+
+/** 主文字：onSurface 100%。 */
+@Composable
+private fun primaryText(): Color = MaterialTheme.colorScheme.onSurface
+
+/** 次要文字（ID / 状态）：onSurface 70% —— 规范下限，任何地方都不得低于此值。 */
+@Composable
+private fun secondaryText(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f)
+
+/**
+ * 标签文字：`primary` **同色系加深 20%**（HSL 明度 ×0.8）。
+ *
+ * 不用 `lerp(primary, Black, .2f)` —— 那会顺带把色相往灰里拖，浅色主题下标签会发脏；
+ * 只压明度能保持"同一个色的深色版"，与 12% 的淡染底配对后正文对比度 ≥4.5:1。
+ */
+@Composable
+private fun accentText(): Color {
+    val primary = MaterialTheme.colorScheme.primary
+    return remember(primary) {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(primary.toArgb(), hsl)
+        hsl[2] = (hsl[2] * 0.8f).coerceIn(0f, 1f)
+        Color(ColorUtils.HSLToColor(hsl))
+    }
+}
+
+/** 标签 / 徽标 / 小胶囊的底色：`primary` 12%（规范值）。 */
+@Composable
+private fun accentContainer(): Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+
+/** 卡内分割线：onSurface 10%。 */
+@Composable
+private fun dividerColor(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+
+/**
+ * 玻璃基底 —— **中性**，不着色。
+ *
+ * 刻意**不**用 `isSystemInDarkTheme()` 写硬分支 —— 颜色一律由 [MaterialTheme.colorScheme]
+ * 推导，换主题/动态取色时自动跟上。改用 [luminance] 判断当前是深底还是浅底：
+ * - 浅色：中性白 60%；
+ * - 深色：中性深（`surface`）36%。
+ */
+@Composable
+private fun glassBaseTint(): Color {
+    val cs = MaterialTheme.colorScheme
+    return if (cs.surface.luminance() < 0.5f) {
+        cs.surface.copy(alpha = 0.36f)
+    } else {
+        Color.White.copy(alpha = 0.60f)
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ① 可读性：壁纸模糊 + 全屏遮罩 + 顶部渐变
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 页面级「功能页」遮罩：壁纸采样模糊（sigma≈16）+ 全屏遮罩（亮色白 50% / 深色黑 52%）。
+ *
+ * 遮罩之后壁纸只剩氛围色，看不出线条与纹理 —— 这是本页所有文字对比度的地基：
+ * 卡片玻璃（GlassCard 内部 70% 实底）叠在这层之上，正文对比度因此稳定在 4.5:1 以上。
+ *
+ * 走 [liquidGlass]（项目统一的真实背景采样模糊，等价 BackdropFilter），
+ * 无 backdrop / 低画质档自动退化为同色半透明实底，不会"遮罩消失"。
+ */
+@Composable
+private fun SourcePageScrim(modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val backdrop = LocalGlassBackdrop.current
+    val quality = LocalRenderQuality.current
+    val scrim = remember(cs) {
+        // 深色：黑 52%（45~55% 区间取中偏上，压住高亮壁纸）；
+        // 浅色：白 50%（同一区间的亮色对应值）。
+        if (cs.surface.luminance() < 0.5f) Color.Black.copy(alpha = 0.52f)
+        else Color.White.copy(alpha = 0.50f)
+    }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .then(
+                if (backdrop != null && quality.realtimeGlass) {
+                    Modifier.liquidGlass(
+                        backdrop = backdrop,
+                        shape = RectangleShape,
+                        surfaceColor = scrim,
+                        blurRadius = SourcePageBlurRadius,
+                        saturation = 1.10f
+                    )
+                } else {
+                    Modifier.background(scrim)
+                }
+            )
+    )
+}
+
+/**
+ * 顶部渐变遮罩：页面背景色 85% → 0，高度 = 状态栏 + 大标题区 + 24。
+ *
+ * 大标题（28sp 加粗）与返回箭头是整页唯一允许直接压在"背景"上的文字，
+ * 这层渐变保证它们在任意壁纸下都清晰。渐变结束处已完全透明，不会在卡片上留痕。
+ */
+@Composable
+private fun SourceTopGradientScrim(height: Dp, modifier: Modifier = Modifier) {
+    val bg = MaterialTheme.colorScheme.background
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(bg.copy(alpha = 0.85f), Color.Transparent)
+                )
+            )
+    )
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ② 页面骨架
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SourceManagementScreen(
     viewModel: SourceViewModel,
@@ -84,6 +325,7 @@ fun SourceManagementScreen(
 
     var showPasteDialog by remember { mutableStateOf(false) }
     var showNetworkDialog by remember { mutableStateOf(false) }
+    var showImportPicker by remember { mutableStateOf(false) }
     var loginSource by remember { mutableStateOf<BookSource?>(null) }
     var showNodeManagement by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
@@ -141,8 +383,31 @@ fun SourceManagementScreen(
         }
     }
 
-    val builtinSources = allSources.filter { !viewModel.isCustomSource(it.id) }
-    val customSources = allSources.filter { viewModel.isCustomSource(it.id) }
+    // 显式标注类型：`allSources` 是 StateFlow 里的 List<BookSource>，但一旦这里靠推断，
+    // 后面任何一处写法改变都会把类型错误一路传染到几十行之外（.size / ?.id 全部误报）。
+    val builtinSources: List<BookSource> = allSources.filter { !viewModel.isCustomSource(it.id) }
+    val customSources: List<BookSource> = allSources.filter { viewModel.isCustomSource(it.id) }
+
+    // 按类型分组：小说 / 漫画 / 自定义。空组不出现，避免无意义的空玻璃卡。
+    // 标题即卡头文案（分组摘要「已启用 X / Y」已并入卡头徽标，页面上不再有裸文字行）。
+    val groups: List<SourceGroup> = remember(builtinSources, customSources) {
+        buildList {
+            val novels = builtinSources.filter { it.isNovelSource }
+            val comics = builtinSources.filterNot { it.isNovelSource }
+            if (novels.isNotEmpty()) add(SourceGroup("小说", SourceGroupKind.NOVEL, novels))
+            if (comics.isNotEmpty()) add(SourceGroup("漫画", SourceGroupKind.COMIC, comics))
+            if (customSources.isNotEmpty()) {
+                add(SourceGroup("自定义", SourceGroupKind.CUSTOM, customSources))
+            }
+        }
+    }
+
+    // 折叠 / 「展开其余」状态：以组标题为 key，旋转屏幕后保留
+    var collapsedGroupKeys by remember { mutableStateOf(emptySet<String>()) }
+    var expandedGroupKeys by remember { mutableStateOf(emptySet<String>()) }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     AnimatedVisibility(
         visible = contentVisible,
@@ -160,327 +425,109 @@ fun SourceManagementScreen(
                 animationSpec = tween(280)
             )
     ) {
-        Scaffold(
-            snackbarHost = {
-                SnackbarHost(hostState = snackbarHostState) { data ->
-                    com.example.ui.components.AppErrorSnackbar(
-                        message = data.visuals.message,
-                        onDismissClick = { data.dismiss() }
+        // ── 可读性三层：① 壁纸模糊 + 全屏遮罩 → ② 顶部渐变 → ③ 内容 ──
+        // 顺序即绘制顺序：遮罩在最底，渐变在其上，内容最上（卡片不会被渐变压暗）。
+        Box(modifier = Modifier.fillMaxSize()) {
+            SourcePageScrim()
+            SourceTopGradientScrim(height = statusBarTop + SourceLargeTitleHeight + 24.dp)
+
+            Scaffold(
+                modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+                // ⚠️ M3 Scaffold 默认 containerColor = colorScheme.surface（**不透明**），
+                // 会把 MainActivity 根层那张全局背景（colorScheme.background + 壁纸图）
+                // 整个盖住 → 书源管理页看起来就不是主界面的背景。设为透明后背景自动跟随主界面
+                // （换壁纸/调暗度也会实时跟上，因为背景画在这一层之下）。
+                containerColor = Color.Transparent,
+                snackbarHost = {
+                    SnackbarHost(hostState = snackbarHostState) { data ->
+                        com.example.ui.components.AppErrorSnackbar(
+                            message = data.visuals.message,
+                            onDismissClick = { data.dismiss() }
+                        )
+                    }
+                },
+                topBar = {
+                    SourceCollapsingTopBar(
+                        scrollBehavior = scrollBehavior,
+                        onBack = onBack,
                     )
-                }
-            },
-            topBar = {
-                TopAppBar(
-                    title = { Text("书源管理", fontWeight = FontWeight.Bold) },
-                    navigationIcon = {
-                        AppIconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                },
+            ) { innerPadding ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = SourcePageMargin)
+                        .then(
+                            if (showLoginDialog) Modifier.haze(hazeState) else Modifier
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(SourceCardGap),
+                    contentPadding = PaddingValues(
+                        top = 4.dp,
+                        // D 导入行之后：底部安全区（含悬浮 Tab 栏与系统导航栏）+ 24
+                        bottom = LocalAppBottomInset.current + 24.dp
                     )
-                )
-            },
-        ) { innerPadding ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp)
-                    .then(
-                        if (showLoginDialog) Modifier.haze(hazeState) else Modifier
-                    ),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
-            ) {
-                // Z-Library 登录状态检测卡片：未登录时提醒并提供跳转登录按钮
-                if (zlibSource != null) {
-                    item {
-                        ZLibraryLoginStatusCard(
+                ) {
+                    // ── A 快捷入口卡：Z-Library 账号 / Venera 源仓库 / 调试日志 ──
+                    item(key = "quick_tiles") {
+                        SourceQuickTilesRow(
+                            hasZLibrary = zlibSource != null,
                             loggedIn = loggedIn,
                             onLoginClick = {
                                 loginMessage = ""
                                 showLoginDialog = true
+                            },
+                            onRefreshVenera = { viewModel.refreshJsSources() },
+                            onOpenDebugLog = {
+                                debugLogText = com.example.source.SourceLog.dump()
+                                showDebugLog = true
                             }
                         )
                     }
-                }
-            // Builtin sources
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column {
-                        ListItem(
-                            headlineContent = {
-                                Text(
-                                    text = "Venera 源仓库",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
-                                )
-                            },
-                            supportingContent = {
-                                Text(
-                                    text = "内置 JS 引擎加载社区漫画源，可随时刷新更新",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            leadingContent = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Default.Link,
-                                        contentDescription = null,
-                                        tint = MintPrimary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            },
-                            trailingContent = {
-                                AssistChip(
-                                    onClick = { viewModel.refreshJsSources() },
-                                    label = { Text("社区源", fontSize = 12.sp) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = MintPrimary,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                )
-                            }
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            GradientActionButton(
-                                text = "更新 Venera 源",
-                                onClick = { viewModel.refreshJsSources() },
-                                icon = Icons.Default.Refresh
-                            )
-                        }
-                    }
-                }
-            }
 
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = "调试日志",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = "查看/复制最近的书源请求记录与真实报错（HTTP 状态码、超时、解析失败），便于排查问题",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        leadingContent = {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Code,
-                                    contentDescription = null,
-                                    tint = MintPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        },
-                        trailingContent = {
-                            AssistChip(
-                                onClick = {
-                                    debugLogText = com.example.source.SourceLog.dump()
-                                    showDebugLog = true
+                    // ── B / C（+ 自定义）分组：每张卡 = 头部 + 行列表 ──
+                    groups.forEach { group ->
+                        item(key = "body_${group.title}") {
+                            SourceGroupCard(
+                                group = group,
+                                expanded = group.title !in collapsedGroupKeys,
+                                showAll = group.title in expandedGroupKeys,
+                                onToggleExpand = {
+                                    collapsedGroupKeys = if (group.title in collapsedGroupKeys) {
+                                        collapsedGroupKeys - group.title
+                                    } else {
+                                        collapsedGroupKeys + group.title
+                                    }
                                 },
-                                label = { Text("查看", fontSize = 12.sp) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = MintPrimary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
+                                onToggleShowAll = {
+                                    expandedGroupKeys = if (group.title in expandedGroupKeys) {
+                                        expandedGroupKeys - group.title
+                                    } else {
+                                        expandedGroupKeys + group.title
+                                    }
+                                },
+                                activeSourceId = activeSource?.id,
+                                enabledStates = enabledStates,
+                                onToggleEnable = { source, enabled ->
+                                    if (enabled) viewModel.enableSource(source.id)
+                                    else viewModel.disableSource(source.id)
+                                },
+                                onOpenLogin = { source -> loginSource = source },
+                                onOpenNodeManager = { showNodeManagement = true },
+                                onDelete = { source -> viewModel.removeSource(source.id) }
                             )
                         }
-                    )
-                }
-            }
+                    }
 
-            item {
-                Text(
-                    text = "内置书源",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp, top = 4.dp)
-                )
-            }
-
-            if (builtinSources.isEmpty()) {
-                item {
-                    Text("暂无内置书源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                }
-            } else {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        builtinSources.chunked(5).forEach { group ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surface,
-                                shadowElevation = 1.dp,
-                                tonalElevation = 0.dp
-                            ) {
-                                Column {
-                                    group.forEachIndexed { index, source ->
-                                        SourceItemCard(
-                                            source = source,
-                                            isActive = activeSource?.id == source.id,
-                                            isEnabled = enabledStates[source.id] ?: true,
-                                            isCustom = false,
-                                            showDivider = index < group.lastIndex,
-                                            onToggleEnable = { enabled ->
-                                                if (enabled) viewModel.enableSource(source.id)
-                                                else viewModel.disableSource(source.id)
-                                            },
-                                            onSelectActive = {
-                                                viewModel.setActiveSource(source.id)
-                                            },
-                                            onOpenLogin = if (source.capabilities.requiresLogin && source.id != "zlibrary") {
-                                                { loginSource = source }
-                                            } else null,
-                                            onOpenNodeManager = if (source.id == "zlibrary") {
-                                                { showNodeManagement = true }
-                                            } else null,
-                                            onDelete = {}
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    // ── D 导入行：虚线胶囊「＋ 导入 JSON 书源」 ──
+                    item(key = "import_row") {
+                        SourceImportEntryRow(
+                            onClick = { showImportPicker = true }
+                        )
                     }
                 }
-            }
-
-            // Custom sources
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "自定义书源",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            }
-
-            if (customSources.isEmpty()) {
-                item {
-                    com.example.ui.components.MascotEmptyState(
-                        mascotResId = com.example.ui.mascot.MascotSpriteSheet.sadDrawable,
-                        title = "暂无自定义书源",
-                        description = "导入 JSON 配置文件添加自定义书源",
-                        actionLabel = "导入 JSON 书源文件",
-                        onActionClick = { fileLauncher.launch("*/*") },
-                        testTagPrefix = "sources_empty_state"
-                    )
-                }
-            } else {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        customSources.chunked(5).forEach { group ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surface,
-                                shadowElevation = 1.dp,
-                                tonalElevation = 0.dp
-                            ) {
-                                Column {
-                                    group.forEachIndexed { index, source ->
-                                        SourceItemCard(
-                                            source = source,
-                                            isActive = activeSource?.id == source.id,
-                                            isEnabled = enabledStates[source.id] ?: true,
-                                            isCustom = true,
-                                            showDivider = index < group.lastIndex,
-                                            onToggleEnable = { enabled ->
-                                                if (enabled) viewModel.enableSource(source.id)
-                                                else viewModel.disableSource(source.id)
-                                            },
-                                            onSelectActive = {
-                                                viewModel.setActiveSource(source.id)
-                                            },
-                                            onDelete = {
-                                                viewModel.removeSource(source.id)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 粘贴 JSON 入口：放在“导入书源文件”按钮下方，样式保持一致
-            item {
-                GradientActionButton(
-                    text = "粘贴 JSON",
-                    onClick = { showPasteDialog = true },
-                    icon = Icons.Default.Code,
-                    variant = AppButtonVariant.Secondary,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // 网络导入：可直接导入 GitHub 社区书源合集
-            item {
-                GradientActionButton(
-                    text = "网络导入（社区书源合集）",
-                    onClick = { showNetworkDialog = true },
-                    icon = Icons.Default.Link,
-                    variant = AppButtonVariant.Tertiary,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
-    }
     }
 
     if (showDebugLog) {
@@ -531,19 +578,64 @@ fun SourceManagementScreen(
         )
     }
 
+    // 「＋ 导入 JSON 书源」的三条路径收敛到一个面板：
+    // 页面上只保留一行虚线入口（规范：结构里只有 3 张玻璃卡 + 1 个导入行），
+    // 但「粘贴 JSON / 网络导入」是功能而不是装饰，不能因为排版被删掉。
+    if (showImportPicker) {
+        AcrylicDialog(
+            onDismissRequest = { showImportPicker = false },
+            title = { Text("导入书源") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "支持「阅读」书源 JSON：单源文件、粘贴配置、或直接拉取社区合集。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(
+                        onClick = {
+                            showImportPicker = false
+                            fileLauncher.launch("*/*")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("从本地文件导入") }
+                    TextButton(
+                        onClick = {
+                            showImportPicker = false
+                            showPasteDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("粘贴 JSON 配置") }
+                    TextButton(
+                        onClick = {
+                            showImportPicker = false
+                            showNetworkDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("网络导入书源") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportPicker = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showPasteDialog) {
         AcrylicDialog(
             onDismissRequest = { showPasteDialog = false },
             title = { Text("粘贴 JSON 书源配置") },
             text = {
-                OutlinedTextField(
+                androidx.compose.material3.OutlinedTextField(
                     value = pasteJsonText,
                     onValueChange = { pasteJsonText = it },
                     placeholder = { Text("{\n  \"name\": \"我的书源\",\n  \"search\": { ... }\n}") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(SourceAvatarRadius)
                 )
             },
             confirmButton = {
@@ -577,12 +669,12 @@ fun SourceManagementScreen(
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedTextField(
+                    androidx.compose.material3.OutlinedTextField(
                         value = networkUrl,
                         onValueChange = { networkUrl = it },
                         placeholder = { Text("https://.../shuyuan") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(SourceAvatarRadius),
                         singleLine = true
                     )
                     Text("快速选择社区源：", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -594,9 +686,9 @@ fun SourceManagementScreen(
                             Text(
                                 text = label,
                                 fontSize = 12.sp,
-                                color = MintPrimary,
+                                color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -664,187 +756,864 @@ fun SourceManagementScreen(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * ③ 大标题：随滚动缩放，折叠后顶栏带毛玻璃
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 「书源管理」折叠大标题（Compose 侧的 SliverAppBar + FlexibleSpaceBar 等价实现）。
+ *
+ * 大→小的折叠行为与高度插值直接复用 Material3 的 [LargeTopAppBar] +
+ * `exitUntilCollapsedScrollBehavior`（不自己算），只额外做两件事：
+ * - 标题字号 28sp → 20sp 跟着 `collapsedFraction` 连续过渡；
+ * - 一旦开始折叠（`collapsedFraction > 0`）就把顶栏挂上毛玻璃：
+ *   sigma 16 的背景采样模糊 + **页面背景色 60%** 薄底（不再用 surface 72%，
+ *   否则折叠后的顶栏与页面底色不是一个色，整页会出现一条明显的"色带"）。
+ *
+ * 「展开时有大标题没有玻璃」与「折叠后有玻璃没有大标题」是互斥的，
+ * 所以这块玻璃不会与页面级遮罩长期叠加。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ZLibraryLoginStatusCard(
-    loggedIn: Boolean,
-    onLoginClick: () -> Unit
+private fun SourceCollapsingTopBar(
+    scrollBehavior: TopAppBarScrollBehavior,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp,
-        tonalElevation = 0.dp
+    val collapsedFraction = scrollBehavior.state.collapsedFraction
+    val cs = MaterialTheme.colorScheme
+    val backdrop = LocalGlassBackdrop.current
+    val quality = LocalRenderQuality.current
+
+    // 折叠后的薄底：页面背景色 60%（与页面同色，避免出现第二条色带）
+    val barSurface = remember(cs) { cs.background.copy(alpha = 0.60f) }
+    val barBackground = if (collapsedFraction > 0.01f && backdrop != null && quality.realtimeGlass) {
+        Modifier.liquidGlass(
+            backdrop = backdrop,
+            shape = RectangleShape,
+            surfaceColor = barSurface,
+            blurRadius = SourcePageBlurRadius,
+            saturation = 1.10f
+        )
+    } else {
+        Modifier.background(barSurface.copy(alpha = barSurface.alpha * collapsedFraction))
+    }
+
+    LargeTopAppBar(
+        title = {
+            Text(
+                text = "书源管理",
+                fontWeight = FontWeight.Bold,
+                // 主文字 onSurface 100%：大标题是整页唯一压在"背景"上的文字，
+                // 由顶部渐变遮罩保护，这里不再降透明度。
+                color = primaryText(),
+                fontSize = (TITLE_EXPANDED_SP -
+                    (TITLE_EXPANDED_SP - TITLE_COLLAPSED_SP) * collapsedFraction).sp
+            )
+        },
+        navigationIcon = {
+            AppIconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
+        },
+        scrollBehavior = scrollBehavior,
+        colors = TopAppBarDefaults.largeTopAppBarColors(
+            containerColor = Color.Transparent,
+            scrolledContainerColor = Color.Transparent
+        ),
+        modifier = modifier.then(barBackground)
+    )
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ④ A 快捷入口卡
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/** Venera 砖的状态机：0 待机 / 1 更新中 / 2 刚完成。 */
+private const val VENERA_IDLE = 0
+private const val VENERA_BUSY = 1
+private const val VENERA_DONE = 2
+
+/**
+ * 一张玻璃卡内的三等分：Z-Library 账号 / Venera 源仓库 / 调试日志。
+ *
+ * ⚠️ 规范：三个入口**合并为一张玻璃卡内的三等分区域**，格间用 0.5px 细竖线分隔，
+ * 卡高由内容撑开（minHeight 84）。格子本身完全透明 —— 全页只有这 1 层玻璃，
+ * 禁止玻璃套玻璃。
+ */
+@Composable
+private fun SourceQuickTilesRow(
+    hasZLibrary: Boolean,
+    loggedIn: Boolean,
+    onLoginClick: () -> Unit,
+    onRefreshVenera: () -> Unit,
+    onOpenDebugLog: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(
+        shape = RoundedCornerShape(SourceCardRadius),
+        tint = glassBaseTint(),
+        contentPadding = PaddingValues(0.dp),
+        modifier = modifier.fillMaxWidth()
     ) {
-        ListItem(
-            headlineContent = {
-                Text(
-                    text = "Z-Library",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp
-                )
-            },
-            supportingContent = {
-                Text(
-                    text = if (loggedIn) "账号已登录，可正常下载书籍"
-                    else "尚未登录，下载前需登录账号",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            leadingContent = {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (loggedIn) MintPrimary.copy(alpha = 0.12f)
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = SourceQuickCardMinHeight)
+                // 内边距：上下 14（左右由每格自己撑，保证三格视觉等宽）
+                .padding(vertical = 14.dp)
+        ) {
+            SourceQuickTile(
+                icon = {
                     Icon(
-                        imageVector = if (loggedIn) Icons.Default.CheckCircle else Icons.Default.Lock,
+                        imageVector = if (loggedIn) Icons.Filled.CheckCircle else Icons.Filled.Lock,
                         contentDescription = null,
-                        tint = if (loggedIn) MintPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(SourceQuickIconSize)
+                    )
+                },
+                name = "Z-Library",
+                status = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (loggedIn) {
+                            BreathingDot()
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        SourceTileStatusText(
+                            text = when {
+                                loggedIn -> "已登录"
+                                hasZLibrary -> "未登录"
+                                else -> "未内置"
+                            }
+                        )
+                    }
+                },
+                // Z-Library 未内置时这颗砖只作状态展示，不该把人带进一个必然失败的登录弹窗
+                onClick = onLoginClick,
+                enabled = hasZLibrary,
+                modifier = Modifier.weight(1f)
+            )
+
+            SourceTileDivider()
+            SourceVeneraTile(
+                onRefresh = onRefreshVenera,
+                modifier = Modifier.weight(1f)
+            )
+
+            SourceTileDivider()
+            SourceQuickTile(
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Code,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(SourceQuickIconSize)
+                    )
+                },
+                name = "调试日志",
+                status = { SourceTileStatusText(text = "查看日志") },
+                onClick = onOpenDebugLog,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** 快捷入口的状态行：11sp、onSurface 70%、单行截断。 */
+@Composable
+private fun SourceTileStatusText(text: String) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        color = secondaryText(),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+/** 三等分格之间的细竖线（玻璃卡内部的层次只靠它，不再靠第二层玻璃）。 */
+@Composable
+private fun SourceTileDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(vertical = 12.dp)
+            .width(SourceDividerWidth)
+            .background(dividerColor())
+    )
+}
+
+/**
+ * 一块「快捷入口格」：淡染圆角方形图标底（28px 图标 / 底圆角 10）+ 名称 13 + 状态 11。
+ *
+ * 玻璃基底直接复用全项目统一的 [GlassCard] —— 真实背景采样模糊、噪点防色带、
+ * 渐变描边、以及不同画质 / 不同机型的降级，全部由它负责，这里不另写一套玻璃实现。
+ * 格子本身**不再自带玻璃**（外层那张卡已经是唯一的 1 层玻璃，禁止玻璃套玻璃）。
+ */
+@Composable
+private fun SourceQuickTile(
+    icon: @Composable () -> Unit,
+    name: String,
+    status: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .graphicsLayer { alpha = if (enabled) 1f else 0.55f }
+            .pressScale(scale = 0.96f, enabled = enabled, onTap = onClick)
+            .fillMaxHeight()
+            .padding(horizontal = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(SourceQuickIconBox)
+                    .clip(RoundedCornerShape(SourceIconRadius))
+                    .background(accentContainer()),
+                contentAlignment = Alignment.Center
+            ) {
+                icon()
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = name,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryText(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            status()
+        }
+    }
+}
+
+/**
+ * Venera 砖：点击触发更新，更新中图标旋转，完成后短暂显示 ✓。
+ *
+ * 转圈是本页唯一允许的「进行中」循环动画（它是有明确语义的进度反馈，不是装饰），
+ * 并且只在 busy 分支里才创建 [rememberInfiniteTransition] ——
+ * 待机时屏幕上一个空闲动画器都没有。
+ */
+@Composable
+private fun SourceVeneraTile(
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var phase by rememberSaveable { mutableIntStateOf(VENERA_IDLE) }
+    val scope = rememberCoroutineScope()
+
+    SourceQuickTile(
+        icon = {
+            Crossfade(
+                targetState = phase,
+                animationSpec = tween(AppMotion.TRANSITION_MS),
+                label = "venera_icon"
+            ) { state ->
+                when (state) {
+                    VENERA_BUSY -> VeneraSpinningIcon()
+                    VENERA_DONE -> Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(SourceQuickIconSize)
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Filled.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(SourceQuickIconSize)
                     )
                 }
-            },
-            trailingContent = {
-                GradientActionButton(
-                    text = if (loggedIn) "重新登录" else "去登录",
-                    onClick = onLoginClick,
-                    variant = AppButtonVariant.Secondary
-                )
             }
+        },
+        name = "Venera 源",
+        status = {
+            SourceTileStatusText(
+                text = when (phase) {
+                    VENERA_BUSY -> "更新中…"
+                    VENERA_DONE -> "已更新"
+                    else -> "点击更新"
+                }
+            )
+        },
+        onClick = {
+            // 更新中重复点击无效，避免连开两个「完成」计时器互相打架
+            if (phase != VENERA_BUSY) {
+                phase = VENERA_BUSY
+                onRefresh()
+                scope.launch {
+                    // 至少转 900ms，避免「闪一下就停」让人怀疑到底有没有点中；
+                    // 之后收 ✓ 停 1200ms 再回到常态。
+                    delay(900)
+                    phase = VENERA_DONE
+                    delay(1200)
+                    phase = VENERA_IDLE
+                }
+            }
+        },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun VeneraSpinningIcon() {
+    val reduceMotion = LocalReduceMotion.current
+    val rotation = if (reduceMotion) {
+        0f
+    } else {
+        rememberInfiniteTransition(label = "venera_spin")
+            .animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing)),
+                label = "venera_spin_angle"
+            ).value
+    }
+    Icon(
+        imageVector = Icons.Filled.Refresh,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .size(SourceQuickIconSize)
+            .graphicsLayer { rotationZ = rotation }
+    )
+}
+
+/**
+ * 登录状态呼吸圆点（6px 强调色）—— 本页**唯一**允许的常驻循环动画，且有明确语义
+ * （「这个账号现在是通的」），不是装饰。
+ *
+ * 尊重系统「减少动态效果」：关掉动画时退化为常亮实心点，信息不丢。
+ */
+@Composable
+private fun BreathingDot(modifier: Modifier = Modifier) {
+    val reduceMotion = LocalReduceMotion.current
+    val alpha = if (reduceMotion) {
+        1f
+    } else {
+        rememberInfiniteTransition(label = "login_breath")
+            .animateFloat(
+                initialValue = 0.45f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1400, easing = AppMotion.easeOutCubic),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "login_breath_alpha"
+            ).value
+    }
+    Box(
+        modifier = modifier
+            .size(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha))
+    )
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ⑤ B / C 分组卡（结构完全一致）
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+private enum class SourceGroupKind { NOVEL, COMIC, CUSTOM }
+
+private class SourceGroup(
+    val title: String,
+    val kind: SourceGroupKind,
+    val sources: List<BookSource>,
+)
+
+/** 卡内分割线：0.5px、onSurface 10%。是否缩进由调用方给 padding 决定。 */
+@Composable
+private fun SourceLine(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(SourceDividerWidth)
+            .background(dividerColor())
+    )
+}
+
+/**
+ * 一组书源的主体玻璃卡：**头部 + 行列表**。
+ *
+ * 原「内置书源 / 已启用 X / Y」那行裸在壁纸上的摘要已删除，数量信息并入卡头徽标
+ * （「已启用 / 总数」）—— 页面上不再有任何裸文字。
+ *
+ * **只有这一层做模糊**：卡内的每一行都是普通 Row，不做各自的背景采样，
+ * 满足「列表内的行不要各自做模糊，只在分组卡上做一次」。
+ */
+@Composable
+private fun SourceGroupCard(
+    group: SourceGroup,
+    expanded: Boolean,
+    showAll: Boolean,
+    onToggleExpand: () -> Unit,
+    onToggleShowAll: () -> Unit,
+    activeSourceId: String?,
+    enabledStates: Map<String, Boolean>,
+    onToggleEnable: (BookSource, Boolean) -> Unit,
+    onOpenLogin: (BookSource) -> Unit,
+    onOpenNodeManager: () -> Unit,
+    onDelete: (BookSource) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cardShape = RoundedCornerShape(SourceCardRadius)
+    val previewLimit = if (group.kind == SourceGroupKind.COMIC) {
+        COMIC_GROUP_PREVIEW_COUNT
+    } else {
+        Int.MAX_VALUE
+    }
+    val hidden = (group.sources.size - previewLimit).coerceAtLeast(0)
+    val enabledCount = remember(group.sources, enabledStates) {
+        group.sources.count { enabledStates[it.id] ?: true }
+    }
+
+    GlassCard(
+        shape = cardShape,
+        tint = glassBaseTint(),
+        contentPadding = PaddingValues(0.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        SourceGroupHeader(
+            title = group.title,
+            badge = "$enabledCount / ${group.sources.size}",
+            expanded = expanded,
+            onToggleExpand = onToggleExpand
+        )
+        // 头部与列表之间：0.5px 分割线，左右**不缩进**
+        SourceLine()
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(tween(AppMotion.TRANSITION_MS)) +
+                expandVertically(animationSpec = tween(AppMotion.TRANSITION_MS)),
+            exit = fadeOut(tween(AppMotion.TRANSITION_MS)) +
+                shrinkVertically(animationSpec = tween(AppMotion.TRANSITION_MS)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // AnimatedSize：展开/收起「其余 N 个」时高度与内容同步过渡，不跳变
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = tween(AppMotion.TRANSITION_MS))
+            ) {
+                val visibleSources = if (showAll || hidden == 0) {
+                    group.sources
+                } else {
+                    group.sources.take(previewLimit)
+                }
+                visibleSources.forEachIndexed { index, source ->
+                    SourceRow(
+                        source = source,
+                        isActive = activeSourceId == source.id,
+                        isEnabled = enabledStates[source.id] ?: true,
+                        isCustom = group.kind == SourceGroupKind.CUSTOM,
+                        onToggleEnable = { onToggleEnable(source, it) },
+                        onOpenLogin = if (
+                            source.capabilities.requiresLogin && source.id != "zlibrary"
+                        ) {
+                            { onOpenLogin(source) }
+                        } else null,
+                        onOpenNodeManager = if (source.id == "zlibrary") {
+                            onOpenNodeManager
+                        } else null,
+                        onDelete = { onDelete(source) }
+                    )
+                    // 行分割线：左侧从文字起点开始（缩进 64），右侧到卡片边缘；最后一行不画
+                    if (index < visibleSources.lastIndex) {
+                        SourceLine(modifier = Modifier.padding(start = SourceRowDividerIndent))
+                    }
+                }
+                if (hidden > 0 || showAll) {
+                    SourceLine()
+                    SourceExpandRestRow(
+                        rest = hidden,
+                        showAll = showAll,
+                        onClick = onToggleShowAll
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 卡片头部（高 48，水平内边距 16）：标题 14 semi-bold + 数量徽标 + 右侧 chevron。
+ *
+ * 点击整行折叠 / 展开（chevron 旋转 180°）。徽标即原先那行摘要：「已启用 / 总数」。
+ */
+@Composable
+private fun SourceGroupHeader(
+    title: String,
+    badge: String,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chevron by animateFloatAsState(
+        targetValue = if (expanded) 0f else -180f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "group_chevron"
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(SourceHeaderHeight)
+            .pressScale(scale = 0.96f, onTap = onToggleExpand)
+            .padding(horizontal = SourcePageMargin),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = GROUP_LETTER_SPACING,
+            color = primaryText()
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        SourceCountBadge(text = badge)
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (expanded) "折叠分组" else "展开分组",
+            tint = secondaryText(),
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer { rotationZ = chevron }
         )
     }
 }
 
+/** 卡头的数量徽标（primary 12% 底 + 加深 20% 的主色文字，数字等宽 + tnum）。 */
 @Composable
-fun SourceItemCard(
-    source: BookSource,
-    isActive: Boolean,
-    isEnabled: Boolean,
-    isCustom: Boolean,
-    showDivider: Boolean = true,
-    onToggleEnable: (Boolean) -> Unit,
-    onSelectActive: () -> Unit,
-    onOpenLogin: (() -> Unit)? = null,
-    onOpenNodeManager: (() -> Unit)? = null,
-    onDelete: () -> Unit
+private fun SourceCountBadge(text: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(PillShape)
+            .background(accentContainer())
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = AppFonts.Monospace,
+            color = accentText(),
+            style = TextStyle(fontFeatureSettings = NUMERIC_FEATURE)
+        )
+    }
+}
+
+/**
+ * 「展开其余 N 个」（行高 44，居中，12sp primary，chevron 随展开态旋转）。
+ *
+ * 上方有一条分割线；点击后文字变「收起」，高度与宽度变化交给外层 [animateContentSize]。
+ */
+@Composable
+private fun SourceExpandRestRow(
+    rest: Int,
+    showAll: Boolean,
+    onClick: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SourceAvatar(
-                sourceId = source.id,
-                sourceName = source.name,
-                size = 32.dp,
-                modifier = Modifier.padding(end = 12.dp)
+    val chevron by animateFloatAsState(
+        targetValue = if (showAll) 180f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "rest_chevron"
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SourceExpandRowHeight)
+            .pressScale(scale = 0.96f, onTap = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (showAll) "收起" else "展开其余 $rest 个",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = accentText()
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = source.name,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp
-                    )
-                    // v1.0.1：小说源徽章——与漫画源区分（Z-Library/Legado 文字源）
-                    if (source.isNovelSource) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "小说",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                    if (isActive) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        FilterChip(
-                            selected = true,
-                            onClick = {},
-                            label = { Text("当前使用", fontSize = 11.sp) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "ID: ${source.id}${if (source.capabilities.requiresLogin) " · 需要登录" else ""}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onOpenLogin != null) {
-                                            AppActionButton(
-                            text = "登录",
-                            onClick = onOpenLogin,
-                            variant = AppButtonVariant.Secondary,
-                            buttonSize = AppButtonSize.Small
-                        )
-                }
-
-                if (onOpenNodeManager != null) {
-                                            AppActionButton(
-                            text = "节点",
-                            onClick = onOpenNodeManager,
-                            variant = AppButtonVariant.Secondary,
-                            buttonSize = AppButtonSize.Small
-                        )
-                }
-
-                if (isEnabled && !isActive) {
-                                            AppActionButton(
-                            text = "使用",
-                            onClick = onSelectActive,
-                            variant = AppButtonVariant.Secondary,
-                            buttonSize = AppButtonSize.Small
-                        )
-                }
-
-                AppSwitch(
-                    checked = isEnabled,
-                    onCheckedChange = { onToggleEnable(it) }
-                )
-
-                if (isCustom) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    AppIconButton(onClick = onDelete) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "删除书源",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-        }
-
-        if (showDivider) {
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.30f)
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                tint = accentText(),
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer { rotationZ = chevron }
             )
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ⑥ 单个书源行
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 一行书源：36×36 圆角方形头像（圆角 12）+ 12 间距 + 文字块 + [可选] 小胶囊 + 8 + 开关。
+ *
+ * - 行高固定 60（垂直 padding 10，行高不再随内容浮动）；
+ * - 头像沿用 [SourceAvatar]，**保留每个书源自己的既定配色**（由 sourceId 哈希出的
+ *   稳定 HSV 色，换形状不改色），本页显式传 `RoundedCornerShape(12)` 走圆角方形，
+ *   禁用时再叠一层 [desaturate]；
+ * - 开关用全项目统一的 [AppSwitch]，本页按规范缩到 44×26 / 滑块 20（弹簧动效与
+ *   触觉反馈原样保留，只是尺寸变小）；
+ * - 禁用态：整行 0.55 透明 + 头像去饱和。
+ */
+@Composable
+private fun SourceRow(
+    source: BookSource,
+    isActive: Boolean,
+    isEnabled: Boolean,
+    isCustom: Boolean,
+    onToggleEnable: (Boolean) -> Unit,
+    onOpenLogin: (() -> Unit)?,
+    onOpenNodeManager: (() -> Unit)?,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(SourceRowHeight)
+            .graphicsLayer { alpha = if (isEnabled) 1f else 0.55f }
+            .padding(horizontal = SourcePageMargin, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SourceAvatar(
+            sourceId = source.id,
+            sourceName = source.name,
+            size = SourceAvatarSize,
+            // 36px **圆角方形**（小元素圆角 12）。
+            // SourceAvatar 默认是 CircleShape，这里显式传圆角方形；
+            // 其它调用点不传 => 仍是圆形，零回归。
+            shape = RoundedCornerShape(SourceAvatarRadius),
+            modifier = if (isEnabled) Modifier else Modifier.desaturate()
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = source.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryText(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isActive && isEnabled) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    ActiveDot()
+                }
+                if (source.capabilities.requiresLogin) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    SourceMiniLabel(text = "需登录")
+                }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                // 规范：ID 不带「ID:」前缀
+                text = source.id,
+                fontSize = 11.sp,
+                fontFamily = AppFonts.Monospace,
+                color = secondaryText(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (onOpenLogin != null) {
+                SourceMiniActionChip(text = "登录", onClick = onOpenLogin)
+            }
+            if (onOpenNodeManager != null) {
+                SourceMiniActionChip(text = "节点", onClick = onOpenNodeManager)
+            }
+            AppSwitch(
+                checked = isEnabled,
+                onCheckedChange = { onToggleEnable(it) },
+                // 规范：开关缩到 44×26、滑块 20（内边距 3 = (26−20)/2）
+                containerWidth = 44,
+                containerHeight = 26,
+                circleSize = 20,
+                padding = 3
+            )
+            if (isCustom) {
+                AppIconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "删除书源",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 「当前使用」的实心小圆点（纯 primary，用于选中态）。 */
+@Composable
+private fun ActiveDot(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+    )
+}
+
+/** 名称后面的小标签（「需登录」）：primary 12% 底 + 加深 20% 的主色文字，11sp。 */
+@Composable
+private fun SourceMiniLabel(text: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(PillShape)
+            .background(accentContainer())
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = accentText()
+        )
+    }
+}
+
+/** 开关左侧的淡色小胶囊（登录 / 节点）：高 26、水平内边距 12、字号 12。 */
+@Composable
+private fun SourceMiniActionChip(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(PillShape)
+            .height(SourceChipHeight)
+            .background(accentContainer())
+            .pressScale(scale = 0.96f, onTap = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = accentText()
+        )
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ⑦ D 导入行
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 自定义书源的入口：**不要插画、不要空状态大卡**，只有一条虚线描边的行
+ * （圆角 20、高 48、居中「＋ 导入 JSON 书源」、14sp primary）。
+ *
+ * 点击后弹出导入方式面板（本地文件 / 粘贴 JSON / 网络导入）—— 三条导入路径都是
+ * 功能而不是装饰，收敛进弹窗是为了让页面结构里只有「3 张玻璃卡 + 1 个导入行」。
+ */
+@Composable
+private fun SourceImportEntryRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(SourceImportRowHeight)
+            .dashedOutline(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                radius = SourceImportRadius
+            )
+            .pressScale(scale = 0.96f, onTap = onClick)
+            .padding(horizontal = SourcePageMargin),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Add,
+            contentDescription = null,
+            tint = accentText(),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "导入 JSON 书源",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = accentText()
+        )
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 通用小工具
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 虚线描边（用于「＋ 导入」这类"还没有内容"的占位行）。
+ *
+ * `drawWithCache` + `dashPathEffect`：路径与笔触只在尺寸变化时重建，滚动期零分配。
+ */
+private fun Modifier.dashedOutline(
+    color: Color,
+    radius: Dp,
+    strokeWidth: Dp = 1.dp,
+    dash: Dp = 6.dp,
+    gap: Dp = 6.dp,
+): Modifier = this.drawWithCache {
+    val stroke = Stroke(
+        width = strokeWidth.toPx(),
+        pathEffect = PathEffect.dashPathEffect(
+            intervals = floatArrayOf(dash.toPx(), gap.toPx()),
+            phase = 0f
+        )
+    )
+    val corner = CornerRadius(radius.toPx(), radius.toPx())
+    onDrawBehind {
+        drawRoundRect(color = color, cornerRadius = corner, style = stroke)
+    }
+}
+
+/**
+ * 去饱和：在不改动 [SourceAvatar] 的前提下把它那份既定配色抽成灰。
+ *
+ * 先画完内容，再用 [BlendMode.Saturation] 铺一层灰：结果是取「源的饱和度(0)」
+ * 配「目标的色相与明度」，正好等于"保留明暗层次、抽掉颜色"。
+ * 必须挂在 Offscreen 合成层上，否则会和下层内容共用 alpha 通道导致整块变灰一块。
+ */
+private fun Modifier.desaturate(): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawRect(color = Color.Gray, blendMode = BlendMode.Saturation)
+    }
