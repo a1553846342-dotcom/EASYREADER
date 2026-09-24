@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package com.example.ui.source
 
 import android.net.Uri
@@ -87,22 +89,22 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -120,14 +122,15 @@ import com.example.source.zlibrary.ZLibrarySource
 import com.example.ui.components.AcrylicDialog
 import com.example.ui.components.AppIconButton
 import com.example.ui.components.AppSwitch
-import com.example.ui.components.GlassCard
 import com.example.ui.components.GradientActionButton
-import com.example.ui.components.LocalGlassBackdrop
-import com.example.ui.components.LocalRenderQuality
 import com.example.ui.components.SourceAvatar
-import com.example.ui.components.liquidGlass
 import com.example.ui.feedback.AppMotion
 import com.example.ui.feedback.LocalReduceMotion
+import com.example.ui.glasskit.GlassCardShape
+import com.example.ui.glasskit.GlassKitCard
+import com.example.ui.glasskit.GlassKitHost
+import com.example.ui.glasskit.GlassTokens
+import com.example.ui.glasskit.GlassTopBarStrip
 import com.example.ui.shelf.pressScale
 import com.example.ui.theme.AppFonts
 import com.example.ui.theme.LocalAppBottomInset
@@ -152,7 +155,6 @@ import kotlinx.coroutines.launch
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── 圆角 ────────────────────────────────────────────────────────────── */
-private val SourceCardRadius = 24.dp          // 玻璃卡（A / B / C）
 private val SourceAvatarRadius = 12.dp        // 书源行头像
 private val SourceIconRadius = 10.dp          // 快捷入口的淡染图标底
 private val SourceImportRadius = 20.dp        // D 导入行（虚线）
@@ -176,7 +178,6 @@ private val SourceDividerWidth = 0.5.dp       // 细分割线（卡内）
 /** Material3 LargeTopAppBar 展开态高度（用于顶部渐变遮罩的高度计算）。 */
 private val SourceLargeTitleHeight = 152.dp
 /** 页面级壁纸模糊半径（sigma ≈ 16，功能页规格：壁纸只留氛围色、看不出线条）。 */
-private val SourcePageBlurRadius = 16.dp
 
 private const val TITLE_EXPANDED_SP = 28f
 private const val TITLE_COLLAPSED_SP = 20f
@@ -189,6 +190,36 @@ private const val NUMERIC_FEATURE = "tnum"
 
 /** 「分组标题」14sp 对应的 0.02em 字距（标题越大字距越小，避免松散）。 */
 private val GROUP_LETTER_SPACING = (14 * 0.02f).sp
+
+/**
+ * 名称样式（15sp / 行高 20）。
+ *
+ * ⚠️ `includeFontPadding = false` + 居中行高是**修复 ID 被裁掉半截的关键**：
+ * 默认的 includeFontPadding 会在小字号上下各塞 2~3dp 的字体内边距，
+ * 行高一写死就被这段 padding 顶掉，等宽 ID 的下半截正好落在可视区外。
+ */
+private val SourceNameStyle = TextStyle(
+    fontSize = 15.sp,
+    fontWeight = FontWeight.SemiBold,
+    lineHeight = 20.sp,
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None
+    ),
+    platformStyle = PlatformTextStyle(includeFontPadding = false)
+)
+
+/** ID 样式（11sp 等宽 / 行高 15）：同上，去字体 padding、行高居中。 */
+private val SourceIdStyle = TextStyle(
+    fontFamily = AppFonts.Monospace,
+    fontSize = 11.sp,
+    lineHeight = 15.sp,
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None
+    ),
+    platformStyle = PlatformTextStyle(includeFontPadding = false)
+)
 
 /* ── 文字层级（本页唯一入口，禁止各写各的 alpha）───────────────────── */
 
@@ -224,88 +255,6 @@ private fun accentContainer(): Color = MaterialTheme.colorScheme.primary.copy(al
 /** 卡内分割线：onSurface 10%。 */
 @Composable
 private fun dividerColor(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-
-/**
- * 玻璃基底 —— **中性**，不着色。
- *
- * 刻意**不**用 `isSystemInDarkTheme()` 写硬分支 —— 颜色一律由 [MaterialTheme.colorScheme]
- * 推导，换主题/动态取色时自动跟上。改用 [luminance] 判断当前是深底还是浅底：
- * - 浅色：中性白 60%；
- * - 深色：中性深（`surface`）36%。
- */
-@Composable
-private fun glassBaseTint(): Color {
-    val cs = MaterialTheme.colorScheme
-    return if (cs.surface.luminance() < 0.5f) {
-        cs.surface.copy(alpha = 0.36f)
-    } else {
-        Color.White.copy(alpha = 0.60f)
-    }
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
- * ① 可读性：壁纸模糊 + 全屏遮罩 + 顶部渐变
- * ══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * 页面级「功能页」遮罩：壁纸采样模糊（sigma≈16）+ 全屏遮罩（亮色白 50% / 深色黑 52%）。
- *
- * 遮罩之后壁纸只剩氛围色，看不出线条与纹理 —— 这是本页所有文字对比度的地基：
- * 卡片玻璃（GlassCard 内部 70% 实底）叠在这层之上，正文对比度因此稳定在 4.5:1 以上。
- *
- * 走 [liquidGlass]（项目统一的真实背景采样模糊，等价 BackdropFilter），
- * 无 backdrop / 低画质档自动退化为同色半透明实底，不会"遮罩消失"。
- */
-@Composable
-private fun SourcePageScrim(modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    val backdrop = LocalGlassBackdrop.current
-    val quality = LocalRenderQuality.current
-    val scrim = remember(cs) {
-        // 深色：黑 52%（45~55% 区间取中偏上，压住高亮壁纸）；
-        // 浅色：白 50%（同一区间的亮色对应值）。
-        if (cs.surface.luminance() < 0.5f) Color.Black.copy(alpha = 0.52f)
-        else Color.White.copy(alpha = 0.50f)
-    }
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .then(
-                if (backdrop != null && quality.realtimeGlass) {
-                    Modifier.liquidGlass(
-                        backdrop = backdrop,
-                        shape = RectangleShape,
-                        surfaceColor = scrim,
-                        blurRadius = SourcePageBlurRadius,
-                        saturation = 1.10f
-                    )
-                } else {
-                    Modifier.background(scrim)
-                }
-            )
-    )
-}
-
-/**
- * 顶部渐变遮罩：页面背景色 85% → 0，高度 = 状态栏 + 大标题区 + 24。
- *
- * 大标题（28sp 加粗）与返回箭头是整页唯一允许直接压在"背景"上的文字，
- * 这层渐变保证它们在任意壁纸下都清晰。渐变结束处已完全透明，不会在卡片上留痕。
- */
-@Composable
-private fun SourceTopGradientScrim(height: Dp, modifier: Modifier = Modifier) {
-    val bg = MaterialTheme.colorScheme.background
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(bg.copy(alpha = 0.85f), Color.Transparent)
-                )
-            )
-    )
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
  * ② 页面骨架
@@ -425,12 +374,13 @@ fun SourceManagementScreen(
                 animationSpec = tween(280)
             )
     ) {
-        // ── 可读性三层：① 壁纸模糊 + 全屏遮罩 → ② 顶部渐变 → ③ 内容 ──
-        // 顺序即绘制顺序：遮罩在最底，渐变在其上，内容最上（卡片不会被渐变压暗）。
-        Box(modifier = Modifier.fillMaxSize()) {
-            SourcePageScrim()
-            SourceTopGradientScrim(height = statusBarTop + SourceLargeTitleHeight + 24.dp)
-
+        // ── 可读性由 GlassKitHost 一次提供 ──────────────────────────────
+        // ① 壁纸采样模糊 + 全屏遮罩、② 顶部渐变，都画在**被录制的层**里；
+        //    因此玻璃卡采样到的是「已压暗、已保护标题」的背景，而不是原始壁纸；
+        // ③ 页面内容作为这层的**兄弟节点**画在上层（放进录制层会采样到自己 → 递归）。
+        GlassKitHost(
+            topGradientHeight = statusBarTop + SourceLargeTitleHeight + 24.dp
+        ) {
             Scaffold(
                 modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
                 // ⚠️ M3 Scaffold 默认 containerColor = colorScheme.surface（**不透明**），
@@ -447,10 +397,20 @@ fun SourceManagementScreen(
                     }
                 },
                 topBar = {
-                    SourceCollapsingTopBar(
-                        scrollBehavior = scrollBehavior,
-                        onBack = onBack,
-                    )
+                    Box {
+                        // 折叠顶栏：blur(8) + 页面背景色 60%，随 collapsedFraction 淡入，
+                        // 底边一条 0.5dp 线 —— 顶栏区域不会是实色块，也没有硬切边
+                        GlassTopBarStrip(
+                            collapsedFraction = scrollBehavior.state.collapsedFraction,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(statusBarTop + GlassTokens.TopBarHeight)
+                        )
+                        SourceCollapsingTopBar(
+                            scrollBehavior = scrollBehavior,
+                            onBack = onBack,
+                        )
+                    }
                 },
             ) { innerPadding ->
                 LazyColumn(
@@ -781,24 +741,9 @@ private fun SourceCollapsingTopBar(
     modifier: Modifier = Modifier,
 ) {
     val collapsedFraction = scrollBehavior.state.collapsedFraction
-    val cs = MaterialTheme.colorScheme
-    val backdrop = LocalGlassBackdrop.current
-    val quality = LocalRenderQuality.current
 
-    // 折叠后的薄底：页面背景色 60%（与页面同色，避免出现第二条色带）
-    val barSurface = remember(cs) { cs.background.copy(alpha = 0.60f) }
-    val barBackground = if (collapsedFraction > 0.01f && backdrop != null && quality.realtimeGlass) {
-        Modifier.liquidGlass(
-            backdrop = backdrop,
-            shape = RectangleShape,
-            surfaceColor = barSurface,
-            blurRadius = SourcePageBlurRadius,
-            saturation = 1.10f
-        )
-    } else {
-        Modifier.background(barSurface.copy(alpha = barSurface.alpha * collapsedFraction))
-    }
-
+    // ⚠️ 顶栏自身**完全透明**：折叠后的那层玻璃由外层的 [GlassTopBarStrip] 提供。
+    // 顶栏不再自己挂背景，避免出现"玻璃条 + 顶栏底"两层叠加导致的重复着色与硬切边。
     LargeTopAppBar(
         title = {
             Text(
@@ -821,7 +766,7 @@ private fun SourceCollapsingTopBar(
             containerColor = Color.Transparent,
             scrolledContainerColor = Color.Transparent
         ),
-        modifier = modifier.then(barBackground)
+        modifier = modifier
     )
 }
 
@@ -850,10 +795,10 @@ private fun SourceQuickTilesRow(
     onOpenDebugLog: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GlassCard(
-        shape = RoundedCornerShape(SourceCardRadius),
-        tint = glassBaseTint(),
-        contentPadding = PaddingValues(0.dp),
+    // A 卡是可点击的入口卡 → 开启「高光跟随手指」（列表大卡不开，会和滚动抢按压）
+    GlassKitCard(
+        shape = GlassCardShape,
+        interactiveHighlight = true,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -946,9 +891,8 @@ private fun SourceTileDivider() {
 /**
  * 一块「快捷入口格」：淡染圆角方形图标底（28px 图标 / 底圆角 10）+ 名称 13 + 状态 11。
  *
- * 玻璃基底直接复用全项目统一的 [GlassCard] —— 真实背景采样模糊、噪点防色带、
- * 渐变描边、以及不同画质 / 不同机型的降级，全部由它负责，这里不另写一套玻璃实现。
- * 格子本身**不再自带玻璃**（外层那张卡已经是唯一的 1 层玻璃，禁止玻璃套玻璃）。
+ * 外层那张卡是唯一的 1 层玻璃（GlassKitCard，含 blur + lens + 高光），
+ * 格子本身**不再自带玻璃**，只用 primary 12% 平涂做图标底 —— 禁止玻璃套玻璃。
  */
 @Composable
 private fun SourceQuickTile(
@@ -1164,7 +1108,6 @@ private fun SourceGroupCard(
     onDelete: (BookSource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val cardShape = RoundedCornerShape(SourceCardRadius)
     val previewLimit = if (group.kind == SourceGroupKind.COMIC) {
         COMIC_GROUP_PREVIEW_COUNT
     } else {
@@ -1175,10 +1118,10 @@ private fun SourceGroupCard(
         group.sources.count { enabledStates[it.id] ?: true }
     }
 
-    GlassCard(
-        shape = cardShape,
-        tint = glassBaseTint(),
-        contentPadding = PaddingValues(0.dp),
+    // 列表大卡：只有这一层玻璃（blur + lens）。卡内的行、标签、按钮一律不得再做玻璃，
+    // 否则边缘会出现第二圈轮廓（玻璃套玻璃）。
+    GlassKitCard(
+        shape = GlassCardShape,
         modifier = modifier.fillMaxWidth()
     ) {
         SourceGroupHeader(
@@ -1392,7 +1335,9 @@ private fun SourceRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(SourceRowHeight)
+            // 文档硬性：只用 minHeight，**禁止固定 height** ——
+            // 固定高度 + 上下内边距会把 ID 那一行压出可视区（此前的"ID 被裁掉半截"）。
+            .heightIn(min = SourceRowHeight)
             .graphicsLayer { alpha = if (isEnabled) 1f else 0.55f }
             .padding(horizontal = SourcePageMargin, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1413,9 +1358,7 @@ private fun SourceRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = source.name,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryText(),
+                    style = SourceNameStyle.copy(color = primaryText()),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
@@ -1433,9 +1376,7 @@ private fun SourceRow(
             Text(
                 // 规范：ID 不带「ID:」前缀
                 text = source.id,
-                fontSize = 11.sp,
-                fontFamily = AppFonts.Monospace,
-                color = secondaryText(),
+                style = SourceIdStyle.copy(color = secondaryText()),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

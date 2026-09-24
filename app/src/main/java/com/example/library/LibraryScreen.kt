@@ -2,11 +2,15 @@
 
 package com.example.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 // 2026-09-21：本文件同时存在 LazyColumn 与 LazyVerticalStaggeredGrid，
@@ -44,14 +48,18 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -63,6 +71,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -86,17 +96,21 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import me.trishiraj.shadowglow.consistentShadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -128,6 +142,7 @@ import com.example.source.LoginCredential
 import com.example.source.SourceResult
 import com.example.source.isNovelSource
 import com.example.ui.components.GlassCard
+import com.example.ui.glasskit.GlassKitCard
 import com.example.ui.components.GlassDialogWindowEffect
 import com.example.ui.components.scrollTiltSource
 import com.example.ui.components.AcrylicBottomOverlay
@@ -152,6 +167,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.widthIn
 import com.example.ui.adaptive.AdaptiveSpec
 import com.example.ui.design.DesignTokens
+import com.example.ui.theme.AppFonts
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -161,6 +177,10 @@ fun LibraryScreen(
     onOpenSourceManagement: () -> Unit = {},
     onImportLocalBook: () -> Unit = {},
     onOpenComic: (SearchBook) -> Unit = {},
+    /** "sourceId::comicId" 集合：搜索结果卡片上的 ♡ 是否已喜欢 */
+    favoriteKeys: Set<String> = emptySet(),
+    /** 搜索结果直接点 ♡ → 加入 / 取消「我喜欢的」 */
+    onToggleFavorite: (SearchBook, Boolean) -> Unit = { _, _ -> },
     extraBottomPadding: Dp = 0.dp
 ) {
     val currentSource by viewModel.currentSource.collectAsState()
@@ -287,7 +307,22 @@ fun LibraryScreen(
     // fraction 0→1（内容紧凑化→整卡高度归零），而非旧版布尔两态切换；
     // 搜索聚焦时强制完全收起，给搜索结果让出首屏。回顶自然恢复。
     val headerCollapsePx = with(androidx.compose.ui.platform.LocalDensity.current) { 150.dp.toPx() }
-    val searchFocusedNow by rememberUpdatedState(searchFieldFocused)
+
+    // ⚠️ 键盘收起瞬间卡顿的缓解：IME 关闭那一帧里，会同时发生
+    //   ① 搜索框失焦 → 头部从"完全收起"重新展开（重排 + 重绘）
+    //   ② imePadding 收缩 → 结果网格整体重排
+    // 两件重活撞在同一帧 → 掉帧。这里把"头部恢复"延后 120ms，
+    // 让输入法的收起动画先跑完，避开同一帧的峰值。聚焦时仍然**立即**收起（手感不变）。
+    var headerForceCollapse by remember { mutableStateOf(false) }
+    LaunchedEffect(searchFieldFocused) {
+        if (searchFieldFocused) {
+            headerForceCollapse = true
+        } else {
+            kotlinx.coroutines.delay(120)
+            headerForceCollapse = false
+        }
+    }
+    val searchFocusedNow by rememberUpdatedState(headerForceCollapse)
     val headerCollapseFraction by remember(headerCollapsePx) {
         derivedStateOf {
             if (searchFocusedNow) return@derivedStateOf 1f
@@ -566,64 +601,18 @@ fun LibraryScreen(
                         animationSpec = tween(240, easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f))
                     )
                 ) {
-                    val historyBackdrop = rememberThemedGlassBackdrop()
-                    Box(
+                    SearchHistoryPanel(
+                        history = searchHistory,
+                        onPick = { q ->
+                            searchQuery = q
+                            performSearch(q)
+                        },
+                        onDelete = { q -> viewModel.removeSearchHistory(q) },
+                        onClearAll = { viewModel.clearSearchHistory() },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .liquidGlass(
-                                backdrop = historyBackdrop,
-                                shape = RoundedCornerShape(20.dp),
-                                surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                                blurRadius = 20.dp
-                            )
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "搜索历史",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                TextButton(onClick = { viewModel.clearSearchHistory() }) {
-                                    Text(
-                                        text = "清空",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                            searchHistory.take(10).forEach { q ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            searchQuery = q
-                                            performSearch(q)
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = q,
-                                        fontSize = 13.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "›",
-                                        fontSize = 16.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    )
                 }
 
                 if (aggregateMode && uiState is LibraryUiState.AggregateResults) {
@@ -702,6 +691,10 @@ fun LibraryScreen(
                                         coverHeaders = rememberCoverHeaders(book, availableSources),
                                         sourceName = group.sourceName,
                                         novel = bookSource?.isNovelSource == true,
+                                        favorite = com.example.data.favorite.favoriteKey(
+                                            book.sourceId, book.id
+                                        ) in favoriteKeys,
+                                        onToggleFavorite = { next -> onToggleFavorite(book, next) },
                                         // 2026-09-21：书架瀑布流重排动画（此前因 items 同名
                                         // 导致 receiver 歧义一直没做）。折叠/展开分组、
                                         // 删除书籍后，其余卡片平滑归位而不是瞬间跳排。
@@ -777,10 +770,16 @@ fun LibraryScreen(
                     ) {
                         SmallFloatingActionButton(
                             onClick = { scope.launch { staggeredGridState.animateScrollToItem(0) } },
+                            modifier = Modifier.consistentShadow(3.dp, CircleShape),
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MintPrimary,
                             shape = CircleShape,
-                            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp)
+                            elevation = FloatingActionButtonDefaults.elevation(
+                                defaultElevation = 0.dp,
+                                pressedElevation = 0.dp,
+                                focusedElevation = 0.dp,
+                                hoveredElevation = 0.dp
+                            )
                         ) {
                             Icon(Icons.Filled.ArrowUpward, contentDescription = "回到顶部")
                         }
@@ -895,6 +894,10 @@ fun LibraryScreen(
                                 coverHeaders = rememberCoverHeaders(book, availableSources),
                                 comicMode = currentSource?.capabilities?.supportComic == true ||
                                         currentSource?.capabilities?.supportOnlineText == true,
+                                favorite = com.example.data.favorite.favoriteKey(
+                                    book.sourceId, book.id
+                                ) in favoriteKeys,
+                                onToggleFavorite = { next -> onToggleFavorite(book, next) },
                                 onStartDownload = {
                                     if (currentSource?.capabilities?.supportComic == true ||
                                         currentSource?.capabilities?.supportOnlineText == true) {
@@ -1137,7 +1140,7 @@ private fun LibraryCollapsingHeader(
                     fontSize = titleSize.sp,
                     fontWeight = FontWeight.Bold,
                     color = titleColor,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    fontFamily = AppFonts.Serif,
                     maxLines = 1
                 )
                 if (subtitle != null) {
@@ -1182,23 +1185,33 @@ private fun UnifiedSearchField(
     // C2：原先硬编码 Color.White / DarkGray / Gray，并用 isSystemInDarkTheme() 判断，
     // 与 App 自己的 autoNightMode 主题开关不同步（用户在 App 内开夜间模式，搜索框仍是浅色）。
     // 改走 MaterialTheme 语义色，自动跟随 App 主题。
+    val primary = MaterialTheme.colorScheme.primary
     val fieldTextColor = MaterialTheme.colorScheme.onSurface
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
     val dividerColor = MaterialTheme.colorScheme.outlineVariant
     val sourceTint = MaterialTheme.colorScheme.onSurface
-    // 聚焦态视觉反馈：主题强调色描边 + 微高亮（此前聚焦唯一反馈是历史面板弹出，
-    // 违反搜索组件基本状态反馈规范）
-    val focusStroke = MaterialTheme.colorScheme.secondary
+    // 聚焦态视觉反馈：整条胶囊轻微放大 1.02 + 描边转 primary
+    val focusScale by animateFloatAsState(
+        targetValue = if (searchFocused) 1.02f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "searchFocusScale"
+    )
+    val capsuleShape = RoundedCornerShape(50)
 
     GlassCard(
         modifier = modifier
             .heightIn(min = 56.dp)
-            .border(
-                1.dp,
-                if (searchFocused) focusStroke.copy(alpha = 0.55f) else Color.Transparent,
-                RoundedCornerShape(22.dp)
-            ),
-        shape = RoundedCornerShape(22.dp)
+            .graphicsLayer {
+                scaleX = focusScale
+                scaleY = focusScale
+            }
+            // 玻璃描边：常态 = 1px 左上白 70% → 右下白 10% 渐变高光；聚焦 = 整体转 primary
+            .glassEdge(capsuleShape, focused = searchFocused, accent = primary),
+        shape = capsuleShape,
+        tint = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
     ) {
         // fillMaxWidth 而非 fillMaxSize：fillMaxHeight 会吃掉父级剩余全部屏高，
         // 把 56dp 搜索卡撑成整屏大空面板（用户实机反馈"搜索框那么大"的根因）
@@ -1206,14 +1219,14 @@ private fun UnifiedSearchField(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // 书源入口：点击展开书源选择浮层（复用 Liquid Glass SourcePickerSheet）；
+            // ① 范围选择：点击展开书源选择浮层（复用 Liquid Glass SourcePickerSheet）；
             // 保留 ripple 按压反馈；垂直 padding 加大到 14dp 保证 ≥44dp 命中高度
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(50))
                     .clickable(onClick = onSourceClick)
-                    .padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 6.dp)
+                    .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 12.dp)
             ) {
                 Text(
                     text = sourceLabel,
@@ -1231,7 +1244,7 @@ private fun UnifiedSearchField(
                     modifier = Modifier.size(20.dp)
                 )
             }
-            // 书源区与输入区的柔性分隔。
+            // 范围区与输入区之间的竖线分隔。
             // 高度必须固定：fillMaxHeight 在 Row 内会把子项量到父级最大可用高度（~整屏），
             // Row 随之被撑满 → 56dp 搜索卡变成整屏大空面板（用户实机"搜索框那么大"的真根因）
             Box(
@@ -1241,12 +1254,13 @@ private fun UnifiedSearchField(
                     .height(24.dp)
                     .background(dividerColor)
             )
+            // ② 输入区
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
                 singleLine = true,
                 textStyle = TextStyle(fontSize = 15.sp, color = fieldTextColor),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
+                cursorBrush = SolidColor(primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     onSearch()
@@ -1276,16 +1290,369 @@ private fun UnifiedSearchField(
                 }
             )
             if (query.isNotBlank()) {
-                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "清空",
-                        tint = sourceTint.copy(alpha = 0.7f),
+                        tint = sourceTint.copy(alpha = 0.55f),
                         modifier = Modifier.size(18.dp)
                     )
                 }
             } else {
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            // ③ 圆形 primary 搜索按钮
+            Box(
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(primary)
+                    .clickable(onClick = onSearch),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "搜索",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 玻璃描边：常态为 1px「左上白 70% → 右下白 10%」渐变高光；[focused] 时整条转为强调色。
+ * 与内部全局玻璃语言一致（不新造玻璃实现，只复用现成的 border + Brush）。
+ */
+private fun Modifier.glassEdge(
+    shape: Shape,
+    focused: Boolean,
+    accent: Color
+): Modifier = this.border(
+    // 规范：**未聚焦无彩色描边**（只用中性白渐变做边缘高光）；
+    // 只有聚焦时才出现 **1.5px primary 描边**。
+    width = if (focused) 1.5.dp else 1.dp,
+    brush = if (focused) {
+        Brush.linearGradient(listOf(accent.copy(alpha = 0.90f), accent))
+    } else {
+        Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.70f), Color.White.copy(alpha = 0.10f))
+        )
+    },
+    shape = shape
+)
+
+/**
+ * 搜索历史玻璃卡。
+ * · 流式胶囊（FlowRow，13sp / 内边距 7×14 / 淡染底）
+ * · 点按直接搜索 + 按压回弹；长按进入编辑（胶囊轻微抖动 + × 单条删除），点空白退出
+ * · 超过两行自动折叠，底部「展开 / 收起」带高度动画
+ * · 进场时每个胶囊依次弹出（延迟 50ms，上移 8px + 渐显）
+ */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@Composable
+private fun SearchHistoryPanel(
+    history: List<String>,
+    onPick: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onClearAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val error = MaterialTheme.colorScheme.error
+
+    var editing by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    // ⚠️ 长按进入编辑态后，**系统返回键必须先退出编辑态**再交给页面处理：
+    // 否则用户按返回会直接离开搜索页（或收起键盘），编辑态卡住消不掉。
+    // 用 BackHandler 在编辑期间拦截，第一次返回 = 退出编辑（与"点空白退出"同一语义）。
+    BackHandler(enabled = editing) { editing = false }
+
+    // 编辑态抖动：0→1→0 往复。仅 editing 期间运行，退出即停（不留常驻循环动画）
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(editing) {
+        if (editing) {
+            while (true) {
+                shake.animateTo(1f, animationSpec = tween(170, easing = LinearEasing))
+                shake.animateTo(0f, animationSpec = tween(170, easing = LinearEasing))
+            }
+        } else {
+            shake.snapTo(0f)
+        }
+    }
+
+    // 折叠交给 FlowRow 自己的溢出处理：它只会渲染**能完整放下**的胶囊，
+    // 因此不会再出现"被切掉半截的胶囊"（此前固定高度 + clipToBounds 的病根）。
+    val items = history.take(10)
+
+    // 列表大卡：只有这一层玻璃（blur + lens），**不开**按压高光（会和滚动抢按压）。
+    // 卡内的胶囊一律是 primary 平涂，不再各自做玻璃或渐变。
+    GlassKitCard(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                // 点空白退出编辑态（子胶囊会先消费点击，不会误触）
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { editing = false }
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "搜索历史",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                // 危险色清空：小垃圾桶 +「清空」文字，点击先弹确认
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { confirmClear = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = error,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "清空",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = error
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            HistoryChips(
+                items = items,
+                editing = editing,
+                shakeValue = shake.value,
+                expanded = expanded,
+                onToggleExpanded = { expanded = it },
+                onPick = onPick,
+                onDelete = onDelete,
+                onEnterEdit = { editing = true }
+            )
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = {
+                Text(
+                    text = "清空搜索历史？",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "将删除全部 ${history.size} 条历史搜索词，此操作不可撤销。",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClear = false
+                    editing = false
+                    onClearAll()
+                }) {
+                    Text(text = "清空", color = error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text(text = "取消")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 单条历史胶囊：淡染底 + 13sp + 内边距 7×14；按压回弹；编辑态抖动并显示 × 删除。
+ * 进场动画：按 [index] 每个延迟 50ms，上移 8px + 渐显（只跑一次）。
+ */
+/**
+ * 胶囊的流式排布 + 折叠。
+ *
+ * 关键：折叠交给 FlowRow 的 `maxLines` + `expandOrCollapseIndicator` ——
+ * 它只会渲染**能完整放下**的胶囊，因此永远不会出现被切掉半截的胶囊
+ * （这是上一版"测量高度 → 固定 height + clipToBounds"的病根）。
+ *
+ * 需要 Foundation 1.7+ 的 FlowRow 溢出 API，本项目的 composeBom(2024.11) 满足。
+ */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@Composable
+private fun HistoryChips(
+    items: List<String>,
+    editing: Boolean,
+    shakeValue: Float,
+    expanded: Boolean,
+    onToggleExpanded: (Boolean) -> Unit,
+    onPick: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onEnterEdit: () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = tween(280, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+            ),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxLines = if (expanded) Int.MAX_VALUE else 2,
+        overflow = FlowRowOverflow.expandOrCollapseIndicator(
+            expandIndicator = {
+                HistoryChip(
+                    text = "更多 ⌄",
+                    index = 0,
+                    muted = true,
+                    editing = false,
+                    shakeValue = 0f,
+                    onPick = { onToggleExpanded(true) },
+                    onDelete = {},
+                    onEnterEdit = {}
+                )
+            },
+            collapseIndicator = {
+                HistoryChip(
+                    text = "收起 ⌃",
+                    index = 0,
+                    muted = true,
+                    editing = false,
+                    shakeValue = 0f,
+                    onPick = { onToggleExpanded(false) },
+                    onDelete = {},
+                    onEnterEdit = {}
+                )
+            },
+            minRowsToShowCollapse = 3
+        )
+    ) {
+        items.forEachIndexed { index, q ->
+            HistoryChip(
+                text = q,
+                index = index,
+                editing = editing,
+                shakeValue = shakeValue,
+                onPick = { onPick(q) },
+                onDelete = { onDelete(q) },
+                onEnterEdit = onEnterEdit
+            )
+        }
+    }
+}
+
+/**
+ * 单条历史胶囊：全圆、高 32、水平内边距 14、13sp、primary 平涂（普通 10% / 弱化 6%）。
+ * 按压回弹；编辑态抖动并显示 × 删除；进场按 [index] 每个延迟 40ms（上移 8dp + 渐显）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HistoryChip(
+    text: String,
+    index: Int,
+    editing: Boolean,
+    shakeValue: Float,
+    onPick: () -> Unit,
+    onDelete: () -> Unit,
+    onEnterEdit: () -> Unit,
+    muted: Boolean = false
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val primary = MaterialTheme.colorScheme.primary
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+
+    val enter = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        // 进场：每个延迟 40ms（文档值），上限 400ms 避免长列表尾部等太久
+        kotlinx.coroutines.delay((index * 40L).coerceAtMost(400L))
+        enter.animateTo(
+            1f,
+            animationSpec = tween(260, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+        )
+    }
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "chipPress"
+    )
+
+    val enterShiftPx = with(density) { 8.dp.toPx() }
+    val shakePx = with(density) { 1.6.dp.toPx() }
+    val shakeDir = if (index % 2 == 0) 1f else -1f
+    val chipShape = RoundedCornerShape(50)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .graphicsLayer {
+                alpha = enter.value
+                translationY = (1f - enter.value) * enterShiftPx
+                scaleX = pressScale
+                scaleY = pressScale
+                translationX = if (editing) (shakeValue - 0.5f) * 2f * shakePx * shakeDir else 0f
+                rotationZ = if (editing) (shakeValue - 0.5f) * 1.5f * shakeDir else 0f
+            }
+            .clip(chipShape)
+            // 规范：胶囊高 32、水平内边距 14、字号 13、**平涂**无描边无渐变
+            .height(32.dp)
+            .background(primary.copy(alpha = if (muted) 0.06f else 0.10f))
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = { if (!editing) onPick() },
+                onLongClick = { onEnterEdit() }
+            )
+            .padding(horizontal = 14.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.widthIn(max = 140.dp)
+        )
+        if (editing) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
+                    .clickable { onDelete() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "删除",
+                    tint = onSurfaceVariant,
+                    modifier = Modifier.size(10.dp)
+                )
             }
         }
     }
@@ -1327,7 +1694,7 @@ private fun SourcePickerSheet(
     val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val backdrop = rememberGlassPanelBackdrop()
     val iridescentColors = rememberIridescentColors()
-    val blurPx = with(density) { 18.dp.toPx() }
+    val blurPx = with(density) { 24.dp.toPx() }
     var dragOffsetY by remember { mutableStateOf(0f) }
     // 系统"减少透明度/关闭动画"开启时降级：不再用折射等重效果，面板更实
     val sheetContext = androidx.compose.ui.platform.LocalContext.current
@@ -1388,35 +1755,34 @@ private fun SourcePickerSheet(
                         .offset { IntOffset(0, dragOffsetY.roundToInt()) }
                         .zIndex(1f)
                         // 双层阴影：环境阴影（品牌色）+ 贴地接触阴影
-                        .shadow(
+                        .consistentShadow(
                             elevation = 32.dp,
                             shape = sheetShape,
                             ambientColor = iridescentColors.first().copy(alpha = 0.12f),
                             spotColor = iridescentColors.first().copy(alpha = 0.12f)
                         )
-                        .shadow(
+                        .consistentShadow(
                             elevation = 8.dp,
                             shape = sheetShape,
                             ambientColor = Color.Black.copy(alpha = 0.20f),
                             spotColor = Color.Black.copy(alpha = 0.20f)
                         )
+                        // 整个弹窗只有「一层」毛玻璃：blur 24 + surface 62~70%，
+                        // 内部分区一律不设独立背景（色差的根因）。
                         .liquidGlass(
                             backdrop = backdrop,
                             shape = sheetShape,
                             surfaceColor = MaterialTheme.colorScheme.surface.copy(
-                                alpha = if (reduceEffects) 0.72f else 0.58f
+                                alpha = if (reduceEffects) 0.70f else 0.66f
                             ),
-                            blurRadius = 12.dp,
+                            blurRadius = 24.dp,
                             refraction = false
                         )
                         .clip(sheetShape)
-                        .filmGrain(alpha = 0.04f)
-                        .iridescentBorder(
-                            shape = sheetShape,
-                            colors = iridescentColors,
-                            width = 2.dp,
-                            alpha = 0.22f
-                        )
+                        // 极细噪点（可选项，不改变分区底色）
+                        .filmGrain(alpha = 0.035f)
+                        // 1px 顶部渐变高光描边（左上白 70% → 右下白 10%）
+                        .glassEdge(focused = false, shape = sheetShape, accent = Color.Transparent)
                         .navigationBarsPadding()
                 ) {
                     // 拖拽手柄（弹窗内容最顶部）
@@ -1450,12 +1816,52 @@ private fun SourcePickerSheet(
                                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f))
                         )
                     }
-                    Text(
-                        text = "选择书源",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                    // 标题栏：左「选择书源」20 加粗；右「管理书源」纯 primary 文字按钮（不加底、不加框）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "选择书源",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        val manageInteraction = remember { MutableInteractionSource() }
+                        val managePressed by manageInteraction.collectIsPressedAsState()
+                        val manageScale by animateFloatAsState(
+                            targetValue = if (managePressed) 0.96f else 1f,
+                            animationSpec = tween(200, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f)),
+                            label = "managePress"
+                        )
+                        // 规范：标题右侧「管理书源」= **primary 10% 底的小胶囊，高 28**
+                        Box(
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    scaleX = manageScale
+                                    scaleY = manageScale
+                                }
+                                .clip(RoundedCornerShape(50))
+                                .height(28.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+                                .clickable(
+                                    interactionSource = manageInteraction,
+                                    indication = null,
+                                    onClick = onManageSources
+                                )
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "管理书源",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1465,42 +1871,8 @@ private fun SourcePickerSheet(
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
                         item {
-                            val interaction = remember { MutableInteractionSource() }
-                            val pressed by interaction.collectIsPressedAsState()
-                            val pressScale by animateFloatAsState(
-                                targetValue = if (pressed) 0.97f else 1f,
-                                label = "press"
-                            )
-                            ListItem(
-                                headlineContent = { Text("管理书源", color = MaterialTheme.colorScheme.primary) },
-                                leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
-                                ),
-                                modifier = Modifier
-                                    .graphicsLayer {
-                                        scaleX = pressScale
-                                        scaleY = pressScale
-                                    }
-                                    .clickable(
-                                        interactionSource = interaction,
-                                        indication = null,
-                                        onClick = onManageSources
-                                    )
-                            )
-                        }
-                        item {
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
-                            )
+                            // 分区标题（12px 灰色 + 0.04em 字距）—— 层次只靠 间距 / 分组标题 / 细分割线
+                            SourceSectionLabel("聚合搜索")
                         }
                         item {
                             // v1.0.1：聚合搜索按类别分区——聚合漫画 / 聚合小说 互斥选择
@@ -1522,18 +1894,20 @@ private fun SourcePickerSheet(
                         // 第十一轮第 6 条：多语言搜索开关——搜索词自动扩展各语言标题变体
                         //（如"无职转生"→ 無職転生 / Mushoku Tensei / Jobless Reincarnation）
                         item {
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
-                            )
+                            SourceSheetDivider()
                         }
                         item {
                             ListItem(
+                                // 规范：行高 56；**彻底清掉这一行的纯白底**（用户点名）
+                                modifier = Modifier.height(56.dp),
+                                colors = ListItemDefaults.colors(
+                                    containerColor = androidx.compose.ui.graphics.Color.Transparent
+                                ),
                                 headlineContent = {
                                     Text(
                                         text = "多语言搜索",
-                                        fontWeight = if (multiLanguageSearch) FontWeight.Bold else FontWeight.Normal
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 },
                                 supportingContent = {
@@ -1555,18 +1929,12 @@ private fun SourcePickerSheet(
                                         checked = multiLanguageSearch,
                                         onCheckedChange = onToggleMultiLanguageSearch
                                     )
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
-                                )
+                                }
+                                // 无独立底色：分区一律透明，唯一允许填充的是选中态（primary 12%）
                             )
                         }
                         item {
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
-                            )
+                            SourceSheetDivider()
                         }
                         // v1.0.1：书源按类型分区展示——漫画源 / 小说源
                         if (comicSources.isNotEmpty()) {
@@ -1589,18 +1957,38 @@ private fun SourcePickerSheet(
                                 )
                             }
                         }
-                        item {
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                                modifier = Modifier.padding(start = 72.dp, end = 20.dp)
-                            )
-                        }
+                        // 末尾不再单独画一条线（最后一行与底部间距已足够区分层次）
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * 弹窗内统一细分割线：0.5px、`onSurface` 8%、左右各缩进 20。
+ * 全弹窗共用同一条实现，避免各分区线宽/颜色/缩进不一致造成的"色差"。
+ */
+@Composable
+private fun SourceSheetDivider() {
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp)
+    )
+}
+
+/** 书源分区小标题（聚合搜索 / 漫画源 / 小说源）：12px 灰色 + 0.04em 字距。 */
+@Composable
+private fun SourceSectionLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = 0.48.sp,
+        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp)
+    )
 }
 
 /** 聚合搜索选项行（聚合漫画/聚合小说）：按下缩放 + 选中弹入对勾，与弹层整体 Liquid Glass 风格一致。 */
@@ -1629,10 +2017,11 @@ private fun AggregateOptionItem(
         headlineContent = {
             Text(
                 text = title,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold
             )
         },
-        supportingContent = { Text(subtitle) },
+        supportingContent = { Text(subtitle, fontSize = 12.sp) },
         leadingContent = {
             Icon(
                 imageVector = Icons.Default.MenuBook,
@@ -1656,10 +2045,18 @@ private fun AggregateOptionItem(
                 )
             }
         },
+        // 弹窗内唯一允许的填充：选中态 primary 12%；未选中必须完全透明（否则出现色差）
         colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            } else {
+                Color.Transparent
+            }
         ),
         modifier = Modifier
+            .animateContentSize(
+                animationSpec = tween(220, easing = CubicBezierEasing(0f, 0f, 0.2f, 1f))
+            )
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -1669,18 +2066,6 @@ private fun AggregateOptionItem(
                 indication = null,
                 onClick = onClick
             )
-    )
-}
-
-/** 书源分区小标题（漫画源 / 小说源）。 */
-@Composable
-private fun SourceSectionLabel(text: String) {
-    Text(
-        text = text,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp)
     )
 }
 
@@ -1710,12 +2095,17 @@ private fun SourceOptionItem(
         headlineContent = {
             Text(
                 text = source.name,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold
             )
         },
         supportingContent = {
+            // ID 类信息：11sp 等宽 + 灰色
             Text(
                 text = source.id,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1732,7 +2122,7 @@ private fun SourceOptionItem(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "当前使用",
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .size(22.dp)
                         .graphicsLayer {
@@ -1742,10 +2132,19 @@ private fun SourceOptionItem(
                 )
             }
         },
+        // 弹窗内唯一允许的填充：选中态 primary **8%**；未选中必须完全透明（否则出现色差）
         colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            } else {
+                Color.Transparent
+            }
         ),
         modifier = modifier
+            // 规范：行高 56；选中底**左右各留 12、圆角、不通栏**
+            .height(56.dp)
+            .padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(12.dp))
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -2096,6 +2495,53 @@ private fun rememberCoverHeaders(
     return headers
 }
 
+/**
+ * 搜索结果卡片上的 ♡ —— 不用点进详情就能把书收进「我喜欢的」。
+ *
+ * 卡片本身可点（进详情），所以这里只吞掉自己的点击，不参与卡片的手势。
+ */
+@Composable
+private fun SearchResultFavoriteButton(
+    favorite: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.84f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "searchFavPress",
+    )
+    val tint = if (favorite) MintPrimary else Color.White
+    Box(
+        modifier = modifier
+            .size(30.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.38f))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = { onToggle(!favorite) },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (favorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            contentDescription = if (favorite) "取消喜欢" else "加入我喜欢的",
+            tint = tint,
+            modifier = Modifier.size(17.dp),
+        )
+    }
+}
+
 @Composable
 fun LibraryBookCard(
     book: SearchBook,
@@ -2104,6 +2550,8 @@ fun LibraryBookCard(
     coverHeaders: Map<String, String> = emptyMap(),
     comicMode: Boolean = false,
     modifier: Modifier = Modifier,
+    favorite: Boolean = false,
+    onToggleFavorite: (Boolean) -> Unit = {},
     onStartDownload: () -> Unit,
     onPauseDownload: () -> Unit,
     onResumeDownload: () -> Unit,
@@ -2150,6 +2598,14 @@ fun LibraryBookCard(
                         }
                     }
                 }
+                // ♡ 收藏入口：不进详情也能加入「我喜欢的」
+                SearchResultFavoriteButton(
+                    favorite = favorite,
+                    onToggle = onToggleFavorite,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp),
+                )
             }
             
             Spacer(modifier = Modifier.width(12.dp))
@@ -2428,6 +2884,8 @@ private fun StaggeredComicCard(
     sourceName: String,
     novel: Boolean = false,
     modifier: Modifier = Modifier,
+    favorite: Boolean = false,
+    onToggleFavorite: (Boolean) -> Unit = {},
     onClick: () -> Unit
 ) {
     // 固定比例：不再依赖图片解码结果，卡片测量高度全程不变
@@ -2474,7 +2932,7 @@ private fun StaggeredComicCard(
                 alpha = enterAlpha
                 translationY = enterSlide * size.height / 8f
             }
-            .shadow(
+            .consistentShadow(
                 elevation = 8.dp,
                 shape = cardShape,
                 ambientColor = Color.Black.copy(alpha = shadowAlpha),
@@ -2545,7 +3003,7 @@ private fun StaggeredComicCard(
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.shadow(2.dp, RoundedCornerShape(4.dp))
+                    modifier = Modifier.consistentShadow(2.dp, RoundedCornerShape(4.dp))
                 )
                 if (book.author.isNotBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
@@ -2558,6 +3016,14 @@ private fun StaggeredComicCard(
                     )
                 }
             }
+            // ♡ 收藏入口（左上，与右上的格式角标错开）：不进详情也能加入「我喜欢的」
+            SearchResultFavoriteButton(
+                favorite = favorite,
+                onToggle = onToggleFavorite,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp),
+            )
             // 格式角标（右上）
             Surface(
                 modifier = Modifier
